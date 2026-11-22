@@ -2414,17 +2414,16 @@ fn a_defense_standing_down_brings_its_members_back_beside_the_foundry() {
         (true, true),
         "the raiders gone: home"
     );
-    // A Lancer beyond the base's threat gap but still in reach of them, by
-    // the enemy's Foundry: four do not turn their backs to it, but two,
-    // outweighed out there, run home rather than die where they stand.
-    let four = [(13, 8), (14, 8), (13, 9), (14, 9)];
+    // A Lancer beyond the base's threat gap but still in reach of them: two
+    // do not turn their backs to it, but one, outweighed out there, runs
+    // home rather than die where it stands.
     assert_eq!(
-        stand_down_with(&four, UnitKind::Sentinel, Some((UnitKind::Lancer, 19))),
+        stand_down(UnitKind::Sentinel, Some((UnitKind::Lancer, 19))),
         (false, false),
         "still under fire and not outweighed: they stay"
     );
     assert_eq!(
-        stand_down(UnitKind::Sentinel, Some((UnitKind::Lancer, 19))),
+        stand_down_with(&[(13, 8)], UnitKind::Sentinel, Some((UnitKind::Lancer, 19))),
         (true, true),
         "outweighed out there: home"
     );
@@ -2439,6 +2438,13 @@ fn a_defense_standing_down_brings_its_members_back_beside_the_foundry() {
         stand_down(UnitKind::Talon, Some((UnitKind::Talon, 17))),
         (false, false),
         "Talons under fire stay"
+    );
+    // Judged in the air: one Talon facing an equal one at Prime's margin is
+    // outweighed and comes home.
+    assert_eq!(
+        stand_down_with(&[(13, 8)], UnitKind::Talon, Some((UnitKind::Talon, 17))),
+        (true, true),
+        "a lone Talon outweighed in the air comes home"
     );
 }
 
@@ -2836,6 +2842,29 @@ fn a_defense_held_on_a_builder_turns_when_an_armed_enemy_comes() {
             .all(|(_, target)| *target != AttackTarget::Unit(builder)),
         "{commands:?}"
     );
+    // The builder no longer holds the defense, and once the Lancer has gone
+    // the defenders go back to it.
+    let checkpoint = opponent.checkpoint();
+    let json = serde_json::to_value(&checkpoint).unwrap();
+    assert_eq!(
+        json["missions"]["list"][0]["task"]["phase"]["engage"]["focus"],
+        serde_json::Value::Null,
+        "{json}"
+    );
+    let mut gone = scenario.clone();
+    gone.units.retain(|spec| spec.kind != UnitKind::Lancer);
+    let state = gone.build().unwrap();
+    let mut opponent = Opponent::restore(&checkpoint, &gone, &state, map(&gone)).unwrap();
+    let next = (state.current_tick() + 1).next_multiple_of(12);
+    let mut state = state;
+    advance_to(&mut state, next, &[]);
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    assert!(
+        attacks(&commands)
+            .iter()
+            .any(|(_, target)| *target == AttackTarget::Unit(builder)),
+        "{commands:?}"
+    );
 }
 
 #[test]
@@ -2992,5 +3021,43 @@ fn a_hit_the_seat_can_explain_draws_no_search() {
     assert_eq!(
         crate::placement::unexplained(&observation, &map, &hit).len(),
         1
+    );
+}
+
+fn an_aircraft_defender_chased_past_the_base_runs_back_too() {
+    // A Buzzard in the defense has followed an earlier raider out past the
+    // base: hunting, it would chase on, so it is brought back like a ground
+    // defender.
+    let scenario = raided(
+        &[(UnitKind::Sentinel, 7, 6), (UnitKind::Buzzard, 21, 9)],
+        &[(UnitKind::Sentinel, 8, 5)],
+    );
+    let state = scenario.build().unwrap();
+    let home = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
+        .unwrap();
+    let (near, buzzard) = (at(&state, 7, 6), at(&state, 21, 9));
+    let mut members = vec![near, buzzard];
+    members.sort_unstable();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {"task": "defend", "asset": home.id.0, "phase": {"engage": {"focus": null}}},
+                "since": 0,
+                "units": members,
+                "goal": {"x": 8, "y": 5},
+            }],
+        });
+    });
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    assert!(
+        runs(&commands)
+            .iter()
+            .any(|(units, _)| units.contains(&buzzard)),
+        "{commands:?}"
     );
 }

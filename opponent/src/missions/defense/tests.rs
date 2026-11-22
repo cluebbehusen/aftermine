@@ -248,3 +248,38 @@ fn a_defender_far_off_chasing_is_in_neither_fight() {
     let alone = value(mine(&observation, at_fight).unwrap());
     assert_eq!(worth, alone);
 }
+
+#[test]
+fn only_the_site_owner_s_builder_beside_it_comes_first() {
+    // A Harvester beside an enemy site raises it only if it is the site's:
+    // another seat's passing by cannot, so the site itself comes first.
+    let (observation, _) = viewed(&[(1, UnitKind::Harvester, 9, 4)]);
+    let builder = observation.enemy_units[0].clone();
+    let passer = UnitObs {
+        player: PlayerId(2),
+        ..builder.clone()
+    };
+    let site = BuildingObs {
+        provisional: false,
+        id: aftermine_sim::BuildingId(7),
+        player: PlayerId(1),
+        kind: BuildingKind::Fabricator,
+        anchor: TilePos::new(10, 4),
+        hp: 50,
+        built: false,
+        seen: true,
+        tier: 0,
+    };
+    let beside = TilePos::new(9, 5);
+    let quarry = |stray: &UnitObs| {
+        Siege {
+            strays: vec![stray],
+            batteries: vec![(&site, beside)],
+            ..Siege::default()
+        }
+        .quarry(|tile| tile.x + tile.y)
+        .map(|(target, _)| target)
+    };
+    assert_eq!(quarry(&builder), Some(AttackTarget::Unit(builder.id)));
+    assert_eq!(quarry(&passer), Some(AttackTarget::Building(site.id)));
+}

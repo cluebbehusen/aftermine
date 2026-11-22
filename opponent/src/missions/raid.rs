@@ -306,18 +306,22 @@ impl Missions {
                 let done = all_idle || age >= STRIKE_TICKS || !standing(observation, target);
                 // A raider drawn past local reach of its target, chasing a
                 // fleeing worker, runs home rather than on into the enemy's
-                // base; the rest strike on.
-                let strays: Vec<UnitId> = members
+                // base; the rest strike on. It stays the raid's until it is
+                // home and idle, so nothing else takes it on the way.
+                let (home_again, strays): (Vec<&UnitObs>, Vec<&UnitObs>) = members
                     .iter()
                     .filter(|unit| unit.tile.chebyshev(goal) > LOCAL_REACH)
-                    .map(|unit| unit.id)
-                    .collect();
+                    .partition(|unit| unit.idle && unit.tile.chebyshev(home) <= CONTACT_TILES);
+                let strays: Vec<UnitId> = strays.iter().map(|unit| unit.id).collect();
                 if spent || outweighed || done || strays.len() == units.len() {
                     return withdraw(self, ledger).then_some(lost);
                 }
-                if !strays.is_empty() && ledger.order(run(strays.clone(), home)) {
-                    self.list[index].units.retain(|id| !strays.contains(id));
+                if !strays.is_empty() {
+                    ledger.order(run(strays, home));
                 }
+                self.list[index]
+                    .units
+                    .retain(|id| home_again.iter().all(|unit| unit.id != *id));
                 None
             }
             RaidPhase::Withdraw => {
