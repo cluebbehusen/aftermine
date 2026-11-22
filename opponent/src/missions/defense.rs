@@ -377,7 +377,9 @@ impl Missions {
                 .filter(|id| ordered.contains(id))
                 .collect();
             take(&mut free, &recruits);
-            let engage = recovering || lost || gun.is_some();
+            // Turning from an intruder to something armed drops the intruder
+            // as the focus, so it is chosen again once that has gone.
+            let engage = recovering || lost || gun.is_some() || intruder(observation, focus);
             self.joined(
                 index,
                 &recruits,
@@ -1137,7 +1139,9 @@ impl Siege<'_> {
         let raising = |stray: &UnitObs| {
             builder(stray)
                 && self.batteries.iter().any(|(site, _)| {
-                    !site.built && gap(site.anchor, site.kind.size(), stray.tile, (1, 1)) <= 1
+                    !site.built
+                        && site.player == stray.player
+                        && gap(site.anchor, site.kind.size(), stray.tile, (1, 1)) <= 1
                 })
         };
         let stray = |pick: &dyn Fn(&UnitObs) -> bool| {
