@@ -819,7 +819,7 @@ pub(crate) fn keeps_paths(
 
 /// The seat's own structures hit lately by fire nothing it knows of accounts
 /// for: an incident its team remembers stands on the footprint, and no enemy
-/// in sight reaches it nor any known enemy gun. A Lancer outranges what an
+/// in sight nor any known enemy gun can hit it. A Lancer outranges what an
 /// Extractor sees, so it shoots from the fog.
 pub(crate) fn unexplained<'a>(
     observation: &'a ObservationData,
@@ -840,18 +840,16 @@ pub(crate) fn unexplained<'a>(
                 .any(|tile| gap(building.anchor, size, *tile, (1, 1)) < 0)
         })
         .filter(|building| {
-            let size = building.kind.size();
-            let reached = observation.enemy_units.iter().any(|enemy| {
-                let reach = crate::defenses::reach(enemy.kind);
-                reach > Fx::ZERO
-                    && Fx::from_num(gap(building.anchor, size, enemy.tile, (1, 1)))
-                        <= reach + Fx::from_num(1)
-            });
-            let gunned = observation
-                .enemy_buildings
-                .iter()
-                .any(|enemy| gun_hits(map, enemy, building.kind, building.anchor));
-            !(reached || gunned)
+            // Explained only by fire in sight or a known gun that can really
+            // reach it, past minimum ranges, rock and levels.
+            let fire = Fire::on(
+                observation,
+                map,
+                &Memory::default(),
+                building.kind,
+                building.anchor,
+            );
+            fire.building.volley == 0 && fire.building.rate == 0
         })
         .collect()
 }

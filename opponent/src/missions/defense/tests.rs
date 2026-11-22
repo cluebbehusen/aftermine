@@ -377,3 +377,41 @@ fn a_search_goes_from_a_foundry_to_its_nearest_hit_structure_on_its_ground() {
     assert_eq!(need, u64::from(BuildingKind::Turret.invested_cost(0)));
     assert!(searches(&observation, &map, frame, &[turret(10)]).is_empty());
 }
+
+#[test]
+fn two_foundries_look_over_two_hit_structures_not_one_twice() {
+    // One hit Turret stands nearest the first Foundry, another nearest the
+    // second; the second Foundry also stands near the first Turret. Each
+    // Foundry looks over its own, so both are searched.
+    let mut scenario = crate::tests::match_on(crate::tests::strip(false), &["West", "East"], &[]);
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Foundry,
+            x: 2,
+            y: 6,
+        });
+    for (x, y) in [(5, 2), (8, 7)] {
+        scenario
+            .buildings
+            .push(aftermine_sim::scenario::BuildingSpec {
+                player: 0,
+                kind: BuildingKind::Turret,
+                x,
+                y,
+            });
+    }
+    let state = scenario.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let map = MapModel::from_scenario(&scenario).unwrap();
+    let frame = crate::frame::HomeFrame::of(&observation, &map).unwrap();
+    let searched: Vec<&BuildingObs> = observation
+        .my_buildings
+        .iter()
+        .filter(|b| b.kind == BuildingKind::Turret)
+        .collect();
+    let found = searches(&observation, &map, frame, &searched);
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert_ne!(found[0].1.0, found[1].1.0, "{found:?}");
+}

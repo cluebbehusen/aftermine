@@ -97,7 +97,7 @@ A Harvester or Excavator carrying scrap whose every route to a Foundry crosses \
     known danger stands where it is and keeps its load rather than walk into fire. \
     Known danger is: enemy units in sight, within their reach and {mobile} tiles more; \
     enemy defenses you know of, within their reach and {fixed} more; radar contacts, \
-    within {radar} tiles; and places a unit or structure of your team was hit or lost in the last \
+    within {radar} tiles; and places your team lost a unit or structure, or had one other than a Foundry hit, in the last \
     {incident}, within {near} tiles. It looks for a safe route every {retry} and goes on \
     by itself once one opens. While it waits, the advance reports DangerHold once \
 every {report}.
