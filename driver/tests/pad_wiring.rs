@@ -39,6 +39,8 @@ struct Drill {
 }
 
 impl Drill {
+    /// `port` stays below 32768: Linux hands out ports from there up to
+    /// outgoing connections, so a fixed one in that range can already be held.
     fn spawn(port: u16) -> Result<Self> {
         let mut shell = ScratchShell::new("pad-wiring")?;
         write_home_config(shell.home(), include_str!("../src/quiet_config.json"))?;
@@ -225,7 +227,7 @@ fn obeying(view: &StateView) -> Vec<UnitId> {
 #[test]
 #[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_selects_and_x_moves_to_the_ground_under_the_reticle() -> Result<()> {
-    let mut drill = Drill::spawn(44_311)?;
+    let mut drill = Drill::spawn(4311)?;
     let view = drill.load(&field())?;
     let lancer = view
         .units
@@ -264,7 +266,7 @@ fn a_selects_and_x_moves_to_the_ground_under_the_reticle() -> Result<()> {
 #[test]
 #[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_picks_stop_and_the_squad_halts() -> Result<()> {
-    let mut drill = Drill::spawn(44_312)?;
+    let mut drill = Drill::spawn(4312)?;
     let view = drill.load(&field())?;
     let mut army: Vec<UnitId> = view.units.iter().map(|unit| UnitId(unit.id)).collect();
     army.sort_unstable();
@@ -282,7 +284,7 @@ fn a_picks_stop_and_the_squad_halts() -> Result<()> {
 #[test]
 #[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_places_a_structure_centered_on_the_reticle() -> Result<()> {
-    let mut drill = Drill::spawn(44_313)?;
+    let mut drill = Drill::spawn(4313)?;
     drill.load(&drill_build())?;
     drill.select_at(tile(32, 23))?;
     // The build palette's keys arm the placement: Production, then
@@ -313,7 +315,7 @@ fn a_places_a_structure_centered_on_the_reticle() -> Result<()> {
 #[test]
 #[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn the_left_stick_click_walks_and_cancels_the_queue() -> Result<()> {
-    let mut drill = Drill::spawn(44_314)?;
+    let mut drill = Drill::spawn(4314)?;
     let view = drill.load(&drill_foundry())?;
     let foundry = BuildingId(view.buildings.first().context("the Foundry stands")?.id);
     for _ in 0..3 {
@@ -379,7 +381,7 @@ fn the_left_stick_click_walks_and_cancels_the_queue() -> Result<()> {
 #[test]
 #[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_remote_in_a_match_reaches_only_pause() -> Result<()> {
-    let mut drill = Drill::spawn(44_315)?;
+    let mut drill = Drill::spawn(4315)?;
     drill.load(&field())?;
     inject(
         &mut drill.client,
