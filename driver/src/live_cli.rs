@@ -521,10 +521,21 @@ pub(crate) fn attack_at(squad: Squad, at: &str, view: &FogView) -> Result<Reques
         .find(|building| building.player != view.player && anchored(building.anchor))
     {
         Target::Building(BuildingId(building.id)).into()
-    } else if let Some(ghost) = view.ghosts.iter().find(|ghost| anchored(ghost.anchor)) {
+    } else if let Some((owner, building_kind)) = view
+        .ghosts
+        .iter()
+        .find(|ghost| anchored(ghost.anchor))
+        .map(|ghost| (ghost.owner, ghost.kind))
+        .or_else(|| {
+            view.public_buildings
+                .iter()
+                .find(|public| anchored(public.anchor))
+                .map(|public| (public.owner, public.kind))
+        })
+    {
         AttackTarget::RememberedBuilding(RememberedBuilding {
-            owner: PlayerId(ghost.owner),
-            building_kind: ghost.kind,
+            owner: PlayerId(owner),
+            building_kind,
             anchor,
         })
     } else {

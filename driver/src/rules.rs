@@ -237,7 +237,8 @@ fn aggro(entry: Entry) -> Option<String> {
         return None;
     };
     let stats = kind.stats();
-    if stats.weapons.is_empty() {
+    // A drone's range is its leash from the host, which its page explains.
+    if stats.weapons.is_empty() || stats.docks() {
         return None;
     }
     Some(if stats.aggro_range > chassis::fx::Fx::ZERO {

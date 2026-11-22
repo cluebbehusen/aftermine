@@ -124,6 +124,12 @@ fn the_sheet_says_how_far_units_chase_and_why_workers_hold() {
         sheet.contains(r#"{"type":"set_idle_weld","units":[3,4],"enabled":false}"#),
         "{sheet}"
     );
+    // A drone's leash runs from its host, so its page gives no aggro range.
+    let drone = sheet
+        .split("\n## ")
+        .find(|page| page.starts_with("Drone"))
+        .expect("the Drone has a page");
+    assert!(!drone.contains("Aggro range"), "{drone}");
     let lancer = UnitKind::Lancer.stats().aggro_range;
     assert!(
         sheet.contains(&format!("Aggro range {lancer} tiles")),

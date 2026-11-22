@@ -36,7 +36,7 @@ use aftermine_sim::{
     Scenario, State,
 };
 use anyhow::{Context, Result};
-use chassis::fx::Vec2Fx;
+use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 use chassis::replay::Replay;
 use std::collections::{BTreeMap, BTreeSet};
@@ -675,10 +675,9 @@ struct Seen {
     /// Other seats' structures in sight as the coming tick begins, by id,
     /// so a site that vanishes in it can be named.
     in_sight: BTreeMap<aftermine_sim::BuildingId, String>,
-    /// The seat's own structures, and other seats' in sight, as the coming
-    /// tick begins: their owner and anchor, so one destroyed in it is placed
-    /// where the digest lists it and one firing in it can be named.
-    standing: BTreeMap<aftermine_sim::BuildingId, (PlayerId, TilePos)>,
+    /// Other seats' structures in sight as the coming tick begins, by
+    /// owner, so one firing in it can be named.
+    standing: BTreeMap<aftermine_sim::BuildingId, PlayerId>,
     /// Other seats' units in sight as the coming tick begins: the seat sees
     /// one die there even when its last observer falls in the same tick.
     units_in_sight: BTreeMap<aftermine_sim::UnitId, PlayerId>,
@@ -728,8 +727,8 @@ impl Seen {
         self.standing = state
             .buildings()
             .iter()
-            .filter(|building| building.player == self.seat || seen(building))
-            .map(|building| (building.id, (building.player, building.anchor)))
+            .filter(|building| building.player != self.seat && seen(building))
+            .map(|building| (building.id, building.player))
             .collect();
         self.in_sight = state
             .buildings()
@@ -759,7 +758,13 @@ impl Seen {
     /// that tick. Most fire lands before units move in a tick and crashes
     /// and charges after, so a unit hit there stood at `pos` as the tick
     /// began or as it ended.
-    fn hit_at(&self, tick: u64, state: &State, pos: Vec2Fx) -> Option<(String, Target)> {
+    fn hit_at(
+        &self,
+        tick: u64,
+        state: &State,
+        events: &[Event],
+        pos: Vec2Fx,
+    ) -> Option<(String, Target, (i32, i32))> {
         if let Some(unit) = state.units().iter().find(|unit| {
             unit.player == self.seat
                 && unit.damaged_at == Some(tick)
@@ -768,53 +773,123 @@ impl Seen {
             return Some((
                 format!("{} {}", unit.kind.name(), unit.id.0),
                 Target::Unit(unit.id),
+                (0, 0),
             ));
         }
         let tile = TilePos::containing(pos);
-        state
+        if let Some(building) = state
             .buildings()
             .iter()
             .find(|building| building.player == self.seat && building.contains(tile))
-            .map(|building| {
-                (
-                    format!(
-                        "{} {}",
-                        building.kind.tier_name(building.tier),
-                        building.id.0
-                    ),
-                    Target::Building(building.id),
-                )
-            })
+        {
+            return Some((
+                format!(
+                    "{} {}",
+                    building.kind.tier_name(building.tier),
+                    building.id.0
+                ),
+                Target::Building(building.id),
+                building.kind.size(),
+            ));
+        }
+        // A hit that killed is gone from the world after the tick: its own
+        // death names it.
+        events.iter().find_map(|event| match event {
+            Event::UnitDied {
+                unit,
+                kind,
+                player,
+                pos: died,
+                ..
+            } if *player == self.seat
+                && (*died == pos || self.own_before.get(unit) == Some(&pos)) =>
+            {
+                Some((
+                    format!("{} {}", kind.name(), unit.0),
+                    Target::Unit(*unit),
+                    (0, 0),
+                ))
+            }
+            Event::BuildingDestroyed {
+                building,
+                kind,
+                player,
+                tier,
+                pos: fell,
+            } if *player == self.seat && *fell == pos => Some((
+                format!("{} {}", kind.tier_name(*tier), building.0),
+                Target::Building(*building),
+                kind.size(),
+            )),
+            _ => None,
+        })
     }
 
     /// The enemies in sight as the tick began that fired on `victim` in it,
-    /// among its `events`, as the seat names them; none when the seat saw
-    /// no one firing, such as a gun shelling from out of sight.
-    fn shooters(&self, events: &[Event], victim: Target) -> Option<String> {
+    /// among its `events`, as the seat names them: those aiming at it and
+    /// those whose splash landed on it, a footprint of `size` centred at
+    /// `pos`. None when the seat saw no one firing, such as a gun shelling
+    /// from out of sight.
+    fn shooters(
+        &self,
+        events: &[Event],
+        victim: Target,
+        (pos, size): (Vec2Fx, (i32, i32)),
+    ) -> Option<String> {
+        let splashed = |splash: Option<Fx>, impact: Vec2Fx| {
+            splash.is_some_and(|radius| {
+                let (w, h) = size;
+                let gap =
+                    |delta: Fx, size: i32| (delta.abs() - Fx::from_num(size) / 2).max(Fx::ZERO);
+                let (dx, dy) = (gap(impact.x - pos.x, w), gap(impact.y - pos.y, h));
+                dx * dx + dy * dy <= radius * radius
+            })
+        };
         let mut names: Vec<String> = Vec::new();
         for event in events {
             let name = match event {
                 Event::AttackHit {
                     attacker,
                     attacker_kind,
-                    target: Some(target),
+                    weapon,
+                    target,
+                    target_pos,
                     ..
-                } if *target == victim => self.units_in_sight.get(attacker).map(|owner| {
-                    format!("seat {}'s {} {}", owner.0, attacker_kind.name(), attacker.0)
-                }),
+                } if *target == Some(victim)
+                    || splashed(
+                        attacker_kind
+                            .stats()
+                            .weapons
+                            .get(*weapon)
+                            .and_then(|weapon| weapon.splash),
+                        *target_pos,
+                    ) =>
+                {
+                    self.units_in_sight.get(attacker).map(|owner| {
+                        format!("seat {}'s {} {}", owner.0, attacker_kind.name(), attacker.0)
+                    })
+                }
                 Event::TurretFired {
                     turret,
                     kind,
                     tier,
-                    target: Some(target),
+                    target,
+                    target_pos,
                     ..
-                } if *target == victim => self
-                    .standing
-                    .get(turret)
-                    .filter(|(owner, _)| *owner != self.seat)
-                    .map(|(owner, _)| {
+                } if *target == Some(victim)
+                    || splashed(
+                        kind.tier_stats(*tier)
+                            .weapons
+                            .iter()
+                            .filter_map(|weapon| weapon.splash)
+                            .max(),
+                        *target_pos,
+                    ) =>
+                {
+                    self.standing.get(turret).map(|owner| {
                         format!("seat {}'s {} {}", owner.0, kind.tier_name(*tier), turret.0)
-                    }),
+                    })
+                }
                 _ => None,
             };
             if let Some(name) = name.filter(|name| !names.contains(name)) {
@@ -846,14 +921,19 @@ impl Seen {
                 } => *player == seat || sees(*pos) || self.units_in_sight.contains_key(unit),
                 Event::BuildingDestroyed {
                     building,
+                    kind,
                     player,
                     pos,
                     ..
                 } => {
-                    note = self
-                        .standing
-                        .get(building)
-                        .map(|(_, anchor)| format!("({},{})", anchor.x, anchor.y));
+                    // Placed by its anchor, as the digest lists structures:
+                    // the event gives the footprint's centre.
+                    let (w, h) = kind.size();
+                    let anchor = TilePos::containing(Vec2Fx::new(
+                        pos.x - Fx::from_num(w) / 2,
+                        pos.y - Fx::from_num(h) / 2,
+                    ));
+                    note = Some(format!("({},{})", anchor.x, anchor.y));
                     *player == seat || sees(*pos) || self.in_sight.contains_key(building)
                 }
                 Event::WarheadLanded { player, at, .. }
@@ -881,9 +961,11 @@ impl Seen {
                         && self
                             .fire
                             .insert((tile.x.div_euclid(FIRE_CELL), tile.y.div_euclid(FIRE_CELL)));
-                    if fresh && let Some((name, victim)) = self.hit_at(tick, state, *pos) {
+                    if fresh
+                        && let Some((name, victim, size)) = self.hit_at(tick, state, events, *pos)
+                    {
                         note = Some(name);
-                        by = self.shooters(events, victim);
+                        by = self.shooters(events, victim, (*pos, size));
                     }
                     fresh
                 }

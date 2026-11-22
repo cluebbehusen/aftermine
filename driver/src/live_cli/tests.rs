@@ -497,4 +497,26 @@ fn attack_building_at_an_anchor_reaches_a_remembered_structure() {
         }
     );
     assert!(attack_at(squad(), "31,10", &view).is_err());
+    // A public structure the seat never saw is reached by its anchor too.
+    view.public_buildings
+        .push(aftermine_protocol::view::PublicBuildingView {
+            kind: aftermine_sim::BuildingKind::MawCradle,
+            tier: 0,
+            owner: 1,
+            anchor: [40, 20],
+            progress: Some(10),
+        });
+    assert!(matches!(
+        attack_at(squad(), "40,20", &view).unwrap(),
+        Request::SendCommand {
+            command: Command::Attack {
+                target: AttackTarget::RememberedBuilding(RememberedBuilding {
+                    building_kind: aftermine_sim::BuildingKind::MawCradle,
+                    ..
+                }),
+                ..
+            },
+            ..
+        }
+    ));
 }

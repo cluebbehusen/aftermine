@@ -1071,3 +1071,68 @@ fn a_destroyed_structure_is_placed_by_its_anchor() {
     }
     panic!("premise: the Lancers bring the Fabricator down");
 }
+
+#[test]
+fn a_killing_hit_and_a_splashed_bystander_name_who_fired() {
+    // A Breaker the seat sees aims at one unit and its blast catches another
+    // beside it; a Lancer's shot kills a third, gone from the world after
+    // the tick. Each took-fire line names its victim and the shooter.
+    use aftermine_sim::{Target, UnitId};
+    use chassis::fx::{Fx, Vec2Fx};
+    let state = human_scenario("blasts").build().unwrap();
+    let at = |x: i32, y: i32| Vec2Fx::new(Fx::from_num(x), Fx::from_num(y));
+    let (breaker, lancer) = (UnitId(900), UnitId(901));
+    let (aimed, bystander, dead) = (UnitId(910), UnitId(911), UnitId(912));
+    let mut seen = Seen::new(PlayerId(0));
+    seen.units_in_sight = [(breaker, PlayerId(1)), (lancer, PlayerId(1))]
+        .into_iter()
+        .collect();
+    let events = vec![
+        Event::AttackHit {
+            attacker: breaker,
+            attacker_kind: UnitKind::Breaker,
+            weapon: 0,
+            target: Some(Target::Unit(aimed)),
+            attacker_pos: at(20, 10),
+            target_pos: at(10, 10),
+        },
+        Event::AttackHit {
+            attacker: lancer,
+            attacker_kind: UnitKind::Lancer,
+            weapon: 0,
+            target: Some(Target::Unit(dead)),
+            attacker_pos: at(20, 30),
+            target_pos: at(30, 30),
+        },
+        Event::UnitDied {
+            unit: dead,
+            kind: UnitKind::Harvester,
+            player: PlayerId(0),
+            pos: at(30, 30),
+            grounded: true,
+        },
+    ];
+    let splash = UnitKind::Breaker.stats().weapons[0]
+        .splash
+        .expect("premise: the Breaker's shot splashes");
+    let beside = Vec2Fx::new(Fx::from_num(10) + splash / 2, Fx::from_num(10));
+    assert_eq!(
+        seen.shooters(&events, Target::Unit(bystander), (beside, (0, 0)))
+            .as_deref(),
+        Some("seat 1's breaker 900")
+    );
+    let far = Vec2Fx::new(Fx::from_num(10) + splash * 2, Fx::from_num(10));
+    assert_eq!(
+        seen.shooters(&events, Target::Unit(bystander), (far, (0, 0))),
+        None
+    );
+    let (name, victim, _) = seen
+        .hit_at(state.current_tick(), &state, &events, at(30, 30))
+        .expect("the dead unit is named by its death");
+    assert_eq!(name, format!("harvester {}", dead.0));
+    assert_eq!(
+        seen.shooters(&events, victim, (at(30, 30), (0, 0)))
+            .as_deref(),
+        Some("seat 1's lancer 901")
+    );
+}
