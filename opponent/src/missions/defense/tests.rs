@@ -176,3 +176,54 @@ fn only_a_siege_with_nothing_armed_in_it_is_unarmed() {
         "a gun left to production or shelling from out of sight"
     );
 }
+
+#[test]
+fn a_defense_given_up_ends_only_once_every_member_falls_back() {
+    // One defender is beside home's post and one far out: they need two
+    // orders. With room for one, the mission stays to order the other later
+    // rather than leave it on its last order.
+    let units = [
+        (0, UnitKind::Sentinel, 5, 2),
+        (0, UnitKind::Sentinel, 14, 6),
+    ];
+    let scenario = crate::tests::match_on(crate::tests::strip(false), &["West", "East"], &units);
+    let state = scenario.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let map = MapModel::from_scenario(&scenario).unwrap();
+    let frame = crate::frame::HomeFrame::of(&observation, &map).unwrap();
+    let foundry = observation.my_buildings[0].id;
+    let mut members: Vec<UnitId> = observation.my_units.iter().map(|unit| unit.id).collect();
+    members.sort_unstable();
+    let goal = TilePos::new(16, 4);
+    let post = home_post(&observation, &map, frame, goal).unwrap();
+    assert!(
+        observation
+            .my_units
+            .iter()
+            .any(|unit| unit.tile.chebyshev(post) <= RESERVE_TILES)
+            && observation
+                .my_units
+                .iter()
+                .any(|unit| unit.tile.chebyshev(post) > RESERVE_TILES),
+        "premise: one at the post and one away from it"
+    );
+    let missions: Missions = serde_json::from_value(serde_json::json!({
+        "next": 1,
+        "list": [{
+            "id": 0,
+            "task": {"task": "defend", "asset": foundry.0, "phase": {"engage": {"focus": null}}},
+            "since": 0,
+            "units": members,
+            "goal": {"x": goal.x, "y": goal.y},
+        }],
+    }))
+    .unwrap();
+    let given_up = |allowance| {
+        let mut missions = missions.clone();
+        let mut ledger = Ledger::new(PlayerId(0), 0, allowance);
+        missions.give_up(Some(0), &observation, &map, frame, goal, &mut ledger);
+        missions.list.len()
+    };
+    assert_eq!(given_up(1), 1, "one member still has its last order");
+    assert_eq!(given_up(2), 0);
+}

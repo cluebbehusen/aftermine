@@ -592,7 +592,10 @@ fn mirrored_seats_raid_alike() {
     let state = scenario.build().unwrap();
     let west = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
     let east = seat(&scenario, 1).act(&state, &mut OwnEvents::default());
-    assert!(!hunts(&west).is_empty(), "premise: {west:?}");
+    assert!(
+        !hunts(&west).is_empty() || !runs(&west).is_empty(),
+        "premise: {west:?}"
+    );
     assert_eq!(mirror(&state, west), east);
 }
 

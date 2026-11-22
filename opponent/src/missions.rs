@@ -853,10 +853,15 @@ fn hits(unit: &UnitObs, domain: Domain) -> bool {
         .any(|weapon| weapon.targets.covers(domain))
 }
 
-/// Whether `unit` is ground artillery: a walking gun that shells ground over
-/// terrain.
+/// Whether `unit` is ground artillery.
 fn walking_gun(unit: &UnitObs) -> bool {
-    let stats = unit.kind.stats();
+    artillery(unit.kind)
+}
+
+/// Whether `kind` is ground artillery: a walking gun that shells ground over
+/// terrain.
+fn artillery(kind: UnitKind) -> bool {
+    let stats = kind.stats();
     stats.domain == Domain::Ground
         && stats
             .weapons
