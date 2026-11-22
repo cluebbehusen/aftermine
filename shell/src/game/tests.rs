@@ -513,9 +513,13 @@ fn admitted_attack_alert_queues_one_protected_audio_cue() {
     )
     .expect("skirmish builds");
     game.presentation.sounds_pending.clear();
-
+    let attacked = macroquad::prelude::vec2(10.0, 10.0);
     game.presentation
-        .raise_alert(macroquad::prelude::vec2(10.0, 10.0));
+        .camera
+        .show(macroquad::prelude::vec2(1000.0, 1000.0), 64.0);
+    assert!(!game.presentation.camera.in_view(attacked, 0.0));
+
+    game.presentation.raise_alert(attacked);
     game.presentation
         .raise_alert(macroquad::prelude::vec2(11.0, 11.0));
 
@@ -527,6 +531,60 @@ fn admitted_attack_alert_queues_one_protected_audio_cue() {
     assert!(
         game.presentation.toasts.is_empty(),
         "the top-bar badge speaks for the alert"
+    );
+}
+
+#[test]
+fn attack_on_screen_marks_the_minimap_without_sounding() {
+    let mut game = Game::with_viewport(
+        Scenario::skirmish(),
+        macroquad::prelude::vec2(1280.0, 800.0),
+    )
+    .expect("skirmish builds");
+    game.presentation.sounds_pending.clear();
+    let attacked = macroquad::prelude::vec2(10.0, 10.0);
+    game.presentation.camera.show(attacked, 32.0);
+    assert!(game.presentation.camera.in_view(attacked, 0.0));
+
+    game.presentation.raise_alert(attacked);
+
+    assert!(
+        game.presentation.sounds_pending.is_empty(),
+        "an attack the player is watching needs no alarm"
+    );
+    assert_eq!(game.presentation.last_alert, Some(attacked));
+    assert_eq!(game.presentation.alerts.len(), 1);
+}
+
+#[test]
+fn an_attack_seen_on_screen_still_sounds_once_the_camera_leaves() {
+    let mut game = Game::with_viewport(
+        Scenario::skirmish(),
+        macroquad::prelude::vec2(1280.0, 800.0),
+    )
+    .expect("skirmish builds");
+    game.presentation.sounds_pending.clear();
+    let attacked = macroquad::prelude::vec2(10.0, 10.0);
+    game.presentation.camera.show(attacked, 32.0);
+    game.presentation.raise_alert(attacked);
+    assert!(game.presentation.sounds_pending.is_empty());
+
+    game.presentation
+        .camera
+        .show(macroquad::prelude::vec2(1000.0, 1000.0), 64.0);
+    assert!(!game.presentation.camera.in_view(attacked, 0.0));
+    game.presentation
+        .raise_alert(macroquad::prelude::vec2(11.0, 11.0));
+
+    assert_eq!(
+        game.presentation.sounds_pending,
+        vec![(SoundKind::Alert, None)],
+        "the silent on-screen alert must not spend the region's sound"
+    );
+    assert_eq!(
+        game.presentation.alerts.len(),
+        1,
+        "the minimap keeps its one marker"
     );
 }
 

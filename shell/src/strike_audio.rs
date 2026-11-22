@@ -3,11 +3,11 @@
 //! allied missiles, and for a hostile one over a tile the viewer sees now,
 //! or in an omniscient view (see [`crate::render::sky::missile_seen`]).
 
+use crate::audio_engine::Sound;
 use crate::game::{EffectKind, INTERCEPT_OVERLAP_TICKS, Scene, SoundKind, TICK_DT};
-use crate::loop_audio::{LoopBank, Motor, camera_gain, densest};
+use crate::loop_audio::{LoopBank, Motor, camera_voice, densest};
 use crate::render::sky::{missile_seen, warhead_track};
 use aftermine_sim::WarheadId;
-use macroquad::audio::Sound;
 
 pub(crate) const WARHEAD_VOICES: usize = 8;
 pub(crate) const INTERCEPTOR_VOICES: usize = 4;
@@ -71,9 +71,9 @@ pub(crate) fn warhead_motors(game: &Scene<'_>) -> Vec<Motor<WarheadId>> {
             None => (at, 1.0),
         };
         if envelope > 0.0 && missile_seen(game, hostile, ground) {
-            let gain = camera_gain(game, SoundKind::WarheadMotor, ground) * envelope;
-            if gain > 0.0 {
-                motors.push(Motor { key, gain });
+            let voice = camera_voice(game, SoundKind::WarheadMotor, ground).scaled(envelope);
+            if voice.gain > 0.0 {
+                motors.push(Motor { key, voice });
             }
         }
     };
@@ -129,11 +129,11 @@ pub(crate) fn interceptor_motors(game: &Scene<'_>) -> Vec<Motor<WarheadId>> {
             .state
             .hostile(game.presentation.human, launch.battery_player);
         if envelope > 0.0 && missile_seen(game, hostile, ground) {
-            let gain = camera_gain(game, SoundKind::InterceptorMotor, ground) * envelope;
-            if gain > 0.0 {
+            let voice = camera_voice(game, SoundKind::InterceptorMotor, ground).scaled(envelope);
+            if voice.gain > 0.0 {
                 motors.push(Motor {
                     key: launch.warhead,
-                    gain,
+                    voice,
                 });
             }
         }
@@ -154,11 +154,12 @@ pub(crate) fn interceptor_motors(game: &Scene<'_>) -> Vec<Motor<WarheadId>> {
             let ground = path.at(tick);
             let hostile = game.state.hostile(game.presentation.human, battery_player);
             if envelope > 0.0 && missile_seen(game, hostile, ground) {
-                let gain = camera_gain(game, SoundKind::InterceptorMotor, ground) * envelope;
-                if gain > 0.0 {
+                let voice =
+                    camera_voice(game, SoundKind::InterceptorMotor, ground).scaled(envelope);
+                if voice.gain > 0.0 {
                     motors.push(Motor {
                         key: WarheadId(seed),
-                        gain,
+                        voice,
                     });
                 }
             }

@@ -564,17 +564,24 @@ from `State::known_warheads` draws above the fog regardless, and Lattice
 launches follow `State::interception_forecast`.
 
 Simulation events enqueue audio cues. `mixer::spec` is the one table of what the
-shell decides per sound kind: clip, bus, mix weight, and whether it is a blast
-or raises combat music. Blasts, building destruction and aircraft impacts are
-audible through fog regardless of owner, at full gain inside the viewport and
-fading to silence a fixed distance beyond it. One the viewer did not witness,
-and that neither they nor an ally set off, plays set back and raises no combat
-music. Every other positioned sound follows sight and fades to silence beyond
-the viewport in proportion to its size. Same-kind events coalesce to the loudest
-emitter, and inaudible events use no voices and raise no combat music.
-Continuous sounds are owned and stopped individually and rebuilt when
-presentation resumes. Audio never feeds a simulation decision. Production sprite
-and sound bytes stay owned by their generators and approval workflows.
+shell decides per sound kind: clip, bus, mix weight, and whether it is a blast.
+Blasts, building destruction and aircraft impacts are audible through fog
+regardless of owner, at full gain inside the viewport and fading to silence a
+fixed distance beyond it. One the viewer did not witness, and that neither they
+nor an ally set off, plays set back. Every other positioned sound follows sight
+and fades to silence beyond the viewport in proportion to its size, except the
+seat's own notices, such as a unit ready, which play from where they happened
+but never drop below a floor. Same-kind events coalesce to the loudest emitter,
+and inaudible events use no voices. The score's cues follow the same knowledge:
+a siege comes from hits on the seat's own structures, a final push only from its
+units' hits on hostile structures it sees, and the fight's size, which brings up
+the fight layer and a big battle, only from gunfire it hears, counting a gun it
+cannot see by what it hits. Continuous sounds are owned and stopped individually
+and rebuilt when presentation resumes. A clip's level is a loudness target that
+the sound generator turns into its mixer gain. Settings volumes apply after each
+bus's processing, and the master output never exceeds its ceiling. Audio never
+feeds a simulation decision. Production sprite and sound bytes stay owned by
+their generators and approval workflows.
 
 The tiny-skia renderer in `aftermine-kit` produces whole-map CPU schematics. It
 shares none of the native atlas, camera, HUD or animation. CPU goldens prove
@@ -583,16 +590,16 @@ shell.
 
 ## Source and test map
 
-| Contract                      | Primary source                                                                 | Behavioral evidence                                                             |
-| ----------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| App ownership and screen flow | `shell/src/app.rs`, `shell/src/app/screen_flow.rs`, `shell/src/screens/`       | Screen-flow step tables, screen tests, `driver/tests/menu_ux.rs` (Linux CI)     |
-| Live tick and recording       | `shell/src/game.rs`                                                            | Game tests, `driver/src/smoke.rs`                                               |
-| Input and shared geometry     | `shell/src/input.rs`, `shell/src/layout.rs`, `shell/src/panel.rs`              | Input and layout tests, plus real-window drills in `driver/tests/pad_wiring.rs` |
-| Saves                         | `shell/src/autosave.rs`, `shell/src/saves.rs`, `shell/src/app/persistence.rs`  | Module tests, the persistence step table                                        |
-| Diagnostic persistence        | `kit/src/diagnostics.rs`, `shell/src/diagnostic_report.rs`                     | Module tests                                                                    |
-| Playback and seeking          | `kit/src/playback.rs`, `shell/src/screens/playback.rs`                         | Playback tests                                                                  |
-| Protocol capabilities and fog | `protocol/src/session.rs`, `protocol/src/view.rs`, `shell/src/debug_server.rs` | Protocol tests, `driver/tests/session_parity.rs`                                |
-| Native presentation           | `shell/src/look.rs`, `shell/src/render.rs`, `shell/src/assets.rs`              | Asset and look tests                                                            |
-| CPU schematics                | `kit/src/render.rs`                                                            | `driver/tests/golden.rs`                                                        |
-| Audio                         | `shell/src/mixer.rs`, `shell/src/audio_mix.rs`, `shell/src/soundtrack.rs`      | Module tests                                                                    |
-| iPad, Apple TV and Mac apps   | `apple/`, `shell/src/platform.rs`                                              | iOS and tvOS clippy in CI, device builds                                        |
+| Contract                      | Primary source                                                                                         | Behavioral evidence                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| App ownership and screen flow | `shell/src/app.rs`, `shell/src/app/screen_flow.rs`, `shell/src/screens/`                               | Screen-flow step tables, screen tests, `driver/tests/menu_ux.rs` (Linux CI)     |
+| Live tick and recording       | `shell/src/game.rs`                                                                                    | Game tests, `driver/src/smoke.rs`                                               |
+| Input and shared geometry     | `shell/src/input.rs`, `shell/src/layout.rs`, `shell/src/panel.rs`                                      | Input and layout tests, plus real-window drills in `driver/tests/pad_wiring.rs` |
+| Saves                         | `shell/src/autosave.rs`, `shell/src/saves.rs`, `shell/src/app/persistence.rs`                          | Module tests, the persistence step table                                        |
+| Diagnostic persistence        | `kit/src/diagnostics.rs`, `shell/src/diagnostic_report.rs`                                             | Module tests                                                                    |
+| Playback and seeking          | `kit/src/playback.rs`, `shell/src/screens/playback.rs`                                                 | Playback tests                                                                  |
+| Protocol capabilities and fog | `protocol/src/session.rs`, `protocol/src/view.rs`, `shell/src/debug_server.rs`                         | Protocol tests, `driver/tests/session_parity.rs`                                |
+| Native presentation           | `shell/src/look.rs`, `shell/src/render.rs`, `shell/src/assets.rs`                                      | Asset and look tests                                                            |
+| CPU schematics                | `kit/src/render.rs`                                                                                    | `driver/tests/golden.rs`                                                        |
+| Audio                         | `shell/src/audio_engine.rs`, `shell/src/mixer.rs`, `shell/src/audio_mix.rs`, `shell/src/soundtrack.rs` | Module tests                                                                    |
+| iPad, Apple TV and Mac apps   | `apple/`, `shell/src/platform.rs`                                                                      | iOS and tvOS clippy in CI, device builds                                        |

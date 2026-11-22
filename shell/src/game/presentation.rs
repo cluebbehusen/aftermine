@@ -97,8 +97,13 @@ pub struct Presentation {
     /// Per-region alert rate limiter: 8-tile cell to last raise time in
     /// fx-seconds.
     pub(super) alert_gate: HashMap<(i32, i32), f32>,
+    /// The same per region for the alert's sound, which an attack on screen
+    /// does not spend.
+    pub(super) alert_sound_gate: HashMap<(i32, i32), f32>,
     /// Presentation clock: seconds of fx time since session start.
     pub(super) fx_clock: f32,
+    /// What recent fighting asks of the music, from this seat's knowledge.
+    pub(super) pressure: crate::soundtrack::Pressure,
     /// When each remembered tile (ghost anchors, scrap, wrecks) was
     /// last actually seen, on the fx clock; drives the staleness fade. A
     /// `RefCell` because drawing borrows presentation.
@@ -430,7 +435,9 @@ impl Presentation {
             alerts: Vec::new(),
             last_alert: None,
             alert_gate: HashMap::new(),
+            alert_sound_gate: HashMap::new(),
             fx_clock: 0.0,
+            pressure: crate::soundtrack::Pressure::default(),
             layout: std::cell::Cell::new(crate::layout::LayoutModel::default()),
             passive_income: std::cell::Cell::new(None),
             panel_model: std::cell::RefCell::new(None),
@@ -489,6 +496,11 @@ impl Presentation {
     /// The effect clock that aim holds and recoil age against.
     pub fn fx_time(&self) -> f32 {
         self.fx_clock
+    }
+
+    /// What the match on screen asks of the music now.
+    pub fn score_cues(&self) -> crate::soundtrack::Cues {
+        self.pressure.cues(self.fx_clock, self.spectating())
     }
 
     /// How far the presentation clock sits between the last executed
@@ -567,9 +579,12 @@ impl Presentation {
     }
 
     /// Raises an under-attack alert, rate-limited per 8-tile region so a
-    /// running battle alerts once, not once per hit. A spectator defends no
-    /// seat, so a replay raises none for its nominal one.
+    /// running battle alerts once, not once per hit. An attack already on
+    /// screen marks the minimap without sounding, and leaves the region's
+    /// sound for when the camera moves away. A spectator defends no seat, so
+    /// a replay raises none for its nominal one.
     pub(super) fn raise_alert(&mut self, world: Vec2) {
+        const GATE_SECS: f32 = 6.0;
         if self.spectating() {
             return;
         }
@@ -578,17 +593,18 @@ impl Presentation {
             numeric::to_i32(world.y / 8.0),
         );
         let now = self.fx_clock;
-        if self
-            .alert_gate
-            .get(&cell)
-            .is_some_and(|&last| now - last < 6.0)
-        {
-            return;
+        let open = |gate: &HashMap<(i32, i32), f32>| {
+            gate.get(&cell).is_none_or(|&last| now - last >= GATE_SECS)
+        };
+        if open(&self.alert_gate) {
+            self.alert_gate.insert(cell, now);
+            self.alerts.push((world, 0.0, AlertKind::Attack));
+            self.last_alert = Some(world);
         }
-        self.alert_gate.insert(cell, now);
-        self.alerts.push((world, 0.0, AlertKind::Attack));
-        self.last_alert = Some(world);
-        self.sounds_pending.push((SoundKind::Alert, None));
+        if !self.camera.in_view(world, 0.0) && open(&self.alert_sound_gate) {
+            self.alert_sound_gate.insert(cell, now);
+            self.sounds_pending.push((SoundKind::Alert, None));
+        }
     }
 
     /// Marks an incoming hostile warhead on the minimap and plays its
@@ -1074,6 +1090,8 @@ impl Presentation {
         self.passive_income.set(None);
         self.staged.get_mut().take();
         self.fog_veil.get_mut().forget();
+        // The guns and hits the score heard belong to the timeline left behind.
+        self.pressure = crate::soundtrack::Pressure::default();
     }
 }
 

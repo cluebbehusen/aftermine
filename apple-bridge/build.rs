@@ -1,7 +1,7 @@
 //! Compiles the Objective-C half for the Apple targets: user defaults, the
 //! key-value store and CloudKit everywhere, iCloud Drive where it exists,
-//! which is not Apple TV, and the idle timer and background tasks where
-//! `UIKit` exists, which is not the Mac.
+//! which is not Apple TV, and the idle timer, background tasks and audio
+//! session where `UIKit` exists, which is not the Mac.
 
 fn main() {
     println!("cargo:rerun-if-changed=src/application.m");
@@ -32,6 +32,7 @@ fn main() {
         println!("cargo:rustc-link-lib=framework=CloudKit");
         if uikit {
             println!("cargo:rustc-link-lib=framework=UIKit");
+            println!("cargo:rustc-link-lib=framework=AVFAudio");
         }
     }
 }

@@ -3,7 +3,7 @@ name = "aftermine-apple-bridge"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
-description = "The Objective-C bridge to Apple's frameworks: iCloud Drive files, the key-value store, a CloudKit record mirror, user defaults, the idle timer and background time"
+description = "The Objective-C bridge to Apple's frameworks: iCloud Drive files, the key-value store, a CloudKit record mirror, user defaults, the idle timer, background time and the audio session"
 
 [dependencies]
 serde = { workspace = true }

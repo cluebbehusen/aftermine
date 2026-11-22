@@ -26,29 +26,8 @@ fn field(
 
 fn grinding(game: &Game, maw: UnitId) -> bool {
     maw_motors(&game.view())
-        .0
         .iter()
         .any(|motor| motor.key == maw)
-}
-
-fn humming(game: &Game, maw: UnitId) -> Option<f32> {
-    maw_motors(&game.view())
-        .1
-        .iter()
-        .find(|motor| motor.key == maw)
-        .map(|motor| motor.gain)
-}
-
-/// Whether the frame's Maw loops raise the score, with no clips to play.
-fn raises_score(game: &Game, running: bool) -> bool {
-    update(
-        &mut MawLoops::default(),
-        &mut MawLoops::default(),
-        &game.view(),
-        running,
-        (&[], &[]),
-        (1.0, 1.0),
-    )
 }
 
 fn cut(report: &aftermine_sim::TickReport, maw: UnitId) -> bool {
@@ -97,10 +76,9 @@ fn a_maw_s_drum_is_heard_from_its_first_hit_until_just_after_the_building_falls(
     }
     assert!(hits > 2);
     assert!(
-        raises_score(&game, true),
-        "a cut raises the score like a report"
+        game.presentation.score_cues().guns > 0,
+        "a cut counts toward the score's fight like a report"
     );
-    assert!(!raises_score(&game, false), "nothing sounds while paused");
     while grinding(&game, maw) {
         game.do_tick();
         assert!(
@@ -111,7 +89,6 @@ fn a_maw_s_drum_is_heard_from_its_first_hit_until_just_after_the_building_falls(
     for _ in 0..40 {
         game.do_tick();
         assert!(!grinding(&game, maw));
-        assert_eq!(humming(&game, maw), None, "an unhurt Maw's kiln stays cold");
     }
 }
 
@@ -147,7 +124,7 @@ fn a_hostile_maw_is_heard_only_while_it_is_seen() {
 }
 
 #[test]
-fn a_maw_s_kiln_hums_while_its_belt_runs_and_stops_with_the_belt() {
+fn a_maw_feeding_its_kiln_is_not_heard_as_cutting() {
     let (game, maw) = field(&[(0, UnitKind::Maw, 12, 10)], &[]);
     // Wounded, with a little wreck ahead of it.
     let mut wire = serde_json::to_value(&*game.state).unwrap();
@@ -171,34 +148,19 @@ fn a_maw_s_kiln_hums_while_its_belt_runs_and_stops_with_the_belt() {
             game.state.current_tick() < 600,
             "the Maw never reached the wreck"
         );
-        assert_eq!(humming(&game, maw), None, "a cold kiln is silent");
         game.do_tick();
     }
     game.presentation.camera.center =
         game.presentation
             .draw_pos(maw, game.state.unit(maw).unwrap().pos, 1.0);
-    let mut gains = Vec::new();
     while game.state.kiln_fuel(maw).is_some() {
         assert!(game.state.current_tick() < 1_200, "the kiln never ran dry");
         game.do_tick();
-        gains.push(humming(&game, maw).unwrap_or(0.0));
         assert!(!grinding(&game, maw), "feeding is not cutting");
-        assert!(!raises_score(&game, true), "nor does it raise the score");
-    }
-    assert!(
-        gains[0] > 0.0 && gains[0] < gains[gains.len() - 1],
-        "the hum swells as the belt starts: {gains:?}"
-    );
-    let dry = game.state.current_tick();
-    while humming(&game, maw).is_some() {
-        assert!(
-            game.state.current_tick() < dry + 80,
-            "the belt never stopped"
+        assert_eq!(
+            game.presentation.score_cues().guns,
+            0,
+            "nor does it count toward the score's fight"
         );
-        game.do_tick();
     }
-    assert!(
-        game.state.current_tick() > dry + 30,
-        "the belt runs on, and the kiln hums, until its last load is in"
-    );
 }

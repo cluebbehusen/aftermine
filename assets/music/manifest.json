@@ -1,0 +1,483 @@
+{
+ "sample_rate": 44100,
+ "pieces": [
+  {
+   "id": "song1",
+   "role": "match",
+   "sections": [
+    {
+     "name": "I",
+     "kind": "I",
+     "body": 920348,
+     "frames": 1184948,
+     "files": {
+      "calm": "song1/00_I_calm.ogg",
+      "fight": "song1/00_I_fight.ogg"
+     }
+    },
+    {
+     "name": "A",
+     "kind": "A",
+     "body": 920348,
+     "frames": 1184948,
+     "files": {
+      "calm": "song1/01_A_calm.ogg",
+      "fight": "song1/01_A_fight.ogg"
+     }
+    },
+    {
+     "name": "B",
+     "kind": "B",
+     "body": 920347,
+     "frames": 1184947,
+     "files": {
+      "calm": "song1/02_B_calm.ogg",
+      "fight": "song1/02_B_fight.ogg"
+     }
+    },
+    {
+     "name": "C",
+     "kind": "C",
+     "body": 920348,
+     "frames": 1184948,
+     "files": {
+      "calm": "song1/03_C_calm.ogg",
+      "fight": "song1/03_C_fight.ogg"
+     }
+    },
+    {
+     "name": "Br",
+     "kind": "Br",
+     "body": 920348,
+     "frames": 1184948,
+     "files": {
+      "calm": "song1/04_Br_calm.ogg",
+      "fight": "song1/04_Br_fight.ogg"
+     }
+    },
+    {
+     "name": "A2",
+     "kind": "A",
+     "body": 920348,
+     "frames": 1184948,
+     "files": {
+      "calm": "song1/05_A2_calm.ogg",
+      "fight": "song1/05_A2_fight.ogg"
+     }
+    },
+    {
+     "name": "C2",
+     "kind": "C",
+     "body": 920348,
+     "frames": 1184948,
+     "files": {
+      "calm": "song1/06_C2_calm.ogg",
+      "fight": "song1/06_C2_fight.ogg"
+     }
+    },
+    {
+     "name": "S",
+     "kind": "S",
+     "body": 920348,
+     "frames": 1184948,
+     "files": {
+      "calm": "song1/07_S_calm.ogg",
+      "fight": "song1/07_S_fight.ogg"
+     }
+    },
+    {
+     "name": "F",
+     "kind": "F",
+     "body": 920347,
+     "frames": 1184947,
+     "files": {
+      "calm": "song1/08_F_calm.ogg",
+      "fight": "song1/08_F_fight.ogg"
+     }
+    }
+   ]
+  },
+  {
+   "id": "song2",
+   "role": "match",
+   "sections": [
+    {
+     "name": "I",
+     "kind": "I",
+     "body": 1008000,
+     "frames": 1272600,
+     "files": {
+      "calm": "song2/00_I_calm.ogg",
+      "fight": "song2/00_I_fight.ogg"
+     }
+    },
+    {
+     "name": "A",
+     "kind": "A",
+     "body": 1008000,
+     "frames": 1272600,
+     "files": {
+      "calm": "song2/01_A_calm.ogg",
+      "fight": "song2/01_A_fight.ogg"
+     }
+    },
+    {
+     "name": "B",
+     "kind": "B",
+     "body": 1008000,
+     "frames": 1272600,
+     "files": {
+      "calm": "song2/02_B_calm.ogg",
+      "fight": "song2/02_B_fight.ogg"
+     }
+    },
+    {
+     "name": "C",
+     "kind": "C",
+     "body": 1008000,
+     "frames": 1272600,
+     "files": {
+      "calm": "song2/03_C_calm.ogg",
+      "fight": "song2/03_C_fight.ogg"
+     }
+    },
+    {
+     "name": "Br",
+     "kind": "Br",
+     "body": 1008000,
+     "frames": 1272600,
+     "files": {
+      "calm": "song2/04_Br_calm.ogg",
+      "fight": "song2/04_Br_fight.ogg"
+     }
+    },
+    {
+     "name": "A2",
+     "kind": "A",
+     "body": 1008000,
+     "frames": 1272600,
+     "files": {
+      "calm": "song2/05_A2_calm.ogg",
+      "fight": "song2/05_A2_fight.ogg"
+     }
+    },
+    {
+     "name": "S",
+     "kind": "S",
+     "body": 1008000,
+     "frames": 1272600,
+     "files": {
+      "calm": "song2/06_S_calm.ogg",
+      "fight": "song2/06_S_fight.ogg"
+     }
+    },
+    {
+     "name": "F",
+     "kind": "F",
+     "body": 1008000,
+     "frames": 1272600,
+     "files": {
+      "calm": "song2/07_F_calm.ogg",
+      "fight": "song2/07_F_fight.ogg"
+     }
+    }
+   ]
+  },
+  {
+   "id": "song3",
+   "role": "match",
+   "sections": [
+    {
+     "name": "I",
+     "kind": "I",
+     "body": 814154,
+     "frames": 1078754,
+     "files": {
+      "calm": "song3/00_I_calm.ogg",
+      "fight": "song3/00_I_fight.ogg"
+     }
+    },
+    {
+     "name": "A",
+     "kind": "A",
+     "body": 814154,
+     "frames": 1078754,
+     "files": {
+      "calm": "song3/01_A_calm.ogg",
+      "fight": "song3/01_A_fight.ogg"
+     }
+    },
+    {
+     "name": "B",
+     "kind": "B",
+     "body": 814154,
+     "frames": 1078754,
+     "files": {
+      "calm": "song3/02_B_calm.ogg",
+      "fight": "song3/02_B_fight.ogg"
+     }
+    },
+    {
+     "name": "C",
+     "kind": "C",
+     "body": 814153,
+     "frames": 1078753,
+     "files": {
+      "calm": "song3/03_C_calm.ogg",
+      "fight": "song3/03_C_fight.ogg"
+     }
+    },
+    {
+     "name": "Br",
+     "kind": "Br",
+     "body": 814154,
+     "frames": 1078754,
+     "files": {
+      "calm": "song3/04_Br_calm.ogg",
+      "fight": "song3/04_Br_fight.ogg"
+     }
+    },
+    {
+     "name": "A2",
+     "kind": "A",
+     "body": 814154,
+     "frames": 1078754,
+     "files": {
+      "calm": "song3/05_A2_calm.ogg",
+      "fight": "song3/05_A2_fight.ogg"
+     }
+    },
+    {
+     "name": "C2",
+     "kind": "C",
+     "body": 814154,
+     "frames": 1078754,
+     "files": {
+      "calm": "song3/06_C2_calm.ogg",
+      "fight": "song3/06_C2_fight.ogg"
+     }
+    },
+    {
+     "name": "S",
+     "kind": "S",
+     "body": 814154,
+     "frames": 1078754,
+     "files": {
+      "calm": "song3/07_S_calm.ogg",
+      "fight": "song3/07_S_fight.ogg"
+     }
+    },
+    {
+     "name": "F",
+     "kind": "F",
+     "body": 814154,
+     "frames": 1078754,
+     "files": {
+      "calm": "song3/08_F_calm.ogg",
+      "fight": "song3/08_F_fight.ogg"
+     }
+    }
+   ]
+  },
+  {
+   "id": "song4",
+   "role": "match",
+   "sections": [
+    {
+     "name": "I",
+     "kind": "I",
+     "body": 1114105,
+     "frames": 1378705,
+     "files": {
+      "calm": "song4/00_I_calm.ogg",
+      "fight": "song4/00_I_fight.ogg"
+     }
+    },
+    {
+     "name": "A",
+     "kind": "A",
+     "body": 1114106,
+     "frames": 1378706,
+     "files": {
+      "calm": "song4/01_A_calm.ogg",
+      "fight": "song4/01_A_fight.ogg"
+     }
+    },
+    {
+     "name": "B",
+     "kind": "B",
+     "body": 1114105,
+     "frames": 1378705,
+     "files": {
+      "calm": "song4/02_B_calm.ogg",
+      "fight": "song4/02_B_fight.ogg"
+     }
+    },
+    {
+     "name": "C",
+     "kind": "C",
+     "body": 1114105,
+     "frames": 1378705,
+     "files": {
+      "calm": "song4/03_C_calm.ogg",
+      "fight": "song4/03_C_fight.ogg"
+     }
+    },
+    {
+     "name": "Br",
+     "kind": "Br",
+     "body": 1114105,
+     "frames": 1378705,
+     "files": {
+      "calm": "song4/04_Br_calm.ogg",
+      "fight": "song4/04_Br_fight.ogg"
+     }
+    },
+    {
+     "name": "A2",
+     "kind": "A",
+     "body": 1114106,
+     "frames": 1378706,
+     "files": {
+      "calm": "song4/05_A2_calm.ogg",
+      "fight": "song4/05_A2_fight.ogg"
+     }
+    },
+    {
+     "name": "S",
+     "kind": "S",
+     "body": 1114105,
+     "frames": 1378705,
+     "files": {
+      "calm": "song4/06_S_calm.ogg",
+      "fight": "song4/06_S_fight.ogg"
+     }
+    },
+    {
+     "name": "F",
+     "kind": "F",
+     "body": 1114105,
+     "frames": 1378705,
+     "files": {
+      "calm": "song4/07_F_calm.ogg",
+      "fight": "song4/07_F_fight.ogg"
+     }
+    }
+   ]
+  },
+  {
+   "id": "menu",
+   "role": "menu",
+   "sections": [
+    {
+     "name": "M1",
+     "kind": "M1",
+     "body": 1058400,
+     "frames": 1323000,
+     "files": {
+      "main": "menu/00_M1_main.ogg"
+     }
+    },
+    {
+     "name": "M2",
+     "kind": "M2",
+     "body": 1058400,
+     "frames": 1323000,
+     "files": {
+      "main": "menu/01_M2_main.ogg"
+     }
+    },
+    {
+     "name": "M3",
+     "kind": "M3",
+     "body": 1058400,
+     "frames": 1323000,
+     "files": {
+      "main": "menu/02_M3_main.ogg"
+     }
+    },
+    {
+     "name": "M4",
+     "kind": "M4",
+     "body": 1058400,
+     "frames": 1323000,
+     "files": {
+      "main": "menu/03_M4_main.ogg"
+     }
+    }
+   ]
+  },
+  {
+   "id": "victory",
+   "role": "victory",
+   "sections": [
+    {
+     "name": "I",
+     "kind": "I",
+     "body": 588000,
+     "frames": 852600,
+     "files": {
+      "main": "victory/00_I_main.ogg"
+     }
+    },
+    {
+     "name": "L",
+     "kind": "L",
+     "body": 1176000,
+     "frames": 1440600,
+     "files": {
+      "main": "victory/01_L_main.ogg"
+     }
+    }
+   ]
+  },
+  {
+   "id": "defeat",
+   "role": "defeat",
+   "sections": [
+    {
+     "name": "I",
+     "kind": "I",
+     "body": 641455,
+     "frames": 906055,
+     "files": {
+      "main": "defeat/00_I_main.ogg"
+     }
+    },
+    {
+     "name": "L",
+     "kind": "L",
+     "body": 1282909,
+     "frames": 1547509,
+     "files": {
+      "main": "defeat/01_L_main.ogg"
+     }
+    }
+   ]
+  },
+  {
+   "id": "draw",
+   "role": "draw",
+   "sections": [
+    {
+     "name": "I",
+     "kind": "I",
+     "body": 588000,
+     "frames": 852600,
+     "files": {
+      "main": "draw/00_I_main.ogg"
+     }
+    },
+    {
+     "name": "L",
+     "kind": "L",
+     "body": 1176000,
+     "frames": 1440600,
+     "files": {
+      "main": "draw/01_L_main.ogg"
+     }
+    }
+   ]
+  }
+ ]
+}
