@@ -100,20 +100,20 @@ actions affect the running total and mission state.
   clear shot at it within a ground unit's own reach; ground an own or allied
   Foundry holds is home. An expansion Foundry also scores what its support would
   pay back to the seat's stranded remote Extractors, and one bought for that
-  waits until the army holds the known enemy. A Crucible still to buy counts
-  toward the first Deep Bore's price. A Deep Bore competes as soon as an
-  Extractor the seat's Foundry supports stands, whether or not harvesting is
-  saturated; Reclaimers wait until it is and the scrap around the start has
-  begun to run down. Growth outranks tech by what it pays back, never by a rule
-  that holds tech down.
+  waits until the army holds the known enemy. A Crucible still to buy, and the
+  Fabricator it needs, count toward the first Deep Bore's price. A Deep Bore
+  competes as soon as an Extractor the seat's Foundry supports stands, whether
+  or not harvesting is saturated; Reclaimers wait until it is and the scrap
+  around the start has begun to run down. Growth outranks tech by what it pays
+  back, never by a rule that holds tech down.
 - A site of frames alone is taken once an ally's Foundry supports one of its
   frames, so teammates do not crowd one expansion, or once the seat's own
   Foundries support every frame no other seat holds. An enemy's Foundry never
   takes it.
 - The top investment is funded through its next purchasable step. The Deep Bore
   upgrade is wanted before the Crucible it needs stands, so its worth funds the
-  Crucible as that step. The bot keeps one optional saving target with its
-  price, reason and cancel conditions.
+  Fabricator the Crucible needs and then the Crucible as those steps. The bot
+  keeps one optional saving target with its price, reason and cancel conditions.
 - Income is not observed directly. The bot estimates it from the change in bank
   since the previous decision plus its own spending in between.
 - While saving, a share of income is protected for the target, capped by the

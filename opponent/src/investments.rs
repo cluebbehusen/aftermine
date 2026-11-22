@@ -283,13 +283,19 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
             tier: 1,
         };
         let crucible = !built(observation, BuildingKind::Crucible);
-        // Until a Crucible stands its price is part of the first Deep Bore's.
-        let price = BuildingKind::Extractor.tier_stats(1).construction.cost
-            + if crucible {
-                expansion::construction_cost(BuildingKind::Crucible)
-            } else {
-                0
-            };
+        // Until a Crucible stands its price is part of the first Deep Bore's,
+        // and so is the Fabricator's it needs while none is bought.
+        let tech = if crucible {
+            expansion::construction_cost(BuildingKind::Crucible)
+                + if owned(BuildingKind::Fabricator) == 0 {
+                    expansion::construction_cost(BuildingKind::Fabricator)
+                } else {
+                    0
+                }
+        } else {
+            0
+        };
+        let price = BuildingKind::Extractor.tier_stats(1).construction.cost + tech;
         let gain = expansion::yield_per_minute(1, true) - expansion::yield_per_minute(0, true);
         let score = expansion::payback(gain, u64::from(price), traits.greed);
         list.push((deep_bore, grown(score, situation.economy)));
@@ -455,7 +461,7 @@ pub(crate) fn step(
                 .find(|required| !met(observation, **required))
             {
                 None => Some((Step::Upgrade(building.id), upgrade.cost)),
-                Some(missing) => requirement_step(observation, frame, *missing, 2),
+                Some(missing) => requirement_step(observation, frame, *missing, 3),
             }
         }
     }
