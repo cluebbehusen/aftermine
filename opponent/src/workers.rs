@@ -337,15 +337,18 @@ pub(crate) fn run(
     map: &MapModel,
     frame: HomeFrame,
     memory: &Memory,
-    hazards: &[Hazard],
+    (hazards, unseen): (&[Hazard], &[BuildingId]),
     staffing: &Staffing,
     patients: &[UnitId],
     (support, home_lines): (u8, bool),
     ledger: &mut Ledger,
 ) {
     flee(observation, map, frame, hazards, home_lines, ledger);
+    // Nobody goes to a structure hit by fire the seat cannot see: it cannot
+    // tell whether a worker there would pay its way.
     let open = |site: &BuildingObs, sent: &[&UnitObs]| {
-        !memory.failed(site.kind, site.anchor, observation.tick)
+        !unseen.contains(&site.id)
+            && !memory.failed(site.kind, site.anchor, observation.tick)
             && crate::placement::stands(
                 observation,
                 map,
@@ -356,10 +359,10 @@ pub(crate) fn run(
             )
     };
     cancel_doomed(observation, map, memory, ledger);
-    let pulled = withdraw(observation, map, frame, memory, hazards, ledger);
+    let pulled = withdraw(observation, map, frame, memory, (hazards, unseen), ledger);
     resume_sites(observation, map, frame, &open, ledger);
     crew_cradles(observation, map, frame, &pulled, &open, ledger);
-    weld(observation, map, frame, memory, ledger);
+    weld(observation, map, frame, (memory, unseen), ledger);
     weld_units(
         observation,
         map,
@@ -558,7 +561,7 @@ fn weld(
     observation: &ObservationData,
     map: &MapModel,
     frame: HomeFrame,
-    memory: &Memory,
+    (memory, unseen): (&Memory, &[BuildingId]),
     ledger: &mut Ledger,
 ) {
     // Buildings a worker already welds, on order or on its own.
@@ -575,7 +578,7 @@ fn weld(
         .my_buildings
         .iter()
         .filter(|building| building.built && !building.provisional)
-        .filter(|building| !tended.contains(&building.id))
+        .filter(|building| !tended.contains(&building.id) && !unseen.contains(&building.id))
         .filter_map(|building| {
             let stats = building.kind.tier_stats(building.tier);
             let (hp, max) = (u64::from(building.hp), u64::from(stats.max_hp.max(1)));
@@ -784,7 +787,7 @@ fn withdraw(
     map: &MapModel,
     frame: HomeFrame,
     memory: &Memory,
-    hazards: &[Hazard],
+    (hazards, unseen): (&[Hazard], &[BuildingId]),
     ledger: &mut Ledger,
 ) -> Vec<BuildingId> {
     let mut leaving: Vec<UnitId> = Vec::new();
@@ -796,14 +799,15 @@ fn withdraw(
     {
         let crew = attending(observation, site);
         if !crew.is_empty()
-            && !crate::placement::stands(
-                observation,
-                map,
-                memory,
-                Raising::of(observation, site),
-                &[],
-                &crew,
-            )
+            && (unseen.contains(&site.id)
+                || !crate::placement::stands(
+                    observation,
+                    map,
+                    memory,
+                    Raising::of(observation, site),
+                    &[],
+                    &crew,
+                ))
         {
             leaving.extend(crew.iter().map(|unit| unit.id));
             pulled.push(site.id);
@@ -820,14 +824,22 @@ fn withdraw(
         let Some(building) = observation.my_buildings.iter().find(|own| own.id == id) else {
             continue;
         };
-        if !crate::placement::mends(observation, map, memory, building, welder) {
+        if unseen.contains(&id)
+            || !crate::placement::mends(observation, map, memory, building, welder)
+        {
             leaving.push(welder.id);
         }
     }
     leaving.sort_unstable();
     leaving.dedup();
     let foundries: Vec<&BuildingObs> = built_foundries(&observation.my_buildings).collect();
-    let covered = |tile: TilePos| hazards.iter().any(|hazard| hazard.covers(doubled(tile)));
+    let known = |tile: TilePos| hazards.iter().any(|hazard| hazard.covers(doubled(tile)));
+    let unseen_fire = |tile: TilePos| {
+        observation
+            .salvage_incidents
+            .iter()
+            .any(|incident| incident.chebyshev(tile) <= HARVEST_INCIDENT_DANGER_RADIUS)
+    };
     for id in leaving {
         let Some(unit) = observation.my_units.iter().find(|unit| unit.id == id) else {
             continue;
@@ -835,7 +847,12 @@ fn withdraw(
         if ledger.employs(id) {
             continue;
         }
-        let Some(refuge) = refuge(map, frame, &foundries, unit.tile, |tile| !covered(tile)) else {
+        // Out of known fire, and of where fire nobody sees has landed when
+        // some refuge is; off the job at least when none is.
+        let Some(refuge) = refuge(map, frame, &foundries, unit.tile, |tile| {
+            !known(tile) && !unseen_fire(tile)
+        })
+        .or_else(|| refuge(map, frame, &foundries, unit.tile, |tile| !known(tile))) else {
             continue;
         };
         if !ledger.order(Command::Run {

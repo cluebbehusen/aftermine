@@ -467,9 +467,10 @@ masts and from machines whose radar is up. A contact carries a tile and a domain
 but no owner, kind or entity id. Radar matching across ticks uses only reported
 movement, and contact ids are never reused.
 
-A hit on a machine that can harvest or scout, or an allied loss, from an
-attacker the victim's team cannot see leaves an incident. It remembers only the
-victim's tile, for a bounded caution period, and never the attacker.
+A hit on a machine that can harvest or scout or on a structure other than a
+Foundry, or an allied loss, from an attacker the victim's team cannot see leaves
+an incident. It remembers only the victim's tile, for a bounded caution period,
+and never the attacker.
 
 All allegiance checks go through normalized team ids. Teammates share vision,
 cannot target one another, and win or lose together. A resigned seat can no
