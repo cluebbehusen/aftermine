@@ -295,3 +295,31 @@ fn only_the_site_owner_s_builder_beside_it_comes_first() {
     assert_eq!(quarry(&builder), Some(AttackTarget::Unit(builder.id)));
     assert_eq!(quarry(&passer), Some(AttackTarget::Building(site.id)));
 }
+
+#[test]
+fn a_sapper_is_no_unarmed_intruder() {
+    let (observation, ids) = viewed(&[
+        (0, UnitKind::Sentinel, 3, 4),
+        (1, UnitKind::Sapper, 5, 4),
+        (1, UnitKind::Surveyor, 5, 6),
+    ]);
+    assert!(!intruder(&observation, Some(ids[1])));
+    assert!(intruder(&observation, Some(ids[2])));
+}
+
+#[test]
+fn only_a_member_that_can_hit_a_site_ends_its_attack_by_standing_idle() {
+    let (mut observation, ids) = viewed(&[
+        (0, UnitKind::Sentinel, 3, 4),
+        (0, UnitKind::Flakhound, 3, 6),
+    ]);
+    let site = Pursuit::Quarry(AttackTarget::Building(aftermine_sim::BuildingId(77)));
+    for unit in &mut observation.my_units {
+        unit.idle = unit.kind == UnitKind::Flakhound;
+    }
+    assert!(!idle_at_site(&observation, &ids, site));
+    for unit in &mut observation.my_units {
+        unit.idle = true;
+    }
+    assert!(idle_at_site(&observation, &ids, site));
+}
