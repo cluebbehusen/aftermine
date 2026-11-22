@@ -616,6 +616,7 @@ pub(crate) fn emergency(
                         && placement::stands(
                             observation,
                             map,
+                            memory,
                             placement::Raising::fresh(kind, anchor),
                             &[],
                             builder(anchor).as_slice(),

@@ -611,6 +611,7 @@ fn a_site_far_from_its_builder_must_outlast_the_walk() {
         crate::placement::stands(
             &observation,
             &map,
+            &crate::memory::Memory::default(),
             crate::placement::Raising::fresh(BuildingKind::Turret, anchor),
             &[],
             &[builder],
@@ -643,6 +644,7 @@ fn a_worker_on_the_far_side_of_a_site_is_outside_a_gun_s_blind_ring() {
         !crate::placement::stands(
             &observation,
             &map,
+            &crate::memory::Memory::default(),
             crate::placement::Raising::fresh(BuildingKind::Fabricator, anchor),
             &[],
             &[builder],
@@ -1560,4 +1562,409 @@ fn a_seat_saving_for_tech_turns_to_a_free_extractor_frame_at_every_rung() {
             "{difficulty:?}"
         );
     }
+}
+
+#[test]
+fn a_shooter_remembered_out_of_sight_still_counts_against_a_site() {
+    // An East Lancer seen beside a Turret site has stepped out of sight. Its
+    // fire still counts, by how sure the seat is it is still there: a gun that
+    // outranges what it hits shoots from the fog.
+    let anchor = TilePos::new(10, 3);
+    let built = |lancer: bool| {
+        let mut scenario = arena(400);
+        scenario.units.push(unit(0, UnitKind::Harvester, 9, 2));
+        if lancer {
+            scenario.units.push(unit(1, UnitKind::Lancer, 14, 3));
+        }
+        let state = scenario.build().unwrap();
+        (scenario, state)
+    };
+    let (_, seen) = built(true);
+    let mut memory = Memory::default();
+    memory.observe_stranded(&ObservationData::fog_honest(&seen, PlayerId(0)), |_| false);
+    let (scenario, gone) = built(false);
+    let observation = ObservationData::fog_honest(&gone, PlayerId(0));
+    let builder = observation
+        .my_units
+        .iter()
+        .find(|unit| unit.tile == TilePos::new(9, 2))
+        .unwrap();
+    let map = map(&scenario);
+    let stands = |memory: &Memory| {
+        crate::placement::stands(
+            &observation,
+            &map,
+            memory,
+            crate::placement::Raising::fresh(BuildingKind::Turret, anchor),
+            &[],
+            &[builder],
+        )
+    };
+    assert!(stands(&Memory::default()), "premise: nothing in sight");
+    assert!(
+        !stands(&memory),
+        "the remembered Lancer kills the builder first"
+    );
+}
+
+#[test]
+fn a_crew_the_fire_would_kill_before_it_paid_leaves_its_site() {
+    // An East Sentinel comes on a West Harvester raising a Turret site. The
+    // site would stand, but the builder would not pay its way under that
+    // fire: it runs back beside the Foundry rather than build until it falls.
+    let site = TilePos::new(10, 3);
+    let mut scenario = arena(400);
+    scenario.units.push(unit(1, UnitKind::Sentinel, 16, 3));
+    let mut state = scenario.build().unwrap();
+    let builder = at(&state, 7, 6);
+    state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Build {
+            units: vec![builder],
+            kind: BuildingKind::Turret,
+            anchor: site,
+            queue: false,
+            defer: false,
+        },
+    }]);
+    let building = |state: &State| {
+        state.unit(builder).is_some_and(|unit| {
+            ObservationData::fog_honest(state, PlayerId(0))
+                .my_units
+                .iter()
+                .any(|own| own.id == unit.id && own.site.is_some())
+        })
+    };
+    while !building(&state) && state.current_tick() < 600 {
+        state.tick(&[]);
+    }
+    assert!(building(&state), "premise: the builder reached its site");
+    let raider = at(&state, 16, 3);
+    let next = state.current_tick().next_multiple_of(12);
+    advance_to(
+        &mut state,
+        next,
+        &[PlayerCommand {
+            player: PlayerId(1),
+            command: Command::Run {
+                units: vec![raider],
+                goal: TilePos::new(13, 3),
+                queue: false,
+            },
+        }],
+    );
+    while ObservationData::fog_honest(&state, PlayerId(0))
+        .enemy_units
+        .is_empty()
+        && state.current_tick() < 1_200
+    {
+        let next = (state.current_tick() + 1).next_multiple_of(12);
+        advance_to(&mut state, next, &[]);
+    }
+    assert!(state.unit(builder).is_some(), "premise: the builder stands");
+    let mut opponent = seat_with(&scenario, 0, thrifty());
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    let foundry = state
+        .buildings()
+        .iter()
+        .find(|building| building.player == PlayerId(0) && building.kind == BuildingKind::Foundry)
+        .unwrap();
+    let beside: Vec<TilePos> =
+        crate::frame::ring(foundry.anchor, BuildingKind::Foundry.size()).collect();
+    assert!(
+        runs(&commands)
+            .iter()
+            .any(|(units, goal)| units.contains(&builder) && beside.contains(goal)),
+        "{commands:?}"
+    );
+    // While that fire stands, nobody is sent back to the site.
+    state.tick(&commands);
+    let next = state.current_tick().next_multiple_of(12);
+    advance_to(&mut state, next, &[]);
+    let later = opponent.act(&state, &mut OwnEvents::default());
+    assert!(
+        builds(&later).iter().all(|(_, anchor)| *anchor != site),
+        "{later:?}"
+    );
+}
+
+#[test]
+fn a_welder_the_fire_would_kill_before_it_paid_leaves_the_building() {
+    // A West Harvester welds a Fabricator on order while an East Lancer
+    // shoots it. One of its shots kills the welder, so the weld would not pay
+    // its way under that fire: the welder runs back beside the Foundry rather
+    // than weld until it falls.
+    let mut scenario = arena(400);
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Fabricator,
+        x: 10,
+        y: 2,
+    });
+    scenario.units.push(unit(1, UnitKind::Lancer, 14, 3));
+    let mut state = scenario.build().unwrap();
+    let welder = at(&state, 7, 6);
+    let fabricator = state
+        .buildings()
+        .iter()
+        .find(|building| building.kind == BuildingKind::Fabricator)
+        .unwrap()
+        .id;
+    let raider = at(&state, 14, 3);
+    state.tick(&[PlayerCommand {
+        player: PlayerId(1),
+        command: Command::Attack {
+            units: vec![raider],
+            target: AttackTarget::Building(fabricator),
+            queue: false,
+        },
+    }]);
+    let damaged = |state: &State| {
+        state.buildings().iter().any(|building| {
+            building.id == fabricator && building.hp < building.kind.base_stats().max_hp
+        })
+    };
+    while !damaged(&state) && state.current_tick() < 600 {
+        state.tick(&[]);
+    }
+    assert!(damaged(&state), "premise: the Lancer hits the Fabricator");
+    state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Repair {
+            units: vec![welder],
+            building: fabricator,
+            queue: false,
+        },
+    }]);
+    let welding = |state: &State| {
+        ObservationData::fog_honest(state, PlayerId(0))
+            .my_units
+            .iter()
+            .any(|unit| {
+                unit.id == welder
+                    && unit.repair == Some(aftermine_sim::observation::RepairWork::Ordered)
+                    && unit.tile.chebyshev(TilePos::new(10, 2)) <= 3
+            })
+    };
+    while !welding(&state) && state.current_tick() < 1_200 {
+        state.tick(&[]);
+    }
+    assert!(welding(&state), "premise: the welder is at it under fire");
+    let next = state.current_tick().next_multiple_of(12);
+    advance_to(&mut state, next, &[]);
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(
+        runs(&commands)
+            .iter()
+            .any(|(units, _)| units.contains(&welder)),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn a_welder_with_no_refuge_out_of_the_fire_keeps_welding() {
+    // East Lancers shell West's Foundry and cover every tile beside it. A
+    // welder at it would not pay its way, but with nowhere out of the fire to
+    // go it keeps welding; given a second Foundry out of reach, it goes there.
+    let welded = |refuge: bool| {
+        let mut scenario = field();
+        scenario.players[0].scrap = 400;
+        if refuge {
+            scenario.buildings.push(BuildingSpec {
+                player: 0,
+                kind: BuildingKind::Foundry,
+                x: 20,
+                y: 20,
+            });
+        }
+        scenario.units.extend([
+            unit(0, UnitKind::Harvester, 5, 13),
+            unit(1, UnitKind::Lancer, 8, 11),
+            unit(1, UnitKind::Lancer, 8, 12),
+        ]);
+        let mut state = scenario.build().unwrap();
+        let home = state
+            .buildings()
+            .iter()
+            .find(|building| {
+                building.player == PlayerId(0)
+                    && building.kind == BuildingKind::Foundry
+                    && building.anchor != TilePos::new(20, 20)
+            })
+            .unwrap()
+            .id;
+        let welder = at(&state, 5, 13);
+        let lancers = vec![at(&state, 8, 11), at(&state, 8, 12)];
+        state.tick(&[PlayerCommand {
+            player: PlayerId(1),
+            command: Command::Attack {
+                units: lancers,
+                target: AttackTarget::Building(home),
+                queue: false,
+            },
+        }]);
+        let whole = |state: &State| {
+            state.buildings().iter().any(|building| {
+                building.id == home && building.hp == building.kind.base_stats().max_hp
+            })
+        };
+        while whole(&state) && state.current_tick() < 600 {
+            state.tick(&[]);
+        }
+        state.tick(&[PlayerCommand {
+            player: PlayerId(0),
+            command: Command::Repair {
+                units: vec![welder],
+                building: home,
+                queue: false,
+            },
+        }]);
+        let next = (state.current_tick() + 24).next_multiple_of(12);
+        advance_to(&mut state, next, &[]);
+        assert!(
+            ObservationData::fog_honest(&state, PlayerId(0))
+                .my_units
+                .iter()
+                .any(|unit| unit.id == welder
+                    && unit.repair == Some(aftermine_sim::observation::RepairWork::Ordered)),
+            "premise: the welder is at it"
+        );
+        let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+        runs(&commands)
+            .iter()
+            .any(|(units, _)| units.contains(&welder))
+    };
+    assert!(welded(true), "premise: out of the fire, it would go");
+    assert!(!welded(false), "nowhere to go: it keeps welding");
+}
+
+#[test]
+fn a_cradle_whose_crew_is_pulled_gets_no_new_crew_that_decision() {
+    // A Lancer's fire would kill a Maw cradle's founder before the work it
+    // has left paid it back, so the founder runs. The others it would have
+    // been joined by are not sent in its place: counted beside a founder who
+    // is leaving, they would go into the same fire.
+    let anchor = TilePos::new(6, 13);
+    let mut scenario = field();
+    scenario.map[4].replace_range(8..9, "E");
+    scenario.players[0].scrap = UnitKind::Maw.stats().cost + 400;
+    scenario
+        .units
+        .extend((1..5).map(|x| unit(0, UnitKind::Excavator, x, 21)));
+    scenario.units.extend([
+        unit(0, UnitKind::Excavator, 5, 17),
+        unit(0, UnitKind::Kestrel, 11, 10),
+        unit(1, UnitKind::Lancer, 12, 13),
+    ]);
+    scenario.buildings.extend([
+        building(0, BuildingKind::Crucible, 3, 16),
+        building(0, BuildingKind::Extractor, 8, 4),
+    ]);
+    let mut state = bored(&scenario);
+    let founder = at(&state, 5, 17);
+    state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Build {
+            units: vec![founder],
+            kind: BuildingKind::MawCradle,
+            anchor,
+            queue: false,
+            defer: false,
+        },
+    }]);
+    let next = state.current_tick().next_multiple_of(12);
+    advance_to(&mut state, next, &[]);
+    let cradle = state
+        .buildings()
+        .iter()
+        .find(|building| building.kind == BuildingKind::MawCradle)
+        .expect("premise: the cradle is placed")
+        .id;
+    let stats = BuildingKind::MawCradle.base_stats();
+    let state = raised(
+        &state,
+        cradle,
+        stats.max_hp - 200,
+        stats.construction.build_ticks - 200,
+    );
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(
+        runs(&commands)
+            .iter()
+            .any(|(units, _)| units.contains(&founder)),
+        "{commands:?}"
+    );
+    assert!(
+        builds(&commands)
+            .iter()
+            .all(|(kind, _)| *kind != BuildingKind::MawCradle),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn a_shooter_that_cannot_leave_its_ground_counts_in_full_while_remembered() {
+    // An East Lancer across a pit from a Turret site, on ground it cannot
+    // leave without a carrier, steps out of sight. Long after a shooter that
+    // could walk off would have faded, the seat still remembers it there,
+    // and its fire still counts in full against the site's builder.
+    let anchor = TilePos::new(10, 3);
+    let built = |lancer: bool| {
+        let mut scenario = arena(400);
+        for row in &mut scenario.map[1..11] {
+            row.replace_range(12..13, "~");
+        }
+        scenario.units.push(unit(0, UnitKind::Harvester, 9, 2));
+        if lancer {
+            scenario.units.push(unit(1, UnitKind::Lancer, 14, 3));
+        }
+        let state = scenario.build().unwrap();
+        (scenario, state)
+    };
+    let (scenario, seen) = built(true);
+    let map = map(&scenario);
+    let home = map
+        .start(PlayerId(0))
+        .and_then(|start| map.component(start));
+    let mut memory = Memory::default();
+    memory.observe_stranded(&ObservationData::fog_honest(&seen, PlayerId(0)), |unit| {
+        crate::missions::stranded(unit, &map, home)
+    });
+    assert!(
+        memory
+            .units()
+            .iter()
+            .any(|unit| crate::missions::stranded(unit, &map, home)),
+        "premise: the Lancer is seen, on ground it cannot leave"
+    );
+    let (_, mut gone) = built(false);
+    let builder = at(&gone, 9, 2);
+    while memory
+        .units()
+        .iter()
+        .any(|unit| unit.confidence(gone.current_tick()) > 0)
+    {
+        gone.tick(&[]);
+    }
+    let observation = ObservationData::fog_honest(&gone, PlayerId(0));
+    let builder = observation
+        .my_units
+        .iter()
+        .find(|unit| unit.id == builder)
+        .unwrap();
+    let stands = |memory: &Memory| {
+        crate::placement::stands(
+            &observation,
+            &map,
+            memory,
+            crate::placement::Raising::fresh(BuildingKind::Turret, anchor),
+            &[],
+            &[builder],
+        )
+    };
+    assert!(stands(&Memory::default()), "premise: nothing in sight");
+    assert!(
+        !stands(&memory),
+        "the stranded Lancer still kills the builder first"
+    );
 }
