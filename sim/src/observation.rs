@@ -89,6 +89,11 @@ pub struct UnitObs {
     /// A host's drone bay.
     #[serde(default)]
     pub bay: Option<BayObs>,
+    /// The compass step (of 256, see [`chassis::compass`]) the body faces.
+    /// Anyone in sight sees which way a machine points, so like `grounded`
+    /// it is reported for allies and enemies in sight too.
+    #[serde(default)]
+    pub heading: u8,
 }
 
 /// What kind of repair work an own worker's program is.
@@ -662,6 +667,7 @@ fn own_unit(state: &State, u: &crate::state::Unit) -> UnitObs {
         charges: u.point_defense.map(|held| held.charges),
         host: u.host,
         bay: u.bay.map(|bay| BayObs::of(bay, true)),
+        heading: u.heading,
     }
 }
 
@@ -682,6 +688,7 @@ fn enemy_unit(u: &crate::state::Unit) -> UnitObs {
         charges: u.point_defense.map(|held| held.charges),
         host: u.host,
         bay: u.bay.map(|bay| BayObs::of(bay, false)),
+        heading: u.heading,
     }
 }
 

@@ -141,6 +141,10 @@ pub struct UnitView {
     /// and when intent is redacted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idle_weld: Option<bool>,
+    /// The compass step (of 256) the body faces. Anyone in sight sees which
+    /// way a machine points, so the fog view never redacts it.
+    #[serde(default)]
+    pub heading: u8,
 }
 
 /// A drone bay as the viewer sees it. Docked drones ride on the hull, so
@@ -633,10 +637,11 @@ fn unit_view(u: &Unit) -> UnitView {
             autofill: Some(bay.autofill),
         }),
         idle_weld: u.worker.map(|_| u.idle_weld()),
+        heading: u.heading,
     }
 }
 
-/// A hostile unit as the viewer sees it: body, position, wounds, visible
+/// A hostile unit as the viewer sees it: body, position, facing, wounds, visible
 /// cargo, point-defense charges and docked drones, but never its orders,
 /// queue, patrol flag, drone orders or idle-weld switch.
 fn unit_view_redacted(u: &Unit) -> UnitView {
