@@ -109,6 +109,7 @@ fn intercept(state: &mut State, events: &mut Vec<Event>) {
     }
     pairs.sort_unstable_by_key(|(key, _, _)| *key);
     let mut stopped = vec![false; state.shells.len()];
+    let mut downed = Vec::new();
     for (_, shell_slot, defender_slot) in pairs {
         let slot = defenders[defender_slot].slot;
         let unit = &mut state.units[slot];
@@ -122,6 +123,8 @@ fn intercept(state: &mut State, events: &mut Vec<Event>) {
         held.charges -= 1;
         stopped[shell_slot] = true;
         let shell = &state.shells[shell_slot];
+        let at = shell.flight_position(now);
+        downed.push((shell.player, at, unit.pos));
         events.push(Event::ShellIntercepted {
             defender: unit.id,
             defender_player: unit.player,
@@ -129,10 +132,24 @@ fn intercept(state: &mut State, events: &mut Vec<Event>) {
             player: shell.player,
             shooter: shell.shooter,
             kind: shell.kind,
-            at: shell.flight_position(now),
+            at,
             impact: shell.impact,
             arrival: shell.arrival,
         });
+    }
+    // A team that sees its shell downed by a defender out of sight sees the
+    // shot cross toward it, as fire from fog shows where it comes from.
+    for (owner, at, defender) in downed {
+        let tile = chassis::grid::TilePos::containing(at);
+        if state.can_see(owner, tile)
+            && !state.can_see(owner, chassis::grid::TilePos::containing(defender))
+        {
+            state.record_downed_shell(
+                owner,
+                tile,
+                chassis::compass::CompassPoint::of(defender - at),
+            );
+        }
     }
     let mut slot = 0;
     state.shells.retain(|_| {

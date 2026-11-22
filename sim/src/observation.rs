@@ -37,8 +37,9 @@ pub struct CarriedUnitObs {
     pub hp: u32,
 }
 
-/// Where fire from out of sight or a hostile shell came down lately, and
-/// the compass point it came from: never who fired, or from how far.
+/// Where fire from out of sight or a hostile shell came down lately, or an
+/// own shell was shot down, and the compass point the fire came from: never
+/// who fired, or from how far.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FireMark {
     /// Where it came down.
@@ -328,6 +329,12 @@ pub struct ObservationData {
     /// vision system; sorted by (y, x, compass point).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shell_impacts: Vec<FireMark>,
+    /// Where this seat's team lately saw its own shells shot down by a point
+    /// defender out of sight, with the point the shot came from. Bounded and
+    /// expired by the authoritative vision system; sorted by (y, x, compass
+    /// point).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub downed_shells: Vec<FireMark>,
     /// Magazines this seat may know of, in building-id order: its team's
     /// in full, hostile ones' loaded rounds, round in assembly and deck
     /// while in sight.
@@ -587,6 +594,7 @@ impl ObservationData {
             public_buildings: hostile_public_buildings(state, me),
             incoming_shells: Vec::new(),
             shell_impacts: shell_impacts(state, me),
+            downed_shells: downed_shells(state, me),
             magazines: Vec::new(),
             warheads: Vec::new(),
             works: Vec::new(),
@@ -621,6 +629,13 @@ pub fn unseen_fire(state: &State, me: PlayerId) -> Vec<FireMark> {
 /// (y, x, compass point).
 pub fn shell_impacts(state: &State, me: PlayerId) -> Vec<FireMark> {
     FireMark::recent(state, state.vision(me).shell_impacts())
+}
+
+/// Where `me`'s team lately saw its own shells shot down by a point defender
+/// out of sight, with the point each shot came from, sorted by (y, x,
+/// compass point).
+pub fn downed_shells(state: &State, me: PlayerId) -> Vec<FireMark> {
+    FireMark::recent(state, state.vision(me).downed_shells())
 }
 
 /// The public buildings hostile to `me`, sorted by (y, x, owner). Own and

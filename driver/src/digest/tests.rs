@@ -121,6 +121,18 @@ fn fire_from_out_of_sight_reads_with_the_point_it_came_from() {
     );
 }
 
+#[test]
+fn shells_shot_down_read_with_the_point_the_shot_came_from() {
+    let (_, mut view) = opening();
+    assert!(!render(&view, None).contains("SHOT DOWN"));
+    view.downed_shells = vec![mark(7, 3, 12)];
+    let text = render(&view, None);
+    assert!(
+        text.contains("\nSHELLS SHOT DOWN lately at (7,3) from the north\n"),
+        "{text}"
+    );
+}
+
 fn mark(x: i32, y: i32, from: u8) -> aftermine_sim::observation::FireMark {
     aftermine_sim::observation::FireMark {
         tile: chassis::grid::TilePos::new(x, y),

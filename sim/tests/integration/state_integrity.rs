@@ -423,6 +423,7 @@ fn well_formed_additions_are_accepted() {
         incident(4, 3, 100),
         incident(2, 4, 100 + aftermine_sim::stats::SHELL_IMPACT_MEMORY_TICKS),
     ]);
+    base["vision"][0]["downed_shells"] = json!([incident_from(4, 3, 12, 100)]);
     let bombard = base["units"][1]["id"].clone();
     base["units"][0]["order"] = json!({"order": "accompany", "unit": bombard, "weld": bombard});
     let owner = base["buildings"][0]["player"].clone();
@@ -514,6 +515,7 @@ fn a_decided_state_may_age_past_remembered_expiries() {
     base["result"] = json!({"outcome": "victory", "team": 0});
     base["vision"][0]["salvage_incidents"] = json!([incident(3, 3, 99)]);
     base["vision"][0]["shell_impacts"] = json!([incident(3, 3, 99)]);
+    base["vision"][0]["downed_shells"] = json!([incident(3, 3, 99)]);
     serde_json::from_value::<State>(base)
         .expect("decided worlds stop refreshing vision while their clock may still advance");
 }
@@ -591,6 +593,11 @@ checklist! {
     ExpiredShellImpact(PlayerId(0)),
     ShellImpactExpiryBeyondHorizon(PlayerId(0)),
     UnsortedShellImpacts(PlayerId(0)),
+    OverlongDownedShellMemory(PlayerId(0)),
+    DownedShellOutsideEnvelope(PlayerId(0)),
+    ExpiredDownedShell(PlayerId(0)),
+    DownedShellExpiryBeyondHorizon(PlayerId(0)),
+    UnsortedDownedShells(PlayerId(0)),
     UnitPartMismatch(UnitId(0)),
     CargoBeyondCapacity(UnitId(0)),
     UncarriableCargo(UnitId(0)),
@@ -2065,6 +2072,51 @@ fn every_checklist_row_refuses_its_forgery() {
                 d["vision"][0]["shell_impacts"] = json!([incident(4, 3, 100), incident(4, 3, 120)]);
             },
             "player p0 remembers shell impacts out of canonical order",
+        ),
+        (
+            "more downed shells than the bounded memory permits",
+            |d| {
+                d["vision"][0]["downed_shells"] = json!(
+                    (0..=aftermine_sim::stats::DOWNED_SHELL_CAP)
+                        .map(|x| incident(i32::try_from(x).unwrap(), 3, 100))
+                        .collect::<Vec<_>>()
+                );
+            },
+            "player p0 remembers more downed shells than the cap allows",
+        ),
+        (
+            "a downed shell at the far end of the coordinate space",
+            |d| {
+                d["vision"][0]["downed_shells"] = json!([incident(i32::MAX, 3, 100)]);
+            },
+            "player p0 remembers a downed shell outside the envelope",
+        ),
+        (
+            "a downed shell that expired before the current tick",
+            |d| {
+                d["tick"] = json!(100);
+                d["vision"][0]["downed_shells"] = json!([incident(3, 3, 99)]);
+            },
+            "player p0 remembers an expired downed shell in an active match",
+        ),
+        (
+            "a downed shell expiry beyond the state's memory horizon",
+            |d| {
+                d["tick"] = json!(100);
+                d["vision"][0]["downed_shells"] = json!([incident(
+                    3,
+                    3,
+                    101 + aftermine_sim::stats::DOWNED_SHELL_MEMORY_TICKS
+                )]);
+            },
+            "player p0 remembers a downed shell expiring beyond its memory horizon",
+        ),
+        (
+            "downed shells out of canonical order",
+            |d| {
+                d["vision"][0]["downed_shells"] = json!([incident(2, 4, 100), incident(4, 3, 100)]);
+            },
+            "player p0 remembers downed shells out of canonical order",
         ),
         (
             "a parked harvester, which cannot land",

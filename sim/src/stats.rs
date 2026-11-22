@@ -3035,6 +3035,17 @@ pub const SHELL_IMPACT_MEMORY_TICKS: crate::Tick = 8 * crate::TICKS_PER_SECOND a
 /// coalesce, and the oldest expiry is evicted first at the ceiling.
 pub const SHELL_IMPACT_CAP: usize = 64;
 
+/// How long a team remembers where it saw one of its shells shot down by a
+/// point defender it could not see. Like [`SHELL_IMPACT_MEMORY_TICKS`] it
+/// outlasts the slowest artillery cooldown, so a defender downing steady fire
+/// stays known between shells.
+pub const DOWNED_SHELL_MEMORY_TICKS: crate::Tick = 8 * crate::TICKS_PER_SECOND as crate::Tick;
+
+/// Maximum downed shells retained per team. Shells downed on one tile from
+/// one compass point coalesce, and the oldest expiry is evicted first at the
+/// ceiling.
+pub const DOWNED_SHELL_CAP: usize = 64;
+
 /// Mobile ground threats are treated as dangerous this many tiles beyond
 /// their current weapon reach. It gives a visible raider's approach time
 /// weight while sight is live; incident memory is the separate, deliberately

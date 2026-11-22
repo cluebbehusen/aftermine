@@ -285,6 +285,11 @@ pub struct FogView {
     /// fired, or from how far.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unseen_fire: Vec<aftermine_sim::observation::FireMark>,
+    /// Where the seat's team lately saw its own shells shot down by a point
+    /// defender out of sight, and the compass point each shot came from,
+    /// sorted by (y, x, point). Never the defender, or how far it stood.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub downed_shells: Vec<aftermine_sim::observation::FireMark>,
 }
 
 /// A hostile building every seat knows of regardless of fog.
@@ -439,6 +444,7 @@ impl FogView {
                 .collect(),
             shell_impacts: aftermine_sim::observation::shell_impacts(state, player),
             unseen_fire: aftermine_sim::observation::unseen_fire(state, player),
+            downed_shells: aftermine_sim::observation::downed_shells(state, player),
         }
     }
 }
