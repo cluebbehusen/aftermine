@@ -104,7 +104,12 @@ impl Missions {
                 || siege.unseen.is_some()
                 || siege.remembered != [0, 0]
         });
-        let returning = self.stand_down(observation, (map, frame), &groups, ledger);
+        let returning = self.stand_down(
+            (observation, memory, difficulty),
+            (map, frame),
+            &groups,
+            ledger,
+        );
         self.list.retain(|mission| {
             !matches!(
                 mission.task,
@@ -163,22 +168,8 @@ impl Missions {
                 .iter()
                 .filter(|threat| walking_gun(threat) && map.component(threat.tile) == component)
                 .min_by_key(|threat| (frame.rank(centre, doubled(threat.tile)), threat.id));
-            let pursuit = shelling.map_or(
-                if let Some((target, _)) = quarry {
-                    Pursuit::Quarry(target)
-                } else if grounded.is_none() && siege.unseen.is_some() {
-                    Pursuit::Advance
-                } else {
-                    Pursuit::Hunt
-                },
-                |threat| Pursuit::Gun(threat.id),
-            );
-            // The unit the defense holds as its focus: a gun it goes at, or
-            // the intruder it chose.
-            let gun = shelling.map(|threat| threat.id).or(match quarry {
-                Some((AttackTarget::Unit(id), _)) => Some(id),
-                _ => None,
-            });
+            let pursuit = Pursuit::of(shelling.copied(), quarry, grounded, siege.unseen.is_some());
+            let gun = pursuit.held();
             let hunting = matches!(pursuit, Pursuit::Hunt);
             // A gun with others beside it that would join the fight there is
             // met like any ground force at a seat that gathers: defenders
@@ -358,6 +349,13 @@ impl Missions {
                 (reserve, onward, resend),
                 &front.0,
             );
+            let members = &self.list[index].units;
+            let away = recall(
+                (observation, memory, difficulty),
+                ledger,
+                (members, siege, post, pursuit),
+            );
+            sent.retain(|id| !away.contains(id));
             if sent.is_empty() {
                 // Releasing may drop emptied missions, so it comes last.
                 self.release_from_others(index, &waiting);
@@ -432,55 +430,32 @@ impl Missions {
     /// focus and start of its engagement.
     fn stand_down(
         &mut self,
-        observation: &ObservationData,
+        (observation, memory, difficulty): (&ObservationData, &Memory, BotDifficulty),
         (map, frame): (&MapModel, HomeFrame),
         groups: &[(&BuildingObs, Siege<'_>, bool)],
         ledger: &mut Ledger,
     ) -> Vec<(u64, TilePos, Option<UnitId>, u64)> {
         let now = observation.tick;
+        let margin = engage_margin(difficulty);
         let mut returning = Vec::new();
-        // An enemy in sight, unit or building, whose weapons reach a member
-        // in its own domain, aircraft too.
-        let in_reach = |members: &[UnitId]| {
-            let reach = |weapons: &[WeaponStats], domain: Domain| {
-                weapons
-                    .iter()
-                    .filter(|weapon| weapon.targets.covers(domain))
-                    .map(|weapon| weapon.range)
-                    .max()
-                    .unwrap_or(Fx::ZERO)
-            };
-            members
-                .iter()
-                .filter_map(|id| mine(observation, *id))
-                .any(|unit| {
-                    // A landed aircraft is hit as a ground body.
-                    let domain = unit.body_domain();
-                    let near = |gap: i32, reach: Fx| {
-                        reach > Fx::ZERO && Fx::from_num(gap) <= reach + Fx::from_num(1)
-                    };
-                    observation.enemy_units.iter().any(|enemy| {
-                        let reach = if domain == Domain::Ground {
-                            crate::defenses::reach(enemy.kind)
-                        } else {
-                            reach(enemy.kind.stats().weapons, domain)
-                        };
-                        near(unit.tile.chebyshev(enemy.tile), reach)
-                    }) || observation.enemy_buildings.iter().any(|building| {
-                        let gap = gap(building.anchor, building.kind.size(), unit.tile, (1, 1));
-                        let tier = building.kind.tiers()[usize::from(building.tier)];
-                        near(gap, reach(tier.weapons, domain))
-                    })
-                })
-        };
         for mission in &mut self.list {
             let Task::Defend { asset, phase } = &mut mission.task else {
                 continue;
             };
             let threatened = groups.iter().any(|(foundry, _, _)| foundry.id == *asset);
+            // Under fire it fights on, rather than turn its back, unless
+            // what it faces out there outweighs it.
+            let held = mission
+                .units
+                .iter()
+                .filter_map(|id| mine(observation, *id))
+                .any(|unit| {
+                    exposed(observation, unit)
+                        && !outweighed((observation, memory), &mission.units, unit, margin)
+                });
             if let DefendPhase::Engage { focus } = *phase
                 && !threatened
-                && !in_reach(&mission.units)
+                && !held
             {
                 // Its members come back to the post beside their Foundry:
                 // left where the fight ended, often by the enemy's line,
@@ -721,6 +696,106 @@ fn lost(observation: &ObservationData, gun: Option<UnitId>, focus: Option<UnitId
         })
 }
 
+/// Runs the ground members of a defense hunting or holding an intruder that
+/// stand past what it defends back to the `post`: hunting, a defender chases
+/// whatever it fights until that dies or leaves sight, out across the map.
+/// Past is farther from every own building than the `siege`'s threats
+/// stand, with the member's own reach on top. Returns those sent running.
+fn recall(
+    (observation, memory, difficulty): (&ObservationData, &Memory, BotDifficulty),
+    ledger: &mut Ledger,
+    (members, siege, post, pursuit): (&[UnitId], &Siege<'_>, Option<TilePos>, Pursuit),
+) -> Vec<UnitId> {
+    let (Some(post), Pursuit::Hunt | Pursuit::Quarry(_)) = (post, pursuit) else {
+        return Vec::new();
+    };
+    let margin = engage_margin(difficulty);
+    let area = siege
+        .units
+        .iter()
+        .filter_map(|threat| ground_reach(threat))
+        .max()
+        .unwrap_or(THREAT_GAP);
+    // One under fire out there fights on unless outweighed where it
+    // stands: running, it would take the fire without answering it.
+    let away: Vec<UnitId> = members
+        .iter()
+        .filter_map(|id| mine(observation, *id))
+        .filter(|unit| unit.kind.stats().domain == Domain::Ground)
+        .filter(|unit| {
+            let own = crate::defenses::reach(unit.kind).ceil().to_num::<i32>();
+            !defended(observation, unit.tile, area + own)
+        })
+        .filter(|unit| {
+            !exposed(observation, unit) || outweighed((observation, memory), members, unit, margin)
+        })
+        .map(|unit| unit.id)
+        .collect();
+    if away.is_empty() || !ledger.order(run(away.clone(), post)) {
+        return Vec::new();
+    }
+    away
+}
+
+/// Whether an enemy in sight, unit or building, reaches `unit` in its own
+/// domain: a landed aircraft is hit as a ground body.
+fn exposed(observation: &ObservationData, unit: &UnitObs) -> bool {
+    let reach = |weapons: &[WeaponStats], domain: Domain| {
+        weapons
+            .iter()
+            .filter(|weapon| weapon.targets.covers(domain))
+            .map(|weapon| weapon.range)
+            .max()
+            .unwrap_or(Fx::ZERO)
+    };
+    let domain = unit.body_domain();
+    let near =
+        |gap: i32, reach: Fx| reach > Fx::ZERO && Fx::from_num(gap) <= reach + Fx::from_num(1);
+    observation.enemy_units.iter().any(|enemy| {
+        let reach = if domain == Domain::Ground {
+            crate::defenses::reach(enemy.kind)
+        } else {
+            reach(enemy.kind.stats().weapons, domain)
+        };
+        near(unit.tile.chebyshev(enemy.tile), reach)
+    }) || observation.enemy_buildings.iter().any(|building| {
+        let gap = gap(building.anchor, building.kind.size(), unit.tile, (1, 1));
+        let tier = building.kind.tiers()[usize::from(building.tier)];
+        near(gap, reach(tier.weapons, domain))
+    })
+}
+
+/// Whether the known enemies that would join a fight where `unit` stands,
+/// and the enemy guns that reach it, outweigh the `members` of its defense
+/// beside it by the `margin` per mille a fight needs.
+fn outweighed(
+    (observation, memory): (&ObservationData, &Memory),
+    members: &[UnitId],
+    unit: &UnitObs,
+    margin: u64,
+) -> bool {
+    let met =
+        meeting::opposed(observation, memory, unit.tile) + defense(observation, memory, unit.tile);
+    let could: u64 = members
+        .iter()
+        .filter_map(|id| mine(observation, *id))
+        .filter(|other| other.tile.chebyshev(unit.tile) <= GATHER_TILES)
+        .filter(|other| hits(other, Domain::Ground))
+        .map(value)
+        .sum();
+    met > 0 && could * 1_000 < met * margin
+}
+
+/// Whether `tile` lies within `reach` of one of the seat's or its allies'
+/// buildings, as a threat to them must.
+fn defended(observation: &ObservationData, tile: TilePos, reach: i32) -> bool {
+    observation
+        .my_buildings
+        .iter()
+        .chain(&observation.ally_buildings)
+        .any(|building| gap(building.anchor, building.kind.size(), tile, (1, 1)) < reach)
+}
+
 /// Whether `focus` is an unarmed enemy in sight: an intruder a defense
 /// chose, such as a builder.
 fn intruder(observation: &ObservationData, focus: Option<UnitId>) -> bool {
@@ -743,8 +818,40 @@ enum Pursuit {
     Gun(UnitId),
     /// Attack the intruder chosen among unarmed ones.
     Quarry(AttackTarget),
+    /// Wait beside a building an aircraft raids, moving there without
+    /// chasing it: hunting, a defender follows a flyer out of cover.
+    Guard,
     /// Fall back to the waiting post without stopping to fight on the way.
     Fall,
+}
+
+impl Pursuit {
+    /// The unit a defense pursuing so holds as its focus: a gun it goes at,
+    /// or the intruder it chose.
+    fn held(self) -> Option<UnitId> {
+        match self {
+            Self::Gun(id) | Self::Quarry(AttackTarget::Unit(id)) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// How a defense goes after a gun in sight it is `shelling` by, else the
+    /// `quarry` it chose, else the gun `unseen` when no `grounded` threat
+    /// stands, else the flyers it guards against, else the grounded threat.
+    fn of(
+        shelling: Option<&UnitObs>,
+        quarry: Option<(AttackTarget, TilePos)>,
+        grounded: Option<TilePos>,
+        unseen: bool,
+    ) -> Self {
+        match (shelling, quarry, grounded) {
+            (Some(threat), _, _) => Self::Gun(threat.id),
+            (None, Some((target, _)), _) => Self::Quarry(target),
+            (None, None, None) if unseen => Self::Advance,
+            (None, None, None) => Self::Guard,
+            (None, None, Some(_)) => Self::Hunt,
+        }
+    }
 }
 
 /// Sends defenders after a Foundry's threats: those that can hit ground as
@@ -760,6 +867,18 @@ fn dispatch(
     let (shooters, rest): (Vec<UnitId>, Vec<UnitId>) = match pursuit {
         Pursuit::Fall => return fall_back(observation, ledger, units, goal),
         Pursuit::Hunt => (Vec::new(), units),
+        Pursuit::Guard => {
+            let command = Command::Advance {
+                units: units.clone(),
+                goal,
+                queue: false,
+            };
+            return if ledger.order(command) {
+                units
+            } else {
+                Vec::new()
+            };
+        }
         Pursuit::Advance | Pursuit::Gun(_) | Pursuit::Quarry(_) => units
             .into_iter()
             .partition(|id| mine(observation, *id).is_some_and(|unit| hits(unit, Domain::Ground))),
@@ -782,7 +901,7 @@ fn dispatch(
             target,
             queue: false,
         },
-        Pursuit::Hunt | Pursuit::Advance | Pursuit::Fall => Command::Advance {
+        Pursuit::Hunt | Pursuit::Advance | Pursuit::Fall | Pursuit::Guard => Command::Advance {
             units: shooters.clone(),
             goal,
             queue: false,

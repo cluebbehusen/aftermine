@@ -814,3 +814,58 @@ fn a_raid_does_not_cross_a_line_held_on_its_way() {
         "guns on the way keep the raiders home"
     );
 }
+
+#[test]
+fn a_raider_drawn_past_its_target_runs_home_while_the_rest_strike_on() {
+    // Two Scuttlers strike the outpost while a third has chased a fleeing
+    // worker far past it: it runs home instead of on into the enemy's base.
+    let mut scenario = outpost(UnitKind::Scuttler, BuildingKind::Foundry);
+    scenario.units.push(unit(0, UnitKind::Scuttler, 36, 10));
+    let mut state = scenario.build().unwrap();
+    let striking = raiders(&state);
+    let stray = at(&state, 36, 10);
+    let mut members = striking.clone();
+    members.push(stray);
+    members.sort_unstable();
+    // None idle: a raid all idle at its target is done.
+    state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Hunt {
+            units: members.clone(),
+            goal: TilePos::new(21, 10),
+            queue: false,
+        },
+    }]);
+    while state.current_tick() < 12 {
+        state.tick(&[]);
+    }
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {
+                    "task": "raid",
+                    "target": {"owner": 1, "building": "foundry", "anchor": {"x": 22, "y": 10}},
+                    "phase": "strike",
+                },
+                "since": 0,
+                "units": members,
+                "goal": {"x": 21, "y": 10},
+            }],
+        });
+    });
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    assert!(
+        runs(&commands).iter().any(|(units, _)| units == &[stray]),
+        "{commands:?}"
+    );
+    assert!(
+        runs(&commands)
+            .iter()
+            .all(|(units, _)| striking.iter().all(|raider| !units.contains(raider))),
+        "{commands:?}"
+    );
+    let mission = raid(&trace.unwrap().missions).expect("the raid strikes on");
+    assert_eq!(mission.phase, Phase::Engage);
+}

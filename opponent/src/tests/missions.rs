@@ -117,7 +117,10 @@ fn an_air_raid_draws_only_units_that_hit_air_to_guard_the_foundry() {
     );
     let state = scenario.build().unwrap();
     let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
-    let [(units, goal)] = &hunts(&commands)[..] else {
+    // They move there without a hunt, which would chase the flyer out of
+    // the base's cover.
+    assert!(hunts(&commands).is_empty(), "{commands:?}");
+    let [(units, goal)] = &advances(&commands)[..] else {
         panic!("{commands:?}");
     };
     assert_eq!(units, &[at(&state, 10, 1)]);
@@ -1256,7 +1259,7 @@ fn a_gun_out_of_sight_waits_while_raiders_in_sight_hold_the_foundry() {
         "premise: the raider is in sight and the gun is not"
     );
     let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
-    let [(_, goal)] = &hunts(&commands)[..] else {
+    let [(_, goal)] = &advances(&commands)[..] else {
         panic!("{commands:?}");
     };
     let foundry = TilePos::new(3, 11);
@@ -2353,11 +2356,15 @@ fn home_is_never_given_up() {
 
 #[test]
 fn a_defense_standing_down_brings_its_members_back_beside_the_foundry() {
-    // Two defenders out where the raiders were, the raiders gone: they come
+    // Defenders out where the raiders were, the raiders gone: they come
     // back beside the Foundry rather than be let go out there, unless an
-    // enemy can still hit them, aircraft too.
-    let stand_down = |defender: UnitKind, threat: Option<(UnitKind, i32)>| {
-        let mut scenario = raided(&[(defender, 13, 8), (defender, 14, 8)], &[]);
+    // enemy can still hit them, aircraft too, and does not outweigh them.
+    let stand_down_with = |defenders: &[(i32, i32)],
+                           defender: UnitKind,
+                           threat: Option<(UnitKind, i32)>| {
+        let placed: Vec<(UnitKind, i32, i32)> =
+            defenders.iter().map(|(x, y)| (defender, *x, *y)).collect();
+        let mut scenario = raided(&placed, &[]);
         if let Some((threat, x)) = threat {
             scenario.units.push(unit(1, threat, x, 8));
         }
@@ -2368,7 +2375,7 @@ fn a_defense_standing_down_brings_its_members_back_beside_the_foundry() {
             .iter()
             .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
             .unwrap();
-        let mut members = vec![at(&state, 13, 8), at(&state, 14, 8)];
+        let mut members: Vec<UnitId> = defenders.iter().map(|(x, y)| at(&state, *x, *y)).collect();
         members.sort_unstable();
         let mut opponent = restored_with(
             &seat_with(&scenario, 0, rung(BotDifficulty::Prime)),
@@ -2399,17 +2406,27 @@ fn a_defense_standing_down_brings_its_members_back_beside_the_foundry() {
             .any(|mission| mission.phase == Phase::Recover);
         (home, recovers)
     };
+    let stand_down = |defender: UnitKind, threat: Option<(UnitKind, i32)>| {
+        stand_down_with(&[(13, 8), (14, 8)], defender, threat)
+    };
     assert_eq!(
         stand_down(UnitKind::Sentinel, None),
         (true, true),
         "the raiders gone: home"
     );
-    // A Lancer beyond the base's threat gap but still in reach of the two:
-    // they do not turn their backs to it.
+    // A Lancer beyond the base's threat gap but still in reach of them, by
+    // the enemy's Foundry: four do not turn their backs to it, but two,
+    // outweighed out there, run home rather than die where they stand.
+    let four = [(13, 8), (14, 8), (13, 9), (14, 9)];
+    assert_eq!(
+        stand_down_with(&four, UnitKind::Sentinel, Some((UnitKind::Lancer, 19))),
+        (false, false),
+        "still under fire and not outweighed: they stay"
+    );
     assert_eq!(
         stand_down(UnitKind::Sentinel, Some((UnitKind::Lancer, 19))),
-        (false, false),
-        "still under fire: they stay"
+        (true, true),
+        "outweighed out there: home"
     );
     // Nor do two Talons with an enemy Talon on them, though it cannot hit
     // the ground.
@@ -2817,6 +2834,53 @@ fn a_defense_held_on_a_builder_turns_when_an_armed_enemy_comes() {
         attacks(&commands)
             .iter()
             .all(|(_, target)| *target != AttackTarget::Unit(builder)),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn a_defender_chased_past_the_base_runs_back_while_one_at_the_fight_stays() {
+    // A raider stands by the Foundry. One defender fights it there; another
+    // chased an earlier raider out past the base, where nothing outweighs
+    // it: hunting, it would chase on, so it runs back to the post.
+    let scenario = raided(
+        &[(UnitKind::Sentinel, 7, 6), (UnitKind::Sentinel, 21, 9)],
+        &[(UnitKind::Sentinel, 8, 5)],
+    );
+    let state = scenario.build().unwrap();
+    let home = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
+        .unwrap();
+    let (near, chaser) = (at(&state, 7, 6), at(&state, 21, 9));
+    let mut members = vec![near, chaser];
+    members.sort_unstable();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {"task": "defend", "asset": home.id.0, "phase": {"engage": {"focus": null}}},
+                "since": 0,
+                "units": members,
+                "goal": {"x": 8, "y": 5},
+            }],
+        });
+    });
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    let beside: Vec<TilePos> =
+        crate::frame::ring(home.anchor, BuildingKind::Foundry.size()).collect();
+    assert!(
+        runs(&commands)
+            .iter()
+            .any(|(units, goal)| units.contains(&chaser) && beside.contains(goal)),
+        "{commands:?}"
+    );
+    assert!(
+        runs(&commands)
+            .iter()
+            .all(|(units, _)| !units.contains(&near)),
         "{commands:?}"
     );
 }

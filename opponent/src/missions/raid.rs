@@ -10,6 +10,7 @@ use super::air::{self, Hazard, Legs};
 use super::attack::{
     FIT, defense, fortified, healthy, margin, minimum, outweighed, recruit_by, striking,
 };
+use super::reserve::LOCAL_REACH;
 use super::{
     MISSION_CAP, Mission, Missions, Objective, RaidPhase, Task, approach, distant_worth, hunt,
     meeting, mine, run, standing, value,
@@ -303,8 +304,19 @@ impl Missions {
                 // Sappers at the target blow it up whatever stands there.
                 let outweighed = outweighed && kind != Raider::Sapper;
                 let done = all_idle || age >= STRIKE_TICKS || !standing(observation, target);
-                if spent || outweighed || done {
+                // A raider drawn past local reach of its target, chasing a
+                // fleeing worker, runs home rather than on into the enemy's
+                // base; the rest strike on.
+                let strays: Vec<UnitId> = members
+                    .iter()
+                    .filter(|unit| unit.tile.chebyshev(goal) > LOCAL_REACH)
+                    .map(|unit| unit.id)
+                    .collect();
+                if spent || outweighed || done || strays.len() == units.len() {
                     return withdraw(self, ledger).then_some(lost);
+                }
+                if !strays.is_empty() && ledger.order(run(strays.clone(), home)) {
+                    self.list[index].units.retain(|id| !strays.contains(id));
                 }
                 None
             }
