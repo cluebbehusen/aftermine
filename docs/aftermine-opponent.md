@@ -103,6 +103,9 @@ actions affect the running total and mission state.
   waits until the army holds the known enemy. A Crucible still to buy counts
   toward the first Deep Bore's price. Growth outranks tech by what it pays back,
   never by a rule that holds tech down.
+- A site with scrap is taken once the seat's own Foundry, an ally's building or
+  an enemy's Foundry stands near its scrap. No other enemy building takes it;
+  enemy guns that reach the site count against it as danger instead.
 - A site of frames alone is taken once an ally's Foundry supports one of its
   frames, so teammates do not crowd one expansion, or once the seat's own
   Foundries support every frame no other seat holds. An enemy's Foundry never
