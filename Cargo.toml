@@ -64,7 +64,7 @@ similar_names = "allow"
 # Apple platform, which the frame rate setting paces through. Drop the patch
 # once releases carry these changes.
 [patch.crates-io]
-miniquad = { git = "https://github.com/cluebbehusen/miniquad", rev = "0e46510800fb81308c9d01cc3ef5c26528ee5114" }
+miniquad = { git = "https://github.com/cluebbehusen/miniquad", rev = "6445deaf8992e40e424bdc1073d6c48805c17b94" }
 
 # `cargo run` is how the game is played day to day, and an unoptimized
 # `fixed`-point sim ticks ~25x slower than release — big battles would eat
