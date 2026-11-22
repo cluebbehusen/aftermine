@@ -16,7 +16,7 @@ use aftermine_sim::ids::Target;
 use aftermine_sim::observation::{BuildingObs, ObservationData, RepairWork, UnitObs};
 use aftermine_sim::scenario::BotStance;
 use aftermine_sim::stats::{HARVEST_INCIDENT_DANGER_RADIUS, REPAIR_COST_PERMILLE};
-use aftermine_sim::{BuildingKind, Command, StallReason, UnitId, UnitKind};
+use aftermine_sim::{BuildingId, BuildingKind, Command, StallReason, UnitId, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::{Grid, TilePos};
 use std::borrow::Cow;
@@ -356,9 +356,9 @@ pub(crate) fn run(
             )
     };
     cancel_doomed(observation, map, memory, ledger);
-    withdraw(observation, map, frame, memory, hazards, ledger);
+    let pulled = withdraw(observation, map, frame, memory, hazards, ledger);
     resume_sites(observation, map, frame, &open, ledger);
-    crew_cradles(observation, map, frame, &open, ledger);
+    crew_cradles(observation, map, frame, &pulled, &open, ledger);
     weld(observation, map, frame, memory, ledger);
     weld_units(
         observation,
@@ -777,7 +777,8 @@ fn attending<'a>(observation: &'a ObservationData, site: &BuildingObs) -> Vec<&'
 /// building on order, that would no longer pay its way under the fire known
 /// to reach it to a refuge beside a Foundry out of known fire. Checked only
 /// when sent, they would stay at the job until they fell, and the next sent
-/// after them. With no such refuge on their ground they keep at it.
+/// after them. With no such refuge on their ground they keep at it. Returns
+/// the sites whose crews no longer pay, sorted.
 fn withdraw(
     observation: &ObservationData,
     map: &MapModel,
@@ -785,8 +786,9 @@ fn withdraw(
     memory: &Memory,
     hazards: &[Hazard],
     ledger: &mut Ledger,
-) {
+) -> Vec<BuildingId> {
     let mut leaving: Vec<UnitId> = Vec::new();
+    let mut pulled: Vec<BuildingId> = Vec::new();
     for site in observation
         .my_buildings
         .iter()
@@ -804,6 +806,7 @@ fn withdraw(
             )
         {
             leaving.extend(crew.iter().map(|unit| unit.id));
+            pulled.push(site.id);
         }
     }
     for welder in observation
@@ -840,9 +843,11 @@ fn withdraw(
             goal: refuge,
             queue: false,
         }) {
-            return;
+            break;
         }
     }
+    pulled.sort_unstable();
+    pulled
 }
 
 /// Cancels each own unfinished base-tier site that the fire reaching it would
@@ -913,16 +918,22 @@ fn resume_sites(
 /// Tops each own cradle's crew up to what it admits with one order: free
 /// workers on its ground, the fastest builders first and then the nearest,
 /// never a node's last Harvester. Admission takes a faster worker in place
-/// of a slower holder, so the crew only gets quicker.
+/// of a slower holder, so the crew only gets quicker. A cradle whose crew
+/// was `pulled` this decision is left: its crew still stands there, so
+/// sizing it would send others into the same fire.
 fn crew_cradles(
     observation: &ObservationData,
     map: &MapModel,
     frame: HomeFrame,
+    pulled: &[BuildingId],
     open: &dyn Fn(&BuildingObs, &[&UnitObs]) -> bool,
     ledger: &mut Ledger,
 ) {
     for site in observation.my_buildings.iter().filter(|building| {
-        building.kind.assembles().is_some() && !building.built && open(building, &[])
+        building.kind.assembles().is_some()
+            && !building.built
+            && pulled.binary_search(&building.id).is_err()
+            && open(building, &[])
     }) {
         let crew = observation
             .my_units

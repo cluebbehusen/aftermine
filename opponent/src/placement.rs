@@ -175,6 +175,9 @@ impl Fire {
             );
         }
         let now = observation.tick;
+        let home = map
+            .start(observation.me)
+            .and_then(|start| map.component(start));
         let mut visible: Vec<UnitId> = observation
             .enemy_units
             .iter()
@@ -195,7 +198,12 @@ impl Fire {
                 centre,
                 seen.tile,
                 seen.kind.stats().domain,
-                u64::from(seen.confidence(now)),
+                // One that cannot leave its ground stays where it was seen.
+                if crate::missions::stranded(seen, map, home) {
+                    1_000
+                } else {
+                    u64::from(seen.confidence(now))
+                },
             );
         }
         // A site seen still going up fires at nothing yet.
