@@ -141,7 +141,13 @@ impl Missions {
             let nearest = |tiles: &mut dyn Iterator<Item = TilePos>| {
                 tiles.min_by_key(|tile| frame.rank(centre, doubled(*tile)))
             };
-            let grounded = siege.nearest_grounded(|tile| frame.rank(centre, doubled(tile)));
+            // With nothing armed among them, defenders go for the intruder
+            // that matters most and hold it, rather than hunt whatever
+            // stands nearest, such as a scout, away from a site going up.
+            let quarry = siege.quarry(|tile| frame.rank(centre, doubled(tile)));
+            let grounded = quarry
+                .map(|(_, tile)| tile)
+                .or_else(|| siege.nearest_grounded(|tile| frame.rank(centre, doubled(tile))));
             let Some(goal) = grounded.or(siege.unseen).or_else(|| {
                 let flyer = nearest(&mut siege.sighted())?;
                 own.then(|| guard(observation, map, frame, component, flyer))?
@@ -158,14 +164,21 @@ impl Missions {
                 .filter(|threat| walking_gun(threat) && map.component(threat.tile) == component)
                 .min_by_key(|threat| (frame.rank(centre, doubled(threat.tile)), threat.id));
             let pursuit = shelling.map_or(
-                if grounded.is_none() && siege.unseen.is_some() {
+                if let Some((target, _)) = quarry {
+                    Pursuit::Quarry(target)
+                } else if grounded.is_none() && siege.unseen.is_some() {
                     Pursuit::Advance
                 } else {
                     Pursuit::Hunt
                 },
                 |threat| Pursuit::Gun(threat.id),
             );
-            let gun = shelling.map(|threat| threat.id);
+            // The unit the defense holds as its focus: a gun it goes at, or
+            // the intruder it chose.
+            let gun = shelling.map(|threat| threat.id).or(match quarry {
+                Some((AttackTarget::Unit(id), _)) => Some(id),
+                _ => None,
+            });
             let hunting = matches!(pursuit, Pursuit::Hunt);
             // A gun with others beside it that would join the fight there is
             // met like any ground force at a seat that gathers: defenders
@@ -265,11 +278,11 @@ impl Missions {
                 continue;
             }
             let post = grounded.and_then(|threat| waiting_post(map, frame, foundry, threat));
-            let front = front(observation, members, post);
             // Only defenders at the post or already at the fight count
             // toward going out: those still on their way would reach it
             // after it began.
             let fight = shelling.map_or(goal, |threat| threat.tile);
+            let front = front(observation, members, post, fight);
             let gathered = post.map_or(have[0], |post| {
                 together(observation, members.iter().chain(&recruits), [post, fight])
             });
@@ -315,10 +328,15 @@ impl Missions {
                 DefendPhase::Engage { focus } => focus,
                 DefendPhase::Recover | DefendPhase::Guard => None,
             };
-            let lost = lost(observation, gun, focus);
+            let lost = lost(observation, (gun, focus), (&mission.units, pursuit));
+            // A defense after an intruder sends again when it chooses
+            // another, a site after its builder included, and when something
+            // armed comes: held on a builder, defenders would stand under an
+            // escort's fire.
             let resend = recovering
                 || lost
-                || (gun.is_some() && focus != gun)
+                || ((gun.is_some() || quarry.is_some() || intruder(observation, focus))
+                    && focus != gun)
                 || moved(map, (mission.goal, goal), post, component);
             // A defense out at its attackers short of their value holds its
             // recruits and whoever is back at the post as a reserve there,
@@ -359,7 +377,9 @@ impl Missions {
                 .filter(|id| ordered.contains(id))
                 .collect();
             take(&mut free, &recruits);
-            let engage = recovering || lost || gun.is_some();
+            // Turning from an intruder to something armed drops the intruder
+            // as the focus, so it is chosen again once that has gone.
+            let engage = recovering || lost || gun.is_some() || intruder(observation, focus);
             self.joined(
                 index,
                 &recruits,
@@ -691,16 +711,47 @@ fn take(free: &mut Vec<UnitId>, taken: &[UnitId]) {
 
 /// Whether a defense's `focus` no longer holds while it has no `gun` to go
 /// after: its target fell, left sight, or is a gun this Foundry no longer
-/// faces. Any other focus is focus fire's, kept while it lasts.
-fn lost(observation: &ObservationData, gun: Option<UnitId>, focus: Option<UnitId>) -> bool {
-    gun.is_none()
-        && focus.is_some_and(|id| {
-            observation
-                .enemy_units
-                .iter()
-                .find(|enemy| enemy.id == id)
-                .is_none_or(walking_gun)
-        })
+/// faces. Any other focus is focus fire's, kept while it lasts. Its attack
+/// on a site is over too once a member stands idle.
+fn lost(
+    observation: &ObservationData,
+    (gun, focus): (Option<UnitId>, Option<UnitId>),
+    (members, pursuit): (&[UnitId], Pursuit),
+) -> bool {
+    idle_at_site(observation, members, pursuit)
+        || gun.is_none()
+            && focus.is_some_and(|id| {
+                observation
+                    .enemy_units
+                    .iter()
+                    .find(|enemy| enemy.id == id)
+                    .is_none_or(walking_gun)
+            })
+}
+
+/// Whether a defense attacking an unarmed site has a member that can hit it
+/// standing idle: its attack ended, the site it was on fallen, while another
+/// it chose stands too near the first to move the goal. Anti-air members
+/// idle beside any site.
+fn idle_at_site(observation: &ObservationData, members: &[UnitId], pursuit: Pursuit) -> bool {
+    matches!(
+        pursuit,
+        Pursuit::Quarry(AttackTarget::Building(_) | AttackTarget::RememberedBuilding(_))
+    ) && members
+        .iter()
+        .filter_map(|id| mine(observation, *id))
+        .any(|unit| unit.idle && crate::defenses::reach(unit.kind) > Fx::ZERO)
+}
+
+/// Whether `focus` is an unarmed enemy in sight: an intruder a defense
+/// chose, such as a builder. A Sapper's charge arms it.
+fn intruder(observation: &ObservationData, focus: Option<UnitId>) -> bool {
+    focus.is_some_and(|id| {
+        observation
+            .enemy_units
+            .iter()
+            .any(|enemy| enemy.id == id && ground_reach(enemy).is_none())
+    })
 }
 
 /// How defenders go after a Foundry's threats.
@@ -712,6 +763,8 @@ enum Pursuit {
     Advance,
     /// Attack a gun in sight.
     Gun(UnitId),
+    /// Attack the intruder chosen among unarmed ones.
+    Quarry(AttackTarget),
     /// Fall back to the waiting post without stopping to fight on the way.
     Fall,
 }
@@ -729,7 +782,7 @@ fn dispatch(
     let (shooters, rest): (Vec<UnitId>, Vec<UnitId>) = match pursuit {
         Pursuit::Fall => return fall_back(observation, ledger, units, goal),
         Pursuit::Hunt => (Vec::new(), units),
-        Pursuit::Advance | Pursuit::Gun(_) => units
+        Pursuit::Advance | Pursuit::Gun(_) | Pursuit::Quarry(_) => units
             .into_iter()
             .partition(|id| mine(observation, *id).is_some_and(|unit| hits(unit, Domain::Ground))),
     };
@@ -744,6 +797,11 @@ fn dispatch(
         Pursuit::Gun(gun) => Command::Attack {
             units: shooters.clone(),
             target: AttackTarget::Unit(gun),
+            queue: false,
+        },
+        Pursuit::Quarry(target) => Command::Attack {
+            units: shooters.clone(),
+            target,
             queue: false,
         },
         Pursuit::Hunt | Pursuit::Advance | Pursuit::Fall => Command::Advance {
@@ -825,12 +883,15 @@ fn waits(
 }
 
 /// The defenders among `members` out away from the waiting `post` or on
-/// their way, with what they are worth against ground; the rest stand idle
-/// at the post as its reserve. Without a post all are out.
+/// their way, with what those near the post, at the `fight` or on the way
+/// between are worth against ground; the rest stand idle at the post as its
+/// reserve. Without a post all are out. One farther from the fight than the
+/// post is, such as a defender off chasing a fleeing enemy, is in neither.
 fn front(
     observation: &ObservationData,
     members: &[UnitId],
     post: Option<TilePos>,
+    fight: TilePos,
 ) -> (Vec<UnitId>, u64) {
     let out: Vec<&UnitObs> = members
         .iter()
@@ -839,9 +900,11 @@ fn front(
             post.is_none_or(|post| !unit.idle || unit.tile.chebyshev(post) > RESERVE_TILES)
         })
         .collect();
+    let way = post.map_or(0, |post| post.chebyshev(fight));
+    let near = |unit: &UnitObs| unit.tile.chebyshev(fight) <= way + GATHER_TILES;
     let value = out
         .iter()
-        .filter(|unit| hits(unit, Domain::Ground))
+        .filter(|unit| hits(unit, Domain::Ground) && near(unit))
         .map(|unit| value(unit))
         .sum();
     (out.iter().map(|unit| unit.id).collect(), value)
@@ -1079,6 +1142,44 @@ impl Siege<'_> {
             .map(|threat| threat.id)
             .chain(self.recalled.iter().copied())
             .collect()
+    }
+
+    /// What defenders go after when nothing armed threatens, nearest by
+    /// `rank` within each kind: a builder raising an enemy site among the
+    /// seat's buildings, since killing it stops the site soonest; then that
+    /// site or another building among them; then any other builder; a scout
+    /// last. Each with where it stands, or the tile beside it.
+    fn quarry<K: Ord>(&self, rank: impl Fn(TilePos) -> K) -> Option<(AttackTarget, TilePos)> {
+        // An escort remembered just out of sight makes it a fight to gather
+        // for, not an intruder to pick off.
+        if !self.unarmed_only() || self.remembered != [0, 0] {
+            return None;
+        }
+        let builder = |stray: &UnitObs| stray.kind.stats().harvest.is_some();
+        let raising = |stray: &UnitObs| {
+            builder(stray)
+                && self.batteries.iter().any(|(site, _)| {
+                    !site.built
+                        && site.player == stray.player
+                        && gap(site.anchor, site.kind.size(), stray.tile, (1, 1)) <= 1
+                })
+        };
+        let stray = |pick: &dyn Fn(&UnitObs) -> bool| {
+            self.strays
+                .iter()
+                .filter(|stray| pick(stray))
+                .min_by_key(|stray| (rank(stray.tile), stray.id))
+                .map(|stray| (AttackTarget::Unit(stray.id), stray.tile))
+        };
+        stray(&raising)
+            .or_else(|| {
+                self.batteries
+                    .iter()
+                    .min_by_key(|(building, beside)| (rank(*beside), building.id))
+                    .map(|(building, beside)| (super::raid::aim(building), *beside))
+            })
+            .or_else(|| stray(&builder))
+            .or_else(|| stray(&|_| true))
     }
 
     /// Where its grounded threat nearest by `rank` stands: an armed one

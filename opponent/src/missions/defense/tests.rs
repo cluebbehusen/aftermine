@@ -29,10 +29,22 @@ fn a_gun_the_foundry_no_longer_faces_is_lost_but_focus_fire_is_kept() {
     ]);
     let (gun, raider) = (ids[1], ids[2]);
     assert!(observation.enemy_units.len() == 2, "premise: both in sight");
-    assert!(lost(&observation, None, Some(gun)));
-    assert!(!lost(&observation, None, Some(raider)));
-    assert!(lost(&observation, None, Some(UnitId(999))));
-    assert!(!lost(&observation, Some(gun), Some(gun)));
+    assert!(lost(&observation, (None, Some(gun)), (&[], Pursuit::Hunt)));
+    assert!(!lost(
+        &observation,
+        (None, Some(raider)),
+        (&[], Pursuit::Hunt)
+    ));
+    assert!(lost(
+        &observation,
+        (None, Some(UnitId(999))),
+        (&[], Pursuit::Hunt)
+    ));
+    assert!(!lost(
+        &observation,
+        (Some(gun), Some(gun)),
+        (&[], Pursuit::Hunt)
+    ));
 }
 
 #[test]
@@ -226,4 +238,88 @@ fn a_defense_given_up_ends_only_once_every_member_falls_back() {
     };
     assert_eq!(given_up(1), 1, "one member still has its last order");
     assert_eq!(given_up(2), 0);
+}
+
+#[test]
+fn a_defender_far_off_chasing_is_in_neither_fight() {
+    // One defender stands at the fight and another has chased far off: both
+    // are out from the post, but only the one at the fight is worth anything
+    // there, so the post's reserve does not wait on the chaser.
+    let (observation, ids) = viewed(&[
+        (0, UnitKind::Sentinel, 8, 4),
+        (0, UnitKind::Sentinel, 18, 8),
+    ]);
+    let (at_fight, chaser) = (ids[0], ids[1]);
+    let (out, worth) = front(
+        &observation,
+        &[at_fight, chaser],
+        Some(TilePos::new(4, 1)),
+        TilePos::new(6, 3),
+    );
+    assert!(out.contains(&at_fight) && out.contains(&chaser), "{out:?}");
+    let alone = value(mine(&observation, at_fight).unwrap());
+    assert_eq!(worth, alone);
+}
+
+#[test]
+fn only_the_site_owner_s_builder_beside_it_comes_first() {
+    // A Harvester beside an enemy site raises it only if it is the site's:
+    // another seat's passing by cannot, so the site itself comes first.
+    let (observation, _) = viewed(&[(1, UnitKind::Harvester, 9, 4)]);
+    let builder = observation.enemy_units[0].clone();
+    let passer = UnitObs {
+        player: PlayerId(2),
+        ..builder.clone()
+    };
+    let site = BuildingObs {
+        provisional: false,
+        id: aftermine_sim::BuildingId(7),
+        player: PlayerId(1),
+        kind: BuildingKind::Fabricator,
+        anchor: TilePos::new(10, 4),
+        hp: 50,
+        built: false,
+        seen: true,
+        tier: 0,
+    };
+    let beside = TilePos::new(9, 5);
+    let quarry = |stray: &UnitObs| {
+        Siege {
+            strays: vec![stray],
+            batteries: vec![(&site, beside)],
+            ..Siege::default()
+        }
+        .quarry(|tile| tile.x + tile.y)
+        .map(|(target, _)| target)
+    };
+    assert_eq!(quarry(&builder), Some(AttackTarget::Unit(builder.id)));
+    assert_eq!(quarry(&passer), Some(AttackTarget::Building(site.id)));
+}
+
+#[test]
+fn a_sapper_is_no_unarmed_intruder() {
+    let (observation, ids) = viewed(&[
+        (0, UnitKind::Sentinel, 3, 4),
+        (1, UnitKind::Sapper, 5, 4),
+        (1, UnitKind::Surveyor, 5, 6),
+    ]);
+    assert!(!intruder(&observation, Some(ids[1])));
+    assert!(intruder(&observation, Some(ids[2])));
+}
+
+#[test]
+fn only_a_member_that_can_hit_a_site_ends_its_attack_by_standing_idle() {
+    let (mut observation, ids) = viewed(&[
+        (0, UnitKind::Sentinel, 3, 4),
+        (0, UnitKind::Flakhound, 3, 6),
+    ]);
+    let site = Pursuit::Quarry(AttackTarget::Building(aftermine_sim::BuildingId(77)));
+    for unit in &mut observation.my_units {
+        unit.idle = unit.kind == UnitKind::Flakhound;
+    }
+    assert!(!idle_at_site(&observation, &ids, site));
+    for unit in &mut observation.my_units {
+        unit.idle = true;
+    }
+    assert!(idle_at_site(&observation, &ids, site));
 }
