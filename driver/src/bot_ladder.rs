@@ -21,6 +21,7 @@ use crate::seat_summary::{SeatEvidence, SeatSummary, SeatSummaryBuilder, rank};
 use aftermine_sim::Scenario;
 use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance};
 use anyhow::{Context, Result, bail, ensure};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -315,8 +316,9 @@ pub struct LadderSeat {
     pub config: BotConfig,
 }
 
-/// Reads ladder rows from JSONL files, in file and line order.
-pub fn load_rows(paths: &[PathBuf]) -> Result<Vec<ScoredLadderRow>> {
+/// Reads ladder rows from JSONL files, in file and line order, as any shape
+/// that reads a subset of their fields.
+pub fn load_rows<T: DeserializeOwned>(paths: &[PathBuf]) -> Result<Vec<T>> {
     let mut rows = Vec::new();
     for path in paths {
         let text = std::fs::read_to_string(path)
@@ -325,7 +327,7 @@ pub fn load_rows(paths: &[PathBuf]) -> Result<Vec<ScoredLadderRow>> {
             if record.trim().is_empty() {
                 continue;
             }
-            let row: ScoredLadderRow = serde_json::from_str(record).with_context(|| {
+            let row: T = serde_json::from_str(record).with_context(|| {
                 format!("{}:{} is not a bot-ladder row", path.display(), line + 1)
             })?;
             rows.push(row);
@@ -344,6 +346,17 @@ pub enum Verdict {
     Fail,
     /// Too few decided pairs to judge.
     TooFewPairs,
+}
+
+impl Verdict {
+    /// The verdict in words.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Pass => "pass",
+            Self::Fail => "fail",
+            Self::TooFewPairs => "too few decided pairs",
+        }
+    }
 }
 
 /// Pairs by result.
@@ -453,14 +466,14 @@ pub struct LadderReport {
 
 /// Which rung won a leg: `Some(true)` for the higher rung, `Some(false)` for
 /// the lower, `None` without a winner.
-type Won = Option<bool>;
+pub(crate) type Won = Option<bool>;
 
 /// A pair's first row index and its forward and swapped legs, once each.
 type PairLegs = (usize, [Option<Won>; 2]);
 
 /// The rung that won `row`'s leg, after checking its seats hold the rungs
 /// its leg says.
-fn winner(row: &ScoredLadderRow) -> Result<Won> {
+pub(crate) fn winner(row: &ScoredLadderRow) -> Result<Won> {
     let label = &row.ladder;
     let rungs: Vec<BotDifficulty> = row
         .seats
@@ -676,17 +689,13 @@ impl LadderReport {
     pub fn render(&self) -> String {
         let mut out = String::new();
         for report in &self.comparisons {
-            let verdict = match report.verdict {
-                Verdict::Pass => "pass",
-                Verdict::Fail => "fail",
-                Verdict::TooFewPairs => "too few decided pairs",
-            };
             let _ = writeln!(
                 out,
-                "{}: {} against {}: {verdict} (gate {}% of decided legs over {} decided pairs)",
+                "{}: {} against {}: {} (gate {}% of decided legs over {} decided pairs)",
                 report.manifest,
                 report.higher,
                 report.lower,
+                report.verdict.name(),
                 (report.gate + 5) / 10,
                 report.min_decided_pairs
             );
@@ -773,4 +782,4 @@ pub(crate) fn wilson(wins: u32, n: u32) -> [f64; 2] {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

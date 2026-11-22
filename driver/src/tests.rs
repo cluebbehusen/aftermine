@@ -49,6 +49,31 @@ fn bot_summary_requires_rows() {
     assert!(json);
 }
 
+#[test]
+fn bot_ladder_diff_takes_a_base_and_a_branch_run() {
+    let cli = Cli::try_parse_from([
+        "aftermine-driver",
+        "bot-ladder-diff",
+        "main/rows.jsonl",
+        "branch/rows.jsonl",
+        "--json",
+    ])
+    .expect("bot-ladder-diff parses");
+    let Cmd::BotLadderDiff { base, branch, json } = cli.cmd else {
+        panic!("bot-ladder-diff parsed as another command")
+    };
+    assert_eq!(
+        (base, branch),
+        (
+            PathBuf::from("main/rows.jsonl"),
+            PathBuf::from("branch/rows.jsonl")
+        )
+    );
+    assert!(json);
+    assert!(!parses(&["bot-ladder-diff", "main/rows.jsonl"]));
+    assert!(!parses(&["bot-ladder-diff", "a", "b", "c"]));
+}
+
 /// Whether `aftermine-driver <args>` parses.
 fn parses(args: &[&str]) -> bool {
     Cli::try_parse_from(std::iter::once("aftermine-driver").chain(args.iter().copied())).is_ok()

@@ -40,7 +40,8 @@ Headless execution (`runner`, `render`, `playback` and `stats`) lives in
   leg, with QA detectors for failures and reactivity. `seat_summary`
   (`bot-summary`) pools those rows.
 - `bot_ladder` (`bot-ladder`) plays the difficulty rungs against each other and
-  checks each comparison against its gate.
+  checks each comparison against its gate. `ladder_diff` (`bot-ladder-diff`)
+  compares two runs of it game by game.
 - `bot_pressure` (`bot-pressure`) runs staged scenarios where a scripted
   attacker presses one situation on a bot.
 - `challengers` holds scripted players, each playing one known way to beat the

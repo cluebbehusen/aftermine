@@ -180,6 +180,19 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Compare two `bot-ladder` runs of the same legs game by game: games
+    /// that played identically, every game whose winner changed, the paired
+    /// change in the higher rung's share of net worth, and each rung's
+    /// failure incidents, reactivity and fights on both sides.
+    BotLadderDiff {
+        /// The base run's rows.jsonl.
+        base: PathBuf,
+        /// The branch run's rows.jsonl.
+        branch: PathBuf,
+        /// Print the comparison as JSON.
+        #[arg(long)]
+        json: bool,
+    },
     /// Play scripted challengers against the bot: one challenger seat and
     /// one bot seat per game on two-seat maps, the challenger in seat 0 on
     /// even seeds and seat 1 on odd ones, the bot's personality seed the
@@ -714,13 +727,12 @@ fn emit<T: serde::Serialize>(
 }
 
 fn print_ladder_report(rows: &[PathBuf], json: bool) -> Result<()> {
-    let report = aftermine_driver::bot_ladder::build_report(
-        &aftermine_driver::bot_ladder::load_rows(rows)?,
-    )?;
+    use aftermine_driver::bot_ladder;
+    let rows: Vec<bot_ladder::ScoredLadderRow> = bot_ladder::load_rows(rows)?;
     emit(
         json,
-        &report,
-        aftermine_driver::bot_ladder::LadderReport::render,
+        &bot_ladder::build_report(&rows)?,
+        bot_ladder::LadderReport::render,
     )
 }
 
@@ -909,6 +921,14 @@ fn main() -> Result<()> {
             print_ladder_report(&[rows_path], json)?;
         }
         Cmd::BotLadderReport { rows, json } => print_ladder_report(&rows, json)?,
+        Cmd::BotLadderDiff { base, branch, json } => {
+            use aftermine_driver::ladder_diff;
+            emit(
+                json,
+                &ladder_diff::diff(&ladder_diff::load(&base)?, &ladder_diff::load(&branch)?)?,
+                ladder_diff::LadderDiff::render,
+            )?;
+        }
         Cmd::ReplayLedger { replays, json } => {
             let games = replays
                 .iter()

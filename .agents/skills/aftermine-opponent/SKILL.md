@@ -81,7 +81,7 @@ normative for this crate.
 ## Report at handoff
 
 When handing off a PR, tell Connor its net production and test line change,
-average and p99 time per decision with total CPU, the ladder smoke against the
+average and p99 time per decision with total CPU, the full ladder against the
 base, and the pressure scenarios that pass, including when they are unfavorable.
 Keep them out of the PR description.
 
@@ -97,16 +97,23 @@ Keep them out of the PR description.
   `skyhook` at most 250 µs average and 1 ms p99 per decision; `duel` and
   `mature-armies` no worse than the base beyond noise.
 
-Run the ladder smoke locally on the branch and on its base before handoff; CI
-does not run it:
+Run the full ladder locally on the branch and on its base before handoff, then
+compare the two runs game by game; CI does not run it:
 
 ```sh
-cargo run --release -p aftermine-driver -- bot-ladder driver/evaluation/ladder/ladder-smoke.json --out <new directory>
+cargo run --release -p aftermine-driver -- bot-ladder driver/evaluation/ladder/ladder.json --jobs 8 --out <new directory>
+cargo run --release -p aftermine-driver -- bot-ladder-diff <base>/rows.jsonl <branch>/rows.jsonl
 ```
 
-It plays every comparison of the ladder on Skirmish, The Deep Cut, Open Pit and
-Severance, Balanced, two seed runs each. A PR that touches team or free-for-all
-play also plays every seat of those maps at one rung and reads the seats:
+`bot-ladder-diff` pairs every game with the same game in the other run and
+refuses runs that did not play the same games. Report how many games played
+identically, the games whose winner changed, the change in the higher rung's
+share of net worth, and the rung measures that moved. The worth change compares
+each game with itself, so it moves with far fewer games than two win shares do.
+`--json` gives the same comparison as data.
+
+A PR that touches team or free-for-all play also plays every seat of those maps
+at one rung and reads the seats:
 
 ```sh
 cargo run --release -p aftermine-driver -- bot-eval scenarios/broad-front.json scenarios/pentangle-claim.json scenarios/scramble-basin.json --runs 3 --candidate <name> --out <rows.jsonl>
@@ -177,11 +184,12 @@ with the rungs swapped between the seats, both seats sharing one personality
 seed. A comparison passes when the higher rung wins at least its gate of decided
 legs over at least the manifest's number of decided pairs; the manifest sets
 both. `ladder.json` covers nine duel maps across the open, constrained and
-severed families, every stance, over several runs; run it for a lever's final
-numbers. `ladder-smoke.json` is the quick check at handoff and while a
-difficulty lever is in progress. `bot-ladder-report <rows.jsonl>...` re-reads
-published rows, and `bot-ladder --replay-dir` saves a replay of every leg with
-their compact rows in `legs.jsonl`.
+severed families, every stance, over several runs; run it at handoff and for a
+lever's final numbers. `ladder-smoke.json` plays every comparison on Skirmish,
+The Deep Cut, Open Pit and Severance, Balanced, two seed runs each: the quick
+check while iterating. `bot-ladder-report <rows.jsonl>...` re-reads published
+rows, and `bot-ladder --replay-dir` saves a replay of every leg with their
+compact rows in `legs.jsonl`.
 
 ## Failure detectors
 
