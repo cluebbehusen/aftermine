@@ -283,12 +283,27 @@ fn a_shell_downed_by_a_defender_out_of_sight_is_remembered_with_its_bearing() {
 }
 
 #[test]
-fn a_shell_downed_by_a_seen_defender_or_out_of_sight_leaves_no_memory() {
+fn a_shell_downed_by_a_seen_defender_or_wholly_out_of_sight_leaves_no_memory() {
     use chassis::grid::TilePos;
     let seen = downed_in_sight(&[]);
     assert!(seen.vision(PlayerId(0)).downed_shells().is_empty());
-    let unseen = downed_in_sight(&[TilePos::new(15, 10), TilePos::new(12, 10)]);
+    let shot: Vec<TilePos> = (12..=15).map(|x| TilePos::new(x, 10)).collect();
+    let unseen = downed_in_sight(&shot);
     assert!(unseen.vision(PlayerId(0)).downed_shells().is_empty());
+}
+
+#[test]
+fn a_shot_seen_crossing_open_ground_is_remembered_though_its_shell_falls_in_fog() {
+    use chassis::grid::TilePos;
+    let state = downed_in_sight(&[
+        TilePos::new(15, 10),
+        TilePos::new(14, 10),
+        TilePos::new(12, 10),
+    ]);
+    let downed = state.vision(PlayerId(0)).downed_shells();
+    assert_eq!(downed.len(), 1, "{downed:?}");
+    assert_eq!(downed[0].tile, TilePos::new(12, 10));
+    assert_eq!(downed[0].from.index(), 0);
 }
 
 #[test]

@@ -137,12 +137,15 @@ fn intercept(state: &mut State, events: &mut Vec<Event>) {
             arrival: shell.arrival,
         });
     }
-    // A team that sees its shell downed by a defender out of sight sees the
-    // shot cross toward it, as fire from fog shows where it comes from.
+    // A team sees the shot from a defender out of sight wherever it crosses
+    // seen ground on its way to the shell, as fire from fog shows where it
+    // comes from; a shot entirely over fog shows no direction at all.
     for (owner, at, defender) in downed {
         let tile = chassis::grid::TilePos::containing(at);
-        if state.can_see(owner, tile)
-            && !state.can_see(owner, chassis::grid::TilePos::containing(defender))
+        if !state.can_see(owner, chassis::grid::TilePos::containing(defender))
+            && chassis::path::line_or_end_blocked(defender, at, |crossed| {
+                !state.can_see(owner, crossed)
+            })
         {
             state.record_downed_shell(
                 owner,
