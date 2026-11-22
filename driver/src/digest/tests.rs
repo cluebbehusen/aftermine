@@ -218,6 +218,7 @@ fn an_advance_reads_as_what_the_seat_saw_happen() {
                     grounded: true,
                 },
                 note: None,
+                by: None,
             },
             SeenEvent {
                 tick: 2399,
@@ -229,6 +230,7 @@ fn an_advance_reads_as_what_the_seat_saw_happen() {
                     pos: at(53, 39),
                 },
                 note: None,
+                by: None,
             },
             SeenEvent {
                 tick: 2399,
@@ -236,6 +238,7 @@ fn an_advance_reads_as_what_the_seat_saw_happen() {
                     result: GameResult::Victory { team: 0 },
                 },
                 note: None,
+                by: None,
             },
         ],
         result: Some(GameResult::Victory { team: 0 }),
@@ -258,6 +261,7 @@ fn an_advance_reads_as_what_the_seat_saw_happen() {
         text.contains("MATCH OVER at tick 2400 (2:00): you won"),
         "{text}"
     );
+    assert!(text.contains("the match is over: you won"), "{text}");
 }
 
 #[test]
@@ -359,6 +363,7 @@ fn took_fire_names_what_was_hit_when_the_seat_can() {
             pos: Vec2Fx::new(Fx::from_num(12), Fx::from_num(7)),
         },
         note: note.map(str::to_string),
+        by: None,
     };
     let view = PlayedView {
         player: PlayerId(0),
@@ -366,13 +371,24 @@ fn took_fire_names_what_was_hit_when_the_seat_can() {
         ticks: 200,
         tick: 1400,
         income: 0,
-        log: vec![fire(Some("lancer 72")), fire(None)],
+        log: vec![
+            fire(Some("lancer 72")),
+            fire(None),
+            SeenEvent {
+                by: Some("seat 1's lancer 40".to_string()),
+                ..fire(Some("lancer 73"))
+            },
+        ],
         result: None,
         tick_limit: None,
     };
     let text = played(&view);
     assert!(
-        text.contains("1300 (1:05) your lancer 72 took fire at (12,7)"),
+        text.contains("1300 (1:05) your lancer 72 took fire at (12,7)\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains("your lancer 73 took fire at (12,7) from seat 1's lancer 40"),
         "{text}"
     );
     assert!(

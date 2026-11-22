@@ -268,8 +268,12 @@ pub struct SeenEvent {
     /// The event.
     pub event: Event,
     /// What the seat can name that the event does not: the own unit or
-    /// structure that took fire, or the site of another seat's that went.
+    /// structure that took fire, the site of another seat's that went, or
+    /// where a structure that was destroyed stood.
     pub note: Option<String>,
+    /// For fire the seat took, the enemies it saw firing on what was hit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
 }
 
 /// A frame-exact profiling workload. Each frame advances a fixed slice of

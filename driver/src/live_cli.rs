@@ -7,9 +7,12 @@ use crate::parse::{
     parse_tile, parse_unit_kind, parse_wire_name, unit_kind_help,
 };
 use aftermine_driver::client::Client;
-use aftermine_protocol::{Key, RawEvent, Request, RequestEnvelope, StateFilter};
-use aftermine_sim::{BuildingId, Command, PlayerId, Target, UnitId};
+use aftermine_protocol::{FogView, Key, RawEvent, Request, RequestEnvelope, StateFilter};
+use aftermine_sim::{
+    AttackTarget, BuildingId, Command, PlayerId, RememberedBuilding, Target, UnitId,
+};
 use anyhow::{Context, Result, bail};
+use chassis::grid::TilePos;
 use clap::{Args, Subcommand};
 
 /// The one finger injected touch gestures use; each gesture lifts it
@@ -134,15 +137,21 @@ pub(crate) enum LiveCmd {
         #[arg(long)]
         target: u32,
     },
-    /// Attack an enemy building.
+    /// Attack an enemy building, by id while it is in sight, or by its
+    /// anchor with --at, which also reaches one remembered out of sight:
+    /// remembered structures carry no id.
     AttackBuilding {
         #[command(flatten)]
         squad: Squad,
         /// Victim building id.
+        #[arg(long, required_unless_present = "at", conflicts_with = "at")]
+        target: Option<u32>,
+        /// The victim's anchor as "x,y", as the digest lists it.
         #[arg(long)]
-        target: u32,
+        at: Option<String>,
     },
-    /// Put harvesters on a scrap node.
+    /// Put harvesters on a scrap node: a scrap tile, or a wreck's tile to
+    /// collect the wreck.
     Harvest {
         #[command(flatten)]
         squad: Squad,
@@ -487,6 +496,11 @@ pub(crate) struct Squad {
 }
 
 impl Squad {
+    /// The acting player.
+    pub(crate) fn player(&self) -> PlayerId {
+        PlayerId(self.player)
+    }
+
     /// The order `command` builds from these units and the queue flag.
     fn send(self, command: impl FnOnce(Vec<UnitId>, bool) -> Command) -> Request {
         Request::SendCommand {
@@ -494,6 +508,37 @@ impl Squad {
             command: command(units(self.units), self.queue),
         }
     }
+}
+
+/// The attack by `squad` on the structure its player knows anchored at
+/// `at`, as `view` shows it: by id while in sight, else as remembered.
+pub(crate) fn attack_at(squad: Squad, at: &str, view: &FogView) -> Result<Request> {
+    let anchor = parse_tile(at)?;
+    let anchored = |tile: [i32; 2]| TilePos::new(tile[0], tile[1]) == anchor;
+    let target: AttackTarget = if let Some(building) = view
+        .buildings
+        .iter()
+        .find(|building| building.player != view.player && anchored(building.anchor))
+    {
+        Target::Building(BuildingId(building.id)).into()
+    } else if let Some(ghost) = view.ghosts.iter().find(|ghost| anchored(ghost.anchor)) {
+        AttackTarget::RememberedBuilding(RememberedBuilding {
+            owner: PlayerId(ghost.owner),
+            building_kind: ghost.kind,
+            anchor,
+        })
+    } else {
+        bail!(
+            "no other seat's structure is known anchored at ({},{})",
+            anchor.x,
+            anchor.y
+        )
+    };
+    Ok(squad.send(|units, queue| Command::Attack {
+        units,
+        target,
+        queue,
+    }))
 }
 
 #[expect(clippy::too_many_lines, reason = "one arm per live subcommand")]
@@ -565,11 +610,18 @@ pub(crate) fn live_requests(cmd: LiveCmd) -> Result<Vec<Request>> {
             target: Target::Unit(UnitId(target)).into(),
             queue,
         }),
-        LiveCmd::AttackBuilding { squad, target } => squad.send(|units, queue| Command::Attack {
+        LiveCmd::AttackBuilding {
+            squad,
+            target: Some(target),
+            ..
+        } => squad.send(|units, queue| Command::Attack {
             units,
             target: Target::Building(BuildingId(target)).into(),
             queue,
         }),
+        LiveCmd::AttackBuilding { .. } => {
+            bail!("attack-building --at reads the seat's view, so it is executed directly")
+        }
         LiveCmd::Harvest { squad, node } => {
             let node = parse_tile(&node)?;
             squad.send(|units, queue| Command::Harvest { units, node, queue })

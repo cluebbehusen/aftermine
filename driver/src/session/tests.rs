@@ -535,6 +535,14 @@ fn a_refused_order_says_what_the_seat_can_tell_of_why() {
         .handle(build(BuildingKind::Turret, unseen, false))
         .unwrap_err();
     assert!(error.contains("--defer"), "{error}");
+    // Deferred, the same ground was never explored: --defer cannot help.
+    let error = session
+        .handle(build(BuildingKind::Turret, unseen, true))
+        .unwrap_err();
+    assert!(
+        error.contains("never been explored") && !error.contains("add --defer"),
+        "{error}"
+    );
     let error = session
         .handle(build(BuildingKind::Extractor, foundry.offset(-3, 0), false))
         .unwrap_err();
@@ -893,6 +901,17 @@ fn took_fire_names_a_unit_hit_on_the_move() {
             logged.note.as_deref(),
             Some(format!("breaker {}", runner.0).as_str())
         );
+        // The Lancer firing on it stood in the Breaker's sight.
+        let shooter = state
+            .units()
+            .iter()
+            .find(|unit| unit.player == PlayerId(1) && unit.kind == UnitKind::Lancer)
+            .unwrap()
+            .id;
+        assert_eq!(
+            logged.by.as_deref(),
+            Some(format!("seat 1's lancer {}", shooter.0).as_str())
+        );
         return;
     }
     panic!("premise: the Lancer never hit the Breaker while it ran");
@@ -991,4 +1010,64 @@ fn took_fire_names_each_victim_hit_in_one_tick() {
         return;
     }
     panic!("premise: the Foundry and the Mantle never took fire in the same tick");
+}
+
+#[test]
+fn a_destroyed_structure_is_placed_by_its_anchor() {
+    // Enemy Lancers bring down the seat's Fabricator: the line says where it
+    // stood as the digest lists structures, by anchor, not by its centre.
+    let mut scenario = human_scenario("anchored");
+    let anchor = TilePos::new(10, 2);
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Fabricator,
+            x: anchor.x,
+            y: anchor.y,
+        });
+    for y in 1..=4 {
+        scenario.units.push(aftermine_sim::scenario::UnitSpec {
+            player: 1,
+            kind: UnitKind::Lancer,
+            x: 15,
+            y,
+        });
+    }
+    let mut state = scenario.build().unwrap();
+    let fabricator = state
+        .buildings()
+        .iter()
+        .find(|building| building.kind == BuildingKind::Fabricator)
+        .unwrap()
+        .id;
+    let lancers: Vec<aftermine_sim::UnitId> = state
+        .units()
+        .iter()
+        .filter(|unit| unit.player == PlayerId(1))
+        .map(|unit| unit.id)
+        .collect();
+    let mut commands = vec![PlayerCommand {
+        player: PlayerId(1),
+        command: Command::Attack {
+            units: lancers,
+            target: aftermine_sim::Target::Building(fabricator).into(),
+            queue: false,
+        },
+    }];
+    for _ in 0..3_000 {
+        let mut seen = Seen::new(PlayerId(0));
+        seen.look(&state);
+        let report = state.tick(&std::mem::take(&mut commands));
+        seen.note(report.tick, &state, &report.events);
+        if let Some(logged) = seen
+            .log
+            .iter()
+            .find(|logged| matches!(logged.event, Event::BuildingDestroyed { .. }))
+        {
+            assert_eq!(logged.note.as_deref(), Some("(10,2)"));
+            return;
+        }
+    }
+    panic!("premise: the Lancers bring the Fabricator down");
 }

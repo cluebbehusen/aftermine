@@ -11,11 +11,18 @@ Orders. Each names your seat first: ./play hunt @SEAT@ --units 4,5 --to 30,20
   accompany, harvest, build, repair, repair-unit, salvage, cancel,
   upgrade, train, rally
   train             --count 1-5 queues several of one unit at once.
-  send              Any command with no verb of its own, as JSON.
+  attack-building   --target <id> while in sight, or --at x,y, its anchor
+                    as the digest lists it, which also reaches a structure
+                    remembered out of sight.
+  harvest           --node x,y: a scrap tile, or a wreck's tile to collect
+                    the wreck. salvage strips your own finished structure.
+  send              Any command with no verb of its own, as JSON, such as
+                    a Spire's strike once its round is ready:
+                    ./play send @SEAT@ '{"type":"launch","building":12,"target":{"x":40,"y":20}}'
 
 An order the game would reject is refused at once with its reason, and
-nothing is sent. Other commands of the debug client are not part of the
-playtest.
+that order is not sent. Other commands of the debug client are not part of
+the playtest.
 
 Order labels in the digest:
   idle          nothing to do; armed units fight what comes in range

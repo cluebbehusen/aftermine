@@ -778,6 +778,7 @@ impl Game {
             scenario: self.scenario.name.clone(),
             sim_version: SIM_VERSION,
             result: self.state.result(),
+            verdict: None,
             recorded_commands: self.recorder.commands.len(),
         }
     }
