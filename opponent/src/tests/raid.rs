@@ -868,4 +868,8 @@ fn a_raider_drawn_past_its_target_runs_home_while_the_rest_strike_on() {
     );
     let mission = raid(&trace.unwrap().missions).expect("the raid strikes on");
     assert_eq!(mission.phase, Phase::Engage);
+    // It stays the raid's on its way, so nothing else takes it there.
+    let json = serde_json::to_value(opponent.checkpoint()).unwrap();
+    let units = json["missions"]["list"][0]["units"].to_string();
+    assert!(units.contains(&stray.0.to_string()), "{units}");
 }

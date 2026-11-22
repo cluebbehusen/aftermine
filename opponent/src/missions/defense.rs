@@ -698,7 +698,7 @@ fn lost(observation: &ObservationData, gun: Option<UnitId>, focus: Option<UnitId
         })
 }
 
-/// Runs the ground members of a defense hunting or holding an intruder that
+/// Runs the armed members of a defense hunting or holding an intruder that
 /// stand past what it defends back to the `post`: hunting, a defender chases
 /// whatever it fights until that dies or leaves sight, out across the map.
 /// Past is farther from every own building than the `siege`'s threats
@@ -723,7 +723,7 @@ fn recall(
     let away: Vec<UnitId> = members
         .iter()
         .filter_map(|id| mine(observation, *id))
-        .filter(|unit| unit.kind.stats().domain == Domain::Ground)
+        .filter(|unit| !unit.kind.stats().weapons.is_empty())
         .filter(|unit| {
             let own = crate::defenses::reach(unit.kind).ceil().to_num::<i32>();
             !defended(observation, unit.tile, area + own)
@@ -769,23 +769,61 @@ fn exposed(observation: &ObservationData, unit: &UnitObs) -> bool {
 
 /// Whether the known enemies that would join a fight where `unit` stands,
 /// and the enemy guns that reach it, outweigh the `members` of its defense
-/// beside it by the `margin` per mille a fight needs.
+/// beside it that can fight them by the `margin` per mille a fight needs,
+/// all judged in the domain `unit` is hit in: an aircraft by what can hit
+/// aircraft there.
 fn outweighed(
     (observation, memory): (&ObservationData, &Memory),
     members: &[UnitId],
     unit: &UnitObs,
     margin: u64,
 ) -> bool {
-    let met =
-        meeting::opposed(observation, memory, unit.tile) + defense(observation, memory, unit.tile);
+    let domain = unit.body_domain();
+    let met = if domain == Domain::Ground {
+        // The guns alone: remembered units near are the meeting's already.
+        let counted: Vec<UnitId> = memory.units().iter().map(|seen| seen.id).collect();
+        meeting::opposed(observation, memory, unit.tile)
+            + defense_around(observation, memory, &[unit.tile], &counted)
+    } else {
+        let near = |reach: Fx, tile: TilePos| {
+            reach > Fx::ZERO
+                && tile.chebyshev(unit.tile) <= reach.ceil().to_num::<i32>().max(LOCAL_REACH)
+        };
+        observation
+            .enemy_units
+            .iter()
+            .filter(|enemy| near(air_reach(enemy.kind.stats().weapons), enemy.tile))
+            .map(value)
+            .sum::<u64>()
+            + observation
+                .enemy_buildings
+                .iter()
+                .filter(|building| {
+                    let tier = building.kind.tiers()[usize::from(building.tier)];
+                    near(air_reach(tier.weapons), building.anchor)
+                })
+                .map(building_value)
+                .sum::<u64>()
+    };
     let could: u64 = members
         .iter()
         .filter_map(|id| mine(observation, *id))
         .filter(|other| other.tile.chebyshev(unit.tile) <= GATHER_TILES)
-        .filter(|other| hits(other, Domain::Ground))
+        .filter(|other| !other.kind.stats().weapons.is_empty())
+        .filter(|other| domain == Domain::Air || hits(other, Domain::Ground))
         .map(value)
         .sum();
     met > 0 && could * 1_000 < met * margin
+}
+
+/// The longest reach of `weapons` against aircraft.
+fn air_reach(weapons: &[WeaponStats]) -> Fx {
+    weapons
+        .iter()
+        .filter(|weapon| weapon.targets.covers(Domain::Air))
+        .map(|weapon| weapon.range)
+        .max()
+        .unwrap_or(Fx::ZERO)
 }
 
 /// Whether `tile` lies within `reach` of one of the seat's or its allies'
