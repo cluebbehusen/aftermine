@@ -335,9 +335,15 @@ fn ghost(owner: u32, x: i32, y: i32) -> Value {
     json!({"kind": "turret", "owner": owner, "anchor": {"x": x, "y": y}, "hp": 350})
 }
 
-/// A well-formed recent allied impact record.
+/// A well-formed recent allied impact record, its fire from the east.
 fn incident(x: i32, y: i32, expires_at: u64) -> Value {
-    json!({"tile": {"x": x, "y": y}, "expires_at": expires_at})
+    incident_from(x, y, 0, expires_at)
+}
+
+/// A well-formed recent allied impact record, its fire from compass point
+/// `from`.
+fn incident_from(x: i32, y: i32, from: u8, expires_at: u64) -> Value {
+    json!({"tile": {"x": x, "y": y}, "from": from, "expires_at": expires_at})
 }
 
 #[test]
@@ -408,7 +414,11 @@ fn well_formed_additions_are_accepted() {
             }
         }
     }
-    base["vision"][0]["salvage_incidents"] = json!([incident(4, 3, 100), incident(2, 4, 100)]);
+    base["vision"][0]["salvage_incidents"] = json!([
+        incident(4, 3, 100),
+        incident_from(4, 3, 9, 100),
+        incident(2, 4, 100)
+    ]);
     base["vision"][0]["shell_impacts"] = json!([
         incident(4, 3, 100),
         incident(2, 4, 100 + aftermine_sim::stats::SHELL_IMPACT_MEMORY_TICKS),
@@ -860,6 +870,19 @@ fn leash_clocks_are_bounded_at_deserialization() {
                 "{field}={value}"
             );
         }
+    }
+}
+
+#[test]
+fn remembered_fire_from_no_compass_point_is_refused() {
+    for (memory, from) in [("salvage_incidents", 16), ("shell_impacts", 255)] {
+        let mut forged = snapshot();
+        forged["vision"][0][memory] = json!([incident_from(4, 3, from, 100)]);
+        let message = refusal(forged);
+        assert!(
+            message.contains(&format!("compass point {from} is not below 16")),
+            "{memory}: {message}"
+        );
     }
 }
 
@@ -1984,6 +2007,14 @@ fn every_checklist_row_refuses_its_forgery() {
             "player p0 holds salvage incidents out of canonical order",
         ),
         (
+            "two points of fire on one tile out of canonical order",
+            |d| {
+                d["vision"][0]["salvage_incidents"] =
+                    json!([incident_from(4, 3, 6, 100), incident_from(4, 3, 2, 100)]);
+            },
+            "player p0 holds salvage incidents out of canonical order",
+        ),
+        (
             "more remembered shell impacts than the bounded memory permits",
             |d| {
                 d["vision"][0]["shell_impacts"] = json!(
@@ -2029,7 +2060,7 @@ fn every_checklist_row_refuses_its_forgery() {
             "player p0 remembers shell impacts out of canonical order",
         ),
         (
-            "one shell impact tile remembered twice",
+            "one shell impact tile remembered twice from one point",
             |d| {
                 d["vision"][0]["shell_impacts"] = json!([incident(4, 3, 100), incident(4, 3, 120)]);
             },

@@ -186,13 +186,18 @@ fn exhausted_route_cache_preserves_a_goal_only_danger_exception() {
 fn allied_impact_memory_is_shared_bounded_and_cools_down() {
     let mut state = allied_incident_state();
     let source = TilePos::new(10, 4);
-    state.record_salvage_incident(PlayerId(1), source);
+    let north = point(12);
+    state.record_salvage_incident(PlayerId(1), source, north);
 
     let west = state.vision(PlayerId(0)).salvage_incidents();
     let center = state.vision(PlayerId(1)).salvage_incidents();
     assert_eq!(west, center, "teammates receive one shared memory");
     assert_eq!(west.len(), 1);
     assert_eq!(west[0].tile, source);
+    assert_eq!(
+        west[0].from, north,
+        "the record keeps where the fire came from"
+    );
     assert_eq!(
         west[0].expires_at,
         state.current_tick() + crate::stats::HARVEST_INCIDENT_MEMORY_TICKS + 1
@@ -240,17 +245,31 @@ fn allied_impact_memory_is_shared_bounded_and_cools_down() {
 fn incident_memory_coalesces_and_evicts_deterministically() {
     let mut state = allied_incident_state();
     let repeated = TilePos::new(8, 3);
-    state.record_salvage_incident(PlayerId(0), repeated);
+    state.record_salvage_incident(PlayerId(0), repeated, point(4));
     let first_expiry = state.vision(PlayerId(0)).salvage_incidents()[0].expires_at;
     state.tick += 7;
-    state.record_salvage_incident(PlayerId(1), repeated);
+    state.record_salvage_incident(PlayerId(1), repeated, point(4));
     let incidents = state.vision(PlayerId(0)).salvage_incidents();
     assert_eq!(incidents.len(), 1);
     assert_eq!(incidents[0].expires_at, first_expiry + 7);
+    state.record_salvage_incident(PlayerId(1), repeated, point(0));
+    let incidents = state.vision(PlayerId(0)).salvage_incidents();
+    assert_eq!(
+        incidents
+            .iter()
+            .map(|incident| incident.from)
+            .collect::<Vec<_>>(),
+        [point(0), point(4)],
+        "fire from a second point on one tile is a second record"
+    );
 
     let mut state = allied_incident_state();
     for x in 0..=crate::stats::HARVEST_INCIDENT_CAP {
-        state.record_salvage_incident(PlayerId(0), TilePos::new(i32::try_from(x).unwrap(), 3));
+        state.record_salvage_incident(
+            PlayerId(0),
+            TilePos::new(i32::try_from(x).unwrap(), 3),
+            point(0),
+        );
     }
     let incidents = state.vision(PlayerId(0)).salvage_incidents();
     assert_eq!(incidents.len(), crate::stats::HARVEST_INCIDENT_CAP);
@@ -262,8 +281,12 @@ fn incident_memory_coalesces_and_evicts_deterministically() {
     assert!(
         incidents
             .windows(2)
-            .all(|pair| { (pair[0].tile.y, pair[0].tile.x) < (pair[1].tile.y, pair[1].tile.x) })
+            .all(|pair| pair[0].key() < pair[1].key())
     );
+}
+
+fn point(index: u8) -> chassis::compass::CompassPoint {
+    chassis::compass::CompassPoint::try_from(index).expect("a compass point")
 }
 
 #[test]
@@ -661,7 +684,7 @@ fn a_full_incident_memory_evicts_the_mirrored_site_after_a_half_turn() {
     let survivors = |turn: &dyn Fn(TilePos) -> TilePos| {
         let mut view = Vision::new(width, height);
         for &tile in near.iter().chain(&far).chain([&newcomer]) {
-            view.remember_salvage_incident(turn(tile), 100);
+            view.remember_salvage_incident(turn(tile), point(0), 100);
         }
         view.salvage_incidents()
             .iter()
@@ -677,5 +700,56 @@ fn a_full_incident_memory_evicts_the_mirrored_site_after_a_half_turn() {
             .map(half_turn)
             .collect::<std::collections::BTreeSet<_>>(),
         survivors(&half_turn)
+    );
+}
+
+#[test]
+fn a_full_incident_memory_evicts_the_mirrored_point_on_one_tile_after_a_half_turn() {
+    // The two records farthest from the newcomer share a tile and differ
+    // only in the point their fire came from. The half-turned memory must
+    // drop the half-turned record of the two.
+    let (width, height) = (24, 11);
+    let newcomer = TilePos::new(11, 5);
+    let near: Vec<TilePos> = (0..height)
+        .flat_map(|y| (0..width).map(move |x| TilePos::new(x, y)))
+        .filter(|&tile| tile != newcomer && tile.center().dist_sq(newcomer.center()) < 25)
+        .take(crate::stats::HARVEST_INCIDENT_CAP - 2)
+        .collect();
+    let far = newcomer.offset(0, -5);
+    let half_turn = |tile: TilePos| TilePos::new(width - 1 - tile.x, height - 1 - tile.y);
+    let survivors = |turned: bool| {
+        let place = |tile: TilePos, from: chassis::compass::CompassPoint| {
+            if turned {
+                (half_turn(tile), from.opposite())
+            } else {
+                (tile, from)
+            }
+        };
+        let mut view = Vision::new(width, height);
+        let records = near.iter().map(|&tile| (tile, point(0))).chain([
+            (far, point(2)),
+            (far, point(6)),
+            (newcomer, point(0)),
+        ]);
+        for (tile, from) in records {
+            let (tile, from) = place(tile, from);
+            view.remember_salvage_incident(tile, from, 100);
+        }
+        view.salvage_incidents()
+            .iter()
+            .map(|incident| (incident.tile, incident.from))
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    let kept = survivors(false);
+    assert_eq!(
+        kept.iter().filter(|(tile, _)| *tile == far).count(),
+        1,
+        "premise: one of the two records on the far tile goes"
+    );
+    assert_eq!(
+        kept.iter()
+            .map(|&(tile, from)| (half_turn(tile), from.opposite()))
+            .collect::<std::collections::BTreeSet<_>>(),
+        survivors(true)
     );
 }

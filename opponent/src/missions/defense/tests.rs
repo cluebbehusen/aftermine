@@ -355,7 +355,17 @@ fn a_search_goes_from_a_foundry_to_its_nearest_hit_structure_on_its_ground() {
             });
     }
     let state = scenario.build().unwrap();
-    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
+    for x in [4, 6, 10] {
+        let y = if x == 6 { 7 } else { 4 };
+        observation
+            .salvage_incidents
+            .push(crate::tests::fire_mark(TilePos::new(x, y), 0));
+    }
+    observation
+        .salvage_incidents
+        .sort_by_key(|mark| (mark.tile.y, mark.tile.x));
+    let observation = observation;
     let map = MapModel::from_scenario(&scenario).unwrap();
     let frame = crate::frame::HomeFrame::of(&observation, &map).unwrap();
     let turret = |x: i32| {
@@ -376,6 +386,44 @@ fn a_search_goes_from_a_foundry_to_its_nearest_hit_structure_on_its_ground() {
     );
     assert_eq!(need, u64::from(BuildingKind::Turret.invested_cost(0)));
     assert!(searches(&observation, &map, frame, &[turret(10)]).is_empty());
+}
+
+#[test]
+fn a_search_looks_out_from_the_side_the_fire_came_from() {
+    // One West Turret hit from out of sight: defenders go to the tile beside
+    // it facing where the fire came from, whichever side the enemy starts.
+    let mut scenario = crate::tests::match_on(crate::tests::strip(false), &["West", "East"], &[]);
+    let anchor = TilePos::new(9, 4);
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Turret,
+            x: anchor.x,
+            y: anchor.y,
+        });
+    let state = scenario.build().unwrap();
+    let map = MapModel::from_scenario(&scenario).unwrap();
+    let beside = |from: u8| {
+        let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
+        observation.salvage_incidents = vec![crate::tests::fire_mark(anchor, from)];
+        let frame = crate::frame::HomeFrame::of(&observation, &map).unwrap();
+        let turret = observation
+            .my_buildings
+            .iter()
+            .find(|b| b.kind == BuildingKind::Turret)
+            .unwrap();
+        let found = searches(&observation, &map, frame, &[turret]);
+        let [(_, (beside, _))] = found[..] else {
+            panic!("{found:?}");
+        };
+        beside
+    };
+    assert_eq!(beside(8), anchor.offset(-1, 0), "fire from the west");
+    assert_eq!(beside(4), anchor.offset(0, 1), "fire from the south");
+    assert_eq!(beside(12), anchor.offset(0, -1), "fire from the north");
+    assert_eq!(beside(0), anchor.offset(1, 0), "fire from the east");
+    assert_eq!(beside(2), anchor.offset(1, 1), "fire from the south-east");
 }
 
 #[test]
@@ -403,7 +451,12 @@ fn two_foundries_look_over_two_hit_structures_not_one_twice() {
             });
     }
     let state = scenario.build().unwrap();
-    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
+    observation.salvage_incidents = vec![
+        crate::tests::fire_mark(TilePos::new(5, 2), 0),
+        crate::tests::fire_mark(TilePos::new(8, 7), 0),
+    ];
+    let observation = observation;
     let map = MapModel::from_scenario(&scenario).unwrap();
     let frame = crate::frame::HomeFrame::of(&observation, &map).unwrap();
     let searched: Vec<&BuildingObs> = observation

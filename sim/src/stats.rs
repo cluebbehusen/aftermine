@@ -3007,8 +3007,9 @@ pub const UNLOAD_TICKS: u8 = 10;
 pub const HARVEST_RADAR_DANGER_RADIUS: i32 = 4;
 
 /// How long a hit from an unseen attacker keeps the allied victim's tile
-/// unsafe for autonomous salvage work. The memory contains only that impact
-/// tile, never the hidden attacker's identity or position. It outlasts the
+/// unsafe for autonomous salvage work. The memory contains that impact tile
+/// and the compass point the fire came from, never the hidden attacker's
+/// identity or position. It outlasts the
 /// slowest artillery cooldown (Avalanche, 6 s), so sustained fire from out of
 /// sight keeps the memory alive while a stopped barrage releases workers soon
 /// after.
@@ -3019,7 +3020,8 @@ pub const HARVEST_INCIDENT_MEMORY_TICKS: crate::Tick = 8 * crate::TICKS_PER_SECO
 pub const HARVEST_INCIDENT_DANGER_RADIUS: i32 = 4;
 
 /// Maximum recent allied impact sites retained per team. Incidents at one
-/// tile coalesce, and the oldest expiry is evicted first at the ceiling.
+/// tile from one compass point coalesce, and the oldest expiry is evicted
+/// first at the ceiling.
 pub const HARVEST_INCIDENT_CAP: usize = 64;
 
 /// How long a team remembers where a hostile shell it saw land came down.
@@ -3029,8 +3031,8 @@ pub const HARVEST_INCIDENT_CAP: usize = 64;
 pub const SHELL_IMPACT_MEMORY_TICKS: crate::Tick = 8 * crate::TICKS_PER_SECOND as crate::Tick;
 
 /// Maximum recent hostile shell impacts retained per team, bounding the
-/// memory a barrage can grow. Impacts on one tile coalesce, and the oldest
-/// expiry is evicted first at the ceiling.
+/// memory a barrage can grow. Impacts on one tile from one compass point
+/// coalesce, and the oldest expiry is evicted first at the ceiling.
 pub const SHELL_IMPACT_CAP: usize = 64;
 
 /// Mobile ground threats are treated as dangerous this many tiles beyond

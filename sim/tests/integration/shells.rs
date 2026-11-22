@@ -933,6 +933,9 @@ fn a_hostile_shell_seen_landing_is_remembered_until_it_expires() {
 
     let mut state = one_shell_in_flight();
     let impact = TilePos::containing(state.shells()[0].impact);
+    let from =
+        chassis::compass::CompassPoint::of(state.shells()[0].launch - state.shells()[0].impact);
+    assert_eq!(from.index(), 8, "the Bombard fires from the west");
     let mut unseen = state.clone();
     let landed = land(&mut state);
     let expires_at = landed + SHELL_IMPACT_MEMORY_TICKS + 1;
@@ -940,9 +943,10 @@ fn a_hostile_shell_seen_landing_is_remembered_until_it_expires() {
         state.vision(PlayerId(1)).shell_impacts(),
         [RecentTile {
             tile: impact,
+            from,
             expires_at
         }],
-        "the target's team watched the shell land"
+        "the target's team watched the shell land, and the line it came in on"
     );
     assert!(
         state.vision(PlayerId(0)).shell_impacts().is_empty(),
@@ -951,7 +955,7 @@ fn a_hostile_shell_seen_landing_is_remembered_until_it_expires() {
     while state.current_tick() < expires_at {
         assert_eq!(
             ObservationData::fog_honest(&state, PlayerId(1)).shell_impacts,
-            [impact],
+            [aftermine_sim::observation::FireMark { tile: impact, from }],
             "tick {}",
             state.current_tick()
         );

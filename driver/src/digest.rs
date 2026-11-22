@@ -163,7 +163,22 @@ pub fn render(view: &FogView, terrain: Option<&Map>) -> String {
         format!("{:?} at ({},{})", track.domain, track.tile.x, track.tile.y).to_lowercase()
     });
     let tiles = |list: &[[i32; 2]]| list.iter().copied().map(tile).collect::<Vec<_>>().join(" ");
-    if !view.incoming_shells.is_empty() || !view.shell_impacts.is_empty() {
+    let marks = |list: &[aftermine_sim::observation::FireMark]| {
+        list.iter()
+            .map(|mark| {
+                format!(
+                    "{} from the {}",
+                    tile([mark.tile.x, mark.tile.y]),
+                    compass_name(mark.from)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    if !view.incoming_shells.is_empty()
+        || !view.shell_impacts.is_empty()
+        || !view.unseen_fire.is_empty()
+    {
         out.push('\n');
     }
     if !view.incoming_shells.is_empty() {
@@ -177,7 +192,14 @@ pub fn render(view: &FogView, terrain: Option<&Map>) -> String {
         let _ = writeln!(
             out,
             "SHELLS LANDED lately at {}",
-            tiles(&view.shell_impacts)
+            marks(&view.shell_impacts)
+        );
+    }
+    if !view.unseen_fire.is_empty() {
+        let _ = writeln!(
+            out,
+            "FIRE FROM OUT OF SIGHT lately at {}",
+            marks(&view.unseen_fire)
         );
     }
     section(&mut out, "MAGAZINES", view.magazines.iter(), |known| {
@@ -469,6 +491,29 @@ fn warhead(known: &aftermine_sim::strike::KnownWarhead, seat: u8, now: u64) -> S
 
 fn tile(at: [i32; 2]) -> String {
     format!("({},{})", at[0], at[1])
+}
+
+/// A compass point's name, with north toward row zero.
+fn compass_name(point: chassis::compass::CompassPoint) -> &'static str {
+    const NAMES: [&str; chassis::compass::CompassPoint::COUNT as usize] = [
+        "east",
+        "east-south-east",
+        "south-east",
+        "south-south-east",
+        "south",
+        "south-south-west",
+        "south-west",
+        "west-south-west",
+        "west",
+        "west-north-west",
+        "north-west",
+        "north-north-west",
+        "north",
+        "north-north-east",
+        "north-east",
+        "east-north-east",
+    ];
+    NAMES[usize::from(point.index())]
 }
 
 fn position(pos: [f64; 2]) -> String {

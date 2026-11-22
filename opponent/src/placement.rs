@@ -652,7 +652,11 @@ impl<'a> Danger<'a> {
             map,
             guns,
             units,
-            incidents: observation.salvage_incidents.clone(),
+            incidents: observation
+                .salvage_incidents
+                .iter()
+                .map(|incident| incident.tile)
+                .collect(),
         }
     }
 
@@ -837,7 +841,7 @@ pub(crate) fn unexplained<'a>(
             observation
                 .salvage_incidents
                 .iter()
-                .any(|tile| gap(building.anchor, size, *tile, (1, 1)) < 0)
+                .any(|incident| gap(building.anchor, size, incident.tile, (1, 1)) < 0)
         })
         .filter(|building| {
             // Explained only by fire in sight or a known gun that can really
