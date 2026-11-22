@@ -317,7 +317,7 @@ impl Missions {
                 DefendPhase::Engage { focus } => focus,
                 DefendPhase::Recover | DefendPhase::Guard => None,
             };
-            let lost = lost(observation, gun, focus);
+            let lost = lost(observation, (gun, focus), (&mission.units, pursuit));
             // A defense after an intruder sends again when it chooses
             // another, a site after its builder included, and when something
             // armed comes: held on a builder, defenders would stand under an
@@ -684,16 +684,35 @@ fn take(free: &mut Vec<UnitId>, taken: &[UnitId]) {
 
 /// Whether a defense's `focus` no longer holds while it has no `gun` to go
 /// after: its target fell, left sight, or is a gun this Foundry no longer
-/// faces. Any other focus is focus fire's, kept while it lasts.
-fn lost(observation: &ObservationData, gun: Option<UnitId>, focus: Option<UnitId>) -> bool {
-    gun.is_none()
-        && focus.is_some_and(|id| {
-            observation
-                .enemy_units
-                .iter()
-                .find(|enemy| enemy.id == id)
-                .is_none_or(walking_gun)
-        })
+/// faces. Any other focus is focus fire's, kept while it lasts. Its attack
+/// on a site is over too once a member stands idle.
+fn lost(
+    observation: &ObservationData,
+    (gun, focus): (Option<UnitId>, Option<UnitId>),
+    (members, pursuit): (&[UnitId], Pursuit),
+) -> bool {
+    idle_at_site(observation, members, pursuit)
+        || gun.is_none()
+            && focus.is_some_and(|id| {
+                observation
+                    .enemy_units
+                    .iter()
+                    .find(|enemy| enemy.id == id)
+                    .is_none_or(walking_gun)
+            })
+}
+
+/// Whether a defense attacking an unarmed site has a member standing idle:
+/// its attack ended, the site it was on fallen, while another it chose
+/// stands too near the first to move the goal.
+fn idle_at_site(observation: &ObservationData, members: &[UnitId], pursuit: Pursuit) -> bool {
+    matches!(
+        pursuit,
+        Pursuit::Quarry(AttackTarget::Building(_) | AttackTarget::RememberedBuilding(_))
+    ) && members
+        .iter()
+        .filter_map(|id| mine(observation, *id))
+        .any(|unit| unit.idle)
 }
 
 /// Runs the armed members of a defense hunting or holding an intruder that
@@ -767,7 +786,8 @@ fn exposed(observation: &ObservationData, unit: &UnitObs) -> bool {
 
 /// Whether the known enemies that would join a fight where `unit` stands,
 /// and the enemy guns that reach it, outweigh the `members` of its defense
-/// beside it that can fight them by the `margin` per mille a fight needs,
+/// beside it that can hit what `unit` is hit as, by the `margin` per mille a
+/// fight needs,
 /// all judged in the domain `unit` is hit in: an aircraft by what can hit
 /// aircraft there.
 fn outweighed(
@@ -797,8 +817,11 @@ fn outweighed(
                 .enemy_buildings
                 .iter()
                 .filter(|building| {
+                    // A gun joins no fight: it counts only within its reach.
                     let tier = building.kind.tiers()[usize::from(building.tier)];
-                    near(air_reach(tier.weapons), building.anchor)
+                    let reach = air_reach(tier.weapons);
+                    let gap = gap(building.anchor, building.kind.size(), unit.tile, (1, 1));
+                    reach > Fx::ZERO && Fx::from_num(gap) <= reach
                 })
                 .map(building_value)
                 .sum::<u64>()
@@ -807,8 +830,7 @@ fn outweighed(
         .iter()
         .filter_map(|id| mine(observation, *id))
         .filter(|other| other.tile.chebyshev(unit.tile) <= GATHER_TILES)
-        .filter(|other| !other.kind.stats().weapons.is_empty())
-        .filter(|other| domain == Domain::Air || hits(other, Domain::Ground))
+        .filter(|other| hits(other, domain))
         .map(value)
         .sum();
     met > 0 && could * 1_000 < met * margin
@@ -1349,6 +1371,12 @@ impl Siege<'_> {
             || self.remembered != [0, 0]
     }
 
+    /// Whether it looks for what hit a structure out of sight with nothing
+    /// armed in sight: an unarmed intruder, such as a scout, waits.
+    fn searching(&self) -> bool {
+        self.search.is_some() && self.armed_grounded().next().is_none()
+    }
+
     /// Where a threat out of sight is gone after: a gun shelling, or what
     /// hit a structure.
     fn hidden(&self) -> Option<TilePos> {
@@ -1395,8 +1423,12 @@ impl Siege<'_> {
 
     /// Where its grounded threat nearest by `rank` stands: an armed one
     /// before scouts, builders and unarmed sites, however much nearer those
-    /// stand.
+    /// stand. None while it searches for fire nobody sees: an unarmed
+    /// intruder waits for that.
     fn nearest_grounded<K: Ord>(&self, rank: impl Fn(TilePos) -> K) -> Option<TilePos> {
+        if self.searching() {
+            return None;
+        }
         self.armed_grounded()
             .min_by_key(|tile| rank(*tile))
             .or_else(|| self.grounded().min_by_key(|tile| rank(*tile)))
@@ -1541,10 +1573,10 @@ fn threats<'a>(
 }
 
 /// For each built Foundry, the structure among `searched`, hit by fire the
-/// seat cannot see, nearest it on its own ground: the tile beside that
-/// structure toward the nearest hostile start, where defenders go to see the
-/// shooter, and what they bring, the structure's price. Enemies remembered
-/// near it already press the defense.
+/// seat cannot see, nearest it among those nearest it of all Foundries on
+/// their ground: the tile beside that structure toward the nearest hostile
+/// start, where defenders go to see the shooter, and what they bring, the
+/// structure's price. Enemies remembered near it already press the defense.
 fn searches<'a>(
     observation: &'a ObservationData,
     map: &MapModel,
@@ -1552,21 +1584,37 @@ fn searches<'a>(
     searched: &[&BuildingObs],
 ) -> Vec<(&'a BuildingObs, (TilePos, u64))> {
     let me = observation.me;
-    foundries_from_home(&observation.my_buildings, frame)
-        .into_iter()
+    let foundries = foundries_from_home(&observation.my_buildings, frame);
+    let apart = |foundry: &BuildingObs, structure: &BuildingObs| {
+        (
+            gap(
+                foundry.anchor,
+                foundry.kind.size(),
+                structure.anchor,
+                structure.kind.size(),
+            ),
+            frame.rank(
+                footprint_centre(foundry.kind, foundry.anchor),
+                footprint_centre(structure.kind, structure.anchor),
+            ),
+        )
+    };
+    // Each hit structure is the nearest Foundry's on its ground to look over.
+    let owner = |structure: &BuildingObs| {
+        foundries
+            .iter()
+            .filter(|foundry| map.component(foundry.anchor) == map.component(structure.anchor))
+            .min_by_key(|foundry| (apart(foundry, structure), foundry.id))
+            .map(|foundry| foundry.id)
+    };
+    foundries
+        .iter()
         .filter_map(|foundry| {
             let ground = map.component(foundry.anchor);
-            let home = footprint_centre(foundry.kind, foundry.anchor);
             let structure = searched
                 .iter()
-                .filter(|structure| map.component(structure.anchor) == ground)
-                .min_by_key(|structure| {
-                    let size = structure.kind.size();
-                    (
-                        gap(foundry.anchor, foundry.kind.size(), structure.anchor, size),
-                        frame.rank(home, footprint_centre(structure.kind, structure.anchor)),
-                    )
-                })?;
+                .filter(|structure| owner(structure) == Some(foundry.id))
+                .min_by_key(|structure| apart(foundry, structure))?;
             let centre = footprint_centre(structure.kind, structure.anchor);
             let beside = ring(structure.anchor, structure.kind.size())
                 .filter(|tile| map.component(*tile) == ground)
@@ -1579,7 +1627,7 @@ fn searches<'a>(
                     )
                 })?;
             let price = u64::from(structure.kind.invested_cost(structure.tier));
-            Some((foundry, (beside, price)))
+            Some((*foundry, (beside, price)))
         })
         .collect()
 }

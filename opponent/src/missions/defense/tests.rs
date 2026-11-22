@@ -29,10 +29,22 @@ fn a_gun_the_foundry_no_longer_faces_is_lost_but_focus_fire_is_kept() {
     ]);
     let (gun, raider) = (ids[1], ids[2]);
     assert!(observation.enemy_units.len() == 2, "premise: both in sight");
-    assert!(lost(&observation, None, Some(gun)));
-    assert!(!lost(&observation, None, Some(raider)));
-    assert!(lost(&observation, None, Some(UnitId(999))));
-    assert!(!lost(&observation, Some(gun), Some(gun)));
+    assert!(lost(&observation, (None, Some(gun)), (&[], Pursuit::Hunt)));
+    assert!(!lost(
+        &observation,
+        (None, Some(raider)),
+        (&[], Pursuit::Hunt)
+    ));
+    assert!(lost(
+        &observation,
+        (None, Some(UnitId(999))),
+        (&[], Pursuit::Hunt)
+    ));
+    assert!(!lost(
+        &observation,
+        (Some(gun), Some(gun)),
+        (&[], Pursuit::Hunt)
+    ));
 }
 
 #[test]
@@ -285,6 +297,48 @@ fn only_the_site_owner_s_builder_beside_it_comes_first() {
 }
 
 #[test]
+fn an_aircraft_defender_is_judged_by_what_can_hit_its_attackers() {
+    // A West Talon faces an East Talon. Two Buzzards beside it cannot hit
+    // aircraft, so they do not make the fight even; a Flak Turret ten tiles
+    // off cannot reach it, so it does not weigh in either.
+    let (observation, ids) = viewed(&[
+        (0, UnitKind::Talon, 4, 4),
+        (0, UnitKind::Buzzard, 4, 5),
+        (0, UnitKind::Buzzard, 5, 4),
+        (1, UnitKind::Talon, 6, 4),
+    ]);
+    let memory = Memory::default();
+    let talon = mine(&observation, ids[0]).unwrap();
+    let margin = engage_margin(BotDifficulty::Prime);
+    assert!(outweighed(
+        (&observation, &memory),
+        &[ids[0], ids[1], ids[2]],
+        talon,
+        margin
+    ));
+    let (observation, ids) = viewed(&[(0, UnitKind::Talon, 3, 4)]);
+    let mut observation = observation;
+    observation.enemy_buildings.push(BuildingObs {
+        provisional: false,
+        id: aftermine_sim::BuildingId(77),
+        player: PlayerId(1),
+        kind: BuildingKind::FlakTurret,
+        anchor: TilePos::new(14, 4),
+        hp: BuildingKind::FlakTurret.base_stats().max_hp,
+        built: true,
+        seen: true,
+        tier: 0,
+    });
+    let talon = mine(&observation, ids[0]).unwrap();
+    assert!(!outweighed(
+        (&observation, &memory),
+        &[ids[0]],
+        talon,
+        margin
+    ));
+}
+
+#[test]
 fn a_search_goes_from_a_foundry_to_its_nearest_hit_structure_on_its_ground() {
     // Two West Turrets are hit by fire nobody sees, and a third across a
     // chasm. The Foundry looks over the nearer on its own ground; the one
@@ -322,4 +376,42 @@ fn a_search_goes_from_a_foundry_to_its_nearest_hit_structure_on_its_ground() {
     );
     assert_eq!(need, u64::from(BuildingKind::Turret.invested_cost(0)));
     assert!(searches(&observation, &map, frame, &[turret(10)]).is_empty());
+}
+
+#[test]
+fn two_foundries_look_over_two_hit_structures_not_one_twice() {
+    // One hit Turret stands nearest the first Foundry, another nearest the
+    // second; the second Foundry also stands near the first Turret. Each
+    // Foundry looks over its own, so both are searched.
+    let mut scenario = crate::tests::match_on(crate::tests::strip(false), &["West", "East"], &[]);
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Foundry,
+            x: 2,
+            y: 6,
+        });
+    for (x, y) in [(5, 2), (8, 7)] {
+        scenario
+            .buildings
+            .push(aftermine_sim::scenario::BuildingSpec {
+                player: 0,
+                kind: BuildingKind::Turret,
+                x,
+                y,
+            });
+    }
+    let state = scenario.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let map = MapModel::from_scenario(&scenario).unwrap();
+    let frame = crate::frame::HomeFrame::of(&observation, &map).unwrap();
+    let searched: Vec<&BuildingObs> = observation
+        .my_buildings
+        .iter()
+        .filter(|b| b.kind == BuildingKind::Turret)
+        .collect();
+    let found = searches(&observation, &map, frame, &searched);
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert_ne!(found[0].1.0, found[1].1.0, "{found:?}");
 }

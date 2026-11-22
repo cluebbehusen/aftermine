@@ -3161,3 +3161,154 @@ fn defenders_going_at_a_gun_close_up_at_the_post_first() {
     );
     assert!(advances(&commands).is_empty(), "{commands:?}");
 }
+
+#[test]
+fn defenders_idle_after_a_site_go_at_the_next_one_beside_it() {
+    // A defense whose attack on an enemy site ended stands idle beside the
+    // next site, too near the first to move its goal: it attacks that one.
+    let mut scenario = raided(
+        &[(UnitKind::Sentinel, 5, 8), (UnitKind::Sentinel, 6, 8)],
+        &[],
+    );
+    scenario.buildings.push(BuildingSpec {
+        player: 1,
+        kind: BuildingKind::Fabricator,
+        x: 8,
+        y: 1,
+    });
+    let state = scenario.build().unwrap();
+    let home = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
+        .unwrap();
+    let site = state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::Fabricator)
+        .unwrap()
+        .id;
+    let mut members = vec![at(&state, 5, 8), at(&state, 6, 8)];
+    members.sort_unstable();
+    let fresh = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    let goal = hunts(&fresh)
+        .into_iter()
+        .chain(
+            attacks(&fresh)
+                .into_iter()
+                .map(|(units, _)| (units, TilePos::new(0, 0))),
+        )
+        .count();
+    assert!(goal > 0, "premise: the site draws a defense: {fresh:?}");
+    let beside = crate::frame::ring(TilePos::new(8, 1), BuildingKind::Fabricator.size())
+        .min_by_key(|tile| tile.chebyshev(TilePos::new(3, 5)))
+        .unwrap();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {"task": "defend", "asset": home.id.0, "phase": {"engage": {"focus": null}}},
+                "since": 0,
+                "units": members,
+                "goal": {"x": beside.x, "y": beside.y},
+            }],
+        });
+    });
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    assert!(
+        attacks(&commands)
+            .iter()
+            .any(|(_, target)| *target == AttackTarget::Building(site)),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn a_visible_enemy_that_cannot_reach_a_structure_does_not_explain_its_hit() {
+    // A West Surveyor sees an East Lancer whose shot at the Extractor rock
+    // blocks: the Lancer cannot be what hit it, so the hit stays
+    // unexplained and the Extractor is still searched for its shooter.
+    let mut scenario = field();
+    scenario.map[4].replace_range(12..13, "E");
+    for row in &mut scenario.map[1..8] {
+        row.replace_range(15..16, "#");
+    }
+    scenario.units.push(unit(0, UnitKind::Surveyor, 19, 7));
+    scenario.units.push(unit(1, UnitKind::Lancer, 17, 4));
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Extractor, 12, 4));
+    let state = scenario.build().unwrap();
+    let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
+    assert!(
+        observation
+            .enemy_units
+            .iter()
+            .any(|enemy| enemy.kind == UnitKind::Lancer),
+        "premise: the Lancer is in sight"
+    );
+    observation.salvage_incidents.push(TilePos::new(12, 4));
+    let map = map(&scenario);
+    assert_eq!(crate::placement::unexplained(&observation, &map).len(), 1);
+}
+
+#[test]
+fn a_search_comes_before_an_unarmed_intruder() {
+    // A West Extractor is hit by a Lancer nobody sees while an East Surveyor
+    // stands among the West buildings. The search beside the Extractor comes
+    // first: the scout is no emergency.
+    let mut scenario = field();
+    scenario.map[4].replace_range(12..13, "E");
+    scenario.players[0].scrap = 60;
+    scenario.units.extend(
+        GARRISON
+            .iter()
+            .map(|(x, y)| unit(0, UnitKind::Sentinel, *x, *y)),
+    );
+    scenario.units.push(unit(1, UnitKind::Lancer, 19, 5));
+    scenario.units.push(unit(1, UnitKind::Surveyor, 6, 9));
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Extractor, 12, 4));
+    let mut state = scenario.build().unwrap();
+    let extractor = state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::Extractor)
+        .unwrap()
+        .id;
+    let lancer = at(&state, 19, 5);
+    state.tick(&[PlayerCommand {
+        player: PlayerId(1),
+        command: Command::Attack {
+            units: vec![lancer],
+            target: AttackTarget::Building(extractor),
+            queue: false,
+        },
+    }]);
+    let full = BuildingKind::Extractor.base_stats().max_hp;
+    while state.building(extractor).is_some_and(|b| b.hp == full)
+        || !state.current_tick().is_multiple_of(12)
+    {
+        assert!(state.current_tick() < 1_200, "premise: the Lancer hits it");
+        state.tick(&[]);
+    }
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    assert!(
+        observation
+            .enemy_units
+            .iter()
+            .all(|enemy| enemy.kind == UnitKind::Surveyor),
+        "premise: only the scout is in sight"
+    );
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    let beside: Vec<TilePos> =
+        crate::frame::ring(TilePos::new(12, 4), BuildingKind::Extractor.size()).collect();
+    assert!(
+        advances(&commands)
+            .iter()
+            .any(|(_, goal)| beside.contains(goal)),
+        "{commands:?}"
+    );
+}

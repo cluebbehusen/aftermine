@@ -833,7 +833,14 @@ fn withdraw(
     leaving.sort_unstable();
     leaving.dedup();
     let foundries: Vec<&BuildingObs> = built_foundries(&observation.my_buildings).collect();
-    let covered = |tile: TilePos| hazards.iter().any(|hazard| hazard.covers(doubled(tile)));
+    // Out of known fire, and of where fire nobody sees has landed.
+    let covered = |tile: TilePos| {
+        hazards.iter().any(|hazard| hazard.covers(doubled(tile)))
+            || observation
+                .salvage_incidents
+                .iter()
+                .any(|incident| incident.chebyshev(tile) <= HARVEST_INCIDENT_DANGER_RADIUS)
+    };
     for id in leaving {
         let Some(unit) = observation.my_units.iter().find(|unit| unit.id == id) else {
             continue;

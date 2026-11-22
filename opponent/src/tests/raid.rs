@@ -873,3 +873,52 @@ fn a_raider_drawn_past_its_target_runs_home_while_the_rest_strike_on() {
     let units = json["missions"]["list"][0]["units"].to_string();
     assert!(units.contains(&stray.0.to_string()), "{units}");
 }
+
+#[test]
+fn a_raider_still_on_its_way_in_is_not_sent_home() {
+    // Two Scuttlers strike the outpost while a third, recruited from home,
+    // is still walking in: far from the target, but on the near side of it,
+    // so it keeps going.
+    let mut scenario = outpost(UnitKind::Scuttler, BuildingKind::Foundry);
+    scenario.units.push(unit(0, UnitKind::Scuttler, 6, 10));
+    let mut state = scenario.build().unwrap();
+    let striking = raiders(&state);
+    let lagging = at(&state, 6, 10);
+    let mut members = striking.clone();
+    members.push(lagging);
+    members.sort_unstable();
+    state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Hunt {
+            units: members.clone(),
+            goal: TilePos::new(21, 10),
+            queue: false,
+        },
+    }]);
+    while state.current_tick() < 12 {
+        state.tick(&[]);
+    }
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {
+                    "task": "raid",
+                    "target": {"owner": 1, "building": "foundry", "anchor": {"x": 22, "y": 10}},
+                    "phase": "strike",
+                },
+                "since": 0,
+                "units": members,
+                "goal": {"x": 21, "y": 10},
+            }],
+        });
+    });
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    assert!(
+        runs(&commands)
+            .iter()
+            .all(|(units, _)| !units.contains(&lagging)),
+        "{commands:?}"
+    );
+}
