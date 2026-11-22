@@ -30,6 +30,11 @@ pub struct DiffRow {
     pub command_hash: String,
     /// Digest of the scenario and leg: the same in both runs of one game.
     pub evaluation_fingerprint: String,
+    /// Tick the game was cut off at without a result.
+    pub tick_limit: u64,
+    /// Repeated stalls that end the game; `None` never ends it.
+    #[serde(default)]
+    pub stall_loop_limit: Option<u64>,
 }
 
 /// Reads one run's rows.
@@ -268,6 +273,13 @@ pub fn diff(base: &[DiffRow], branch: &[DiffRow]) -> Result<LadderDiff> {
         ensure!(
             row.evaluation_fingerprint == other.evaluation_fingerprint,
             "{} played a different match in each run: its evaluation fingerprints differ",
+            game(&row.scored)
+        );
+        // The fingerprint leaves out when a game is cut off; a longer game
+        // would gain results the code change did not earn.
+        ensure!(
+            row.tick_limit == other.tick_limit && row.stall_loop_limit == other.stall_loop_limit,
+            "{} was cut off differently in each run: its tick or stall-loop limits differ",
             game(&row.scored)
         );
         let same = row.command_hash == other.command_hash && row.final_hash == other.final_hash;

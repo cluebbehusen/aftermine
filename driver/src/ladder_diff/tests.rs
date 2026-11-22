@@ -11,6 +11,8 @@ fn diff_row(scored: ScoredLadderRow) -> DiffRow {
         final_hash: format!("final {game}"),
         command_hash: format!("commands {game}"),
         evaluation_fingerprint: format!("plan {game}"),
+        tick_limit: 60_000,
+        stall_loop_limit: Some(200),
         scored,
     }
 }
@@ -129,6 +131,14 @@ fn missing_repeated_and_replanned_games_are_refused() {
             && error_text.contains("fingerprints differ"),
         "{error_text}"
     );
+    let mut longer = base.clone();
+    longer[1].tick_limit = 90_000;
+    let error_text = error(&base, &longer);
+    assert!(error_text.contains("limits differ"), "{error_text}");
+    let mut endless = base.clone();
+    endless[1].stall_loop_limit = None;
+    let error_text = error(&base, &endless);
+    assert!(error_text.contains("limits differ"), "{error_text}");
 }
 
 /// Each seat's net worth, the same at every sample.
