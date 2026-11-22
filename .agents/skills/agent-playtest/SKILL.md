@@ -61,7 +61,16 @@ rates.
 
 ## Launch the players
 
-Launch every lane at once; lanes share nothing but the machine.
+For a round of bot lanes, `scripts/run-lanes.sh <round> <lanes file> [at once]`
+in the background does the setup, play and cleanup below for every lane, a few
+at a time (four by default). Each line of the lanes file names the lane, port,
+map, a file holding the plan's text, the player (`claude`, `codex` or
+`codex:<effort>`) and the session flags; the script's header gives the format.
+It stops each lane's session when its player is done and notifies once, when the
+last lane ends.
+
+To launch lanes by hand, start every lane at once; lanes share nothing but the
+machine.
 
 - **Claude:** run `scripts/run-claude.sh <lane dir> <tick limit>` in the
   background. It runs Claude Code headless in the lane in safe mode, so no user
@@ -77,10 +86,9 @@ Launch every lane at once; lanes share nothing but the machine.
   plugins of yours reach the player. A fourth argument, after the number of
   resumes, sets the lane's reasoning effort over yours.
 
-Do not poll the lanes. Each notifies when it finishes. Then
+Do not poll the lanes. Each runner notifies when it finishes. Then
 `uv run scripts/lane-summary.py "$ROUND"` prints each lane's result, orders per
-game minute, step sizes, looks per advance, wall time and Codex tokens; take a
-Claude lane's tokens from its completion notice.
+game minute, step sizes, looks per advance, wall time and tokens.
 
 ## Versus matches
 
