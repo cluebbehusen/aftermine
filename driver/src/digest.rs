@@ -162,9 +162,23 @@ pub fn render(view: &FogView, terrain: Option<&Map>) -> String {
     section(&mut out, "RADAR CONTACTS", dark_tracks, |track| {
         format!("{:?} at ({},{})", track.domain, track.tile.x, track.tile.y).to_lowercase()
     });
+    let tiles = |list: &[[i32; 2]]| list.iter().copied().map(tile).collect::<Vec<_>>().join(" ");
+    if !view.incoming_shells.is_empty() || !view.shell_impacts.is_empty() {
+        out.push('\n');
+    }
     if !view.incoming_shells.is_empty() {
-        let tiles: Vec<String> = view.incoming_shells.iter().map(|at| tile(*at)).collect();
-        let _ = writeln!(out, "\nINCOMING SHELLS land at {}", tiles.join(" "));
+        let _ = writeln!(
+            out,
+            "INCOMING SHELLS land at {}",
+            tiles(&view.incoming_shells)
+        );
+    }
+    if !view.shell_impacts.is_empty() {
+        let _ = writeln!(
+            out,
+            "SHELLS LANDED lately at {}",
+            tiles(&view.shell_impacts)
+        );
     }
     section(&mut out, "MAGAZINES", view.magazines.iter(), |known| {
         compact(known, &tracks)

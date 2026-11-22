@@ -775,6 +775,45 @@ fn shells_from_a_gun_out_of_sight_advance_fighters_on_it() {
     );
 }
 
+#[test]
+fn a_gun_out_of_sight_stays_answered_between_its_shells() {
+    let (scenario, mut state) = shelled(&[0]);
+    let mut opponent = seat(&scenario, 0);
+    let mut answered = false;
+    loop {
+        assert!(
+            state.current_tick() < 600,
+            "premise: a decision falls between shells"
+        );
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        let between =
+            answered && opponent.decision_due(&state) && observation.incoming_shells.is_empty();
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        if between {
+            assert!(
+                observation
+                    .enemy_units
+                    .iter()
+                    .all(|enemy| enemy.kind != UnitKind::Bombard),
+                "premise: the gun is still out of sight"
+            );
+            assert!(
+                trace
+                    .unwrap()
+                    .missions
+                    .iter()
+                    .any(|mission| matches!(mission.kind, MissionKind::Defend { .. })
+                        && mission.phase == Phase::Engage),
+                "the defense stands"
+            );
+            assert!(runs(&commands).is_empty(), "nobody runs home: {commands:?}");
+            break;
+        }
+        answered |= !advances(&commands).is_empty();
+        state.tick(&commands);
+    }
+}
+
 /// The field with West's garrison and picket, an East Bastion shelling the
 /// picket with a Kestrel spotting for it, East Turrets around the Bastion
 /// when `guarded`, and a West Kestrel that has seen them all; played until
@@ -1091,6 +1130,13 @@ fn defenders_short_of_an_escorted_gun_gather_beside_the_foundry_first() {
     let staged = |sentinels: &[(i32, i32)]| {
         let mut scenario = shelling(&[0]);
         escort(&mut scenario, &[0]);
+        // Defenders closed up beside the picket rather than spread over the
+        // garrison's spots, which would first send them to close up.
+        if !sentinels.is_empty() {
+            scenario.units.retain(|spec| {
+                spec.player != 0 || !GARRISON.contains(&turned(0, (spec.x, spec.y)))
+            });
+        }
         for (x, y) in sentinels {
             scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
         }
@@ -1143,7 +1189,7 @@ fn defenders_short_of_an_escorted_gun_gather_beside_the_foundry_first() {
     // Prime waits at home for a quarter more than it would meet, but beside
     // a gun waiting only gets the defenders shelled: once they match it and
     // its escort, they go.
-    let (scenario, state) = staged(&[(2, 9), (3, 9)]);
+    let (scenario, state) = staged(&[(6, 11), (7, 11), (6, 13), (7, 13), (8, 11), (8, 13)]);
     let gun = at(&state, GUN.0, GUN.1);
     let commands =
         seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
@@ -1155,7 +1201,18 @@ fn defenders_short_of_an_escorted_gun_gather_beside_the_foundry_first() {
     );
 
     // Enough beside the Foundry to match the gun and its escort: they go.
-    let (scenario, state) = staged(&[(2, 9), (3, 9), (4, 9), (5, 9), (2, 10), (5, 10)]);
+    let (scenario, state) = staged(&[
+        (6, 11),
+        (7, 11),
+        (6, 13),
+        (7, 13),
+        (8, 11),
+        (8, 13),
+        (6, 12),
+        (7, 12),
+        (9, 11),
+        (9, 13),
+    ]);
     let gun = at(&state, GUN.0, GUN.1);
     for difficulty in [BotDifficulty::Standard, BotDifficulty::Prime] {
         let commands =
@@ -3071,6 +3128,41 @@ fn an_aircraft_defender_chased_past_the_base_runs_back_too() {
 }
 
 #[test]
+fn defenders_going_at_a_gun_close_up_at_the_post_first() {
+    // Shells come in from a gun out of sight. Two of the garrison stand far
+    // off: sent from where they stand they would reach the shells in turn
+    // and die in pairs, so the defenders close up at the post before anyone
+    // goes at the gun.
+    let closed_up = |apart: bool| {
+        let mut scenario = shelling(&[0]);
+        if apart {
+            for spec in &mut scenario.units {
+                if spec.player == 0 && [(2, 13), (4, 14)].contains(&(spec.x, spec.y)) {
+                    spec.y += 7;
+                }
+            }
+        }
+        let mut state = scenario.build().unwrap();
+        open_fire(&mut state, &[0]);
+        until_shells_come(&scenario, &mut state, &[0]);
+        let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+        (state, commands)
+    };
+    // Close beside the post already, they go at once.
+    let (_, commands) = closed_up(false);
+    assert!(!advances(&commands).is_empty(), "{commands:?}");
+    let (state, commands) = closed_up(true);
+    let far = [at(&state, 2, 20), at(&state, 4, 21)];
+    assert!(
+        runs(&commands)
+            .iter()
+            .any(|(units, _)| far.iter().any(|unit| units.contains(unit))),
+        "{commands:?}"
+    );
+    assert!(advances(&commands).is_empty(), "{commands:?}");
+}
+
+#[test]
 fn defenders_idle_after_a_site_go_at_the_next_one_beside_it() {
     // A defense whose attack on an enemy site ended stands idle beside the
     // next site, too near the first to move its goal: it attacks that one.
@@ -3217,6 +3309,48 @@ fn a_search_comes_before_an_unarmed_intruder() {
         advances(&commands)
             .iter()
             .any(|(_, goal)| beside.contains(goal)),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn defenders_that_set_out_at_a_gun_are_not_called_back_to_close_up() {
+    // A defense already on its way at a gun out of sight has strung out, a
+    // Scuttler running ahead of the Sentinels. Called back to close up each
+    // time, a group of fast and slow units would never arrive: it goes on.
+    let mut scenario = shelling(&[0]);
+    scenario.units.push(unit(0, UnitKind::Scuttler, 10, 17));
+    let mut state = scenario.build().unwrap();
+    let scuttler = at(&state, 10, 17);
+    let picket = at(&state, PICKET.0, PICKET.1);
+    open_fire(&mut state, &[0]);
+    until_shells_come(&scenario, &mut state, &[0]);
+    let home = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
+        .unwrap();
+    let mut members = vec![picket, scuttler];
+    members.sort_unstable();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {"task": "defend", "asset": home.id.0, "phase": {"engage": {"focus": null}}},
+                "since": 0,
+                "units": members,
+                "goal": {"x": 22, "y": 12},
+            }],
+        });
+    });
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    let beside = beside_foundry(&state, 0, None);
+    assert!(
+        runs(&commands)
+            .iter()
+            .chain(&hunts(&commands))
+            .all(|(units, goal)| !units.contains(&scuttler) || !beside.contains(goal)),
         "{commands:?}"
     );
 }

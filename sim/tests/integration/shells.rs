@@ -881,3 +881,109 @@ fn a_siege_shell_lands_on_the_footprint_edge_and_still_counts() {
         "the footprint edge is still the footprint"
     );
 }
+
+/// West's Bombard with one shell in flight at an East Harvester in the
+/// open, its spotter already leaving so no second shell follows.
+fn one_shell_in_flight() -> State {
+    let mut state = range(vec![
+        unit(0, UnitKind::Bombard, 4, 5),
+        unit(0, UnitKind::Sentinel, 5, 5),
+        unit(1, UnitKind::Harvester, 11, 5),
+    ])
+    .build()
+    .unwrap();
+    let (bombard, spotter, target) = (
+        state.units()[0].id,
+        state.units()[1].id,
+        state.units()[2].id,
+    );
+    fire_when_ready(
+        &mut state,
+        &[cmd(0, orders::attack([bombard], Target::Unit(target)))],
+        bombard,
+    );
+    state.tick(&[
+        cmd(0, orders::stop([bombard])),
+        cmd(0, orders::run([spotter], TilePos::new(1, 10))),
+    ]);
+    assert_eq!(state.shells().len(), 1, "premise: one shell in flight");
+    state
+}
+
+/// Ticks `state` until its one shell lands, returning the landing tick.
+fn land(state: &mut State) -> u64 {
+    for _ in 0..60 {
+        let report = state.tick(&[]);
+        if report
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::ShellLanded { .. }))
+        {
+            return report.tick;
+        }
+    }
+    panic!("the shell never landed");
+}
+
+#[test]
+fn a_hostile_shell_seen_landing_is_remembered_until_it_expires() {
+    use aftermine_sim::observation::ObservationData;
+    use aftermine_sim::stats::SHELL_IMPACT_MEMORY_TICKS;
+    use aftermine_sim::vision::RecentTile;
+
+    let mut state = one_shell_in_flight();
+    let impact = TilePos::containing(state.shells()[0].impact);
+    let mut unseen = state.clone();
+    let landed = land(&mut state);
+    let expires_at = landed + SHELL_IMPACT_MEMORY_TICKS + 1;
+    assert_eq!(
+        state.vision(PlayerId(1)).shell_impacts(),
+        [RecentTile {
+            tile: impact,
+            expires_at
+        }],
+        "the target's team watched the shell land"
+    );
+    assert!(
+        state.vision(PlayerId(0)).shell_impacts().is_empty(),
+        "a seat does not remember its own shells"
+    );
+    while state.current_tick() < expires_at {
+        assert_eq!(
+            ObservationData::fog_honest(&state, PlayerId(1)).shell_impacts,
+            [impact],
+            "tick {}",
+            state.current_tick()
+        );
+        let events = state.tick(&[]).events;
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, Event::ShellLaunched { .. })),
+            "premise: no second shell"
+        );
+    }
+    let restored: State =
+        serde_json::from_value(serde_json::to_value(&state).unwrap()).expect("a save restores");
+    assert_eq!(restored.hash(), state.hash());
+    assert!(
+        ObservationData::fog_honest(&state, PlayerId(1))
+            .shell_impacts
+            .is_empty(),
+        "forgotten at its expiry"
+    );
+    state.tick(&[]);
+    assert!(state.vision(PlayerId(1)).shell_impacts().is_empty());
+
+    // Stand in for a shell aimed at ground East cannot see.
+    let far = TilePos::new(2, 10);
+    let mut doc = serde_json::to_value(&unseen).unwrap();
+    doc["shells"][0]["impact"] = serde_json::to_value(far.center()).unwrap();
+    unseen = serde_json::from_value(doc).unwrap();
+    land(&mut unseen);
+    assert!(!unseen.can_see(PlayerId(1), far), "premise: out of sight");
+    assert!(
+        unseen.vision(PlayerId(1)).shell_impacts().is_empty(),
+        "a shell landing out of sight is not remembered"
+    );
+}

@@ -222,15 +222,7 @@ impl Missions {
             let mut recruits = fill(candidates, need, &mut have, room);
             let gap = siege.gap(pressing, have);
             if *own && gap != [0, 0] {
-                shortfalls.push(Shortfall {
-                    ground: component,
-                    gap,
-                    attackers: siege.attackers(gap, crate::reads_threats(difficulty)),
-                    // Builders and producers with nothing armed beside them
-                    // are met with the cheapest unit: the first one there
-                    // soonest stops the site going up.
-                    read: crate::reads_threats(difficulty) && !siege.unarmed_only(),
-                });
+                shortfalls.push(siege.shortfall(component, gap, difficulty));
             }
             // Guns are reached rather than waited for: they shell from
             // where they stand.
@@ -241,19 +233,11 @@ impl Missions {
             // margin: turned out under fire, its members only die on the way
             // home, and the next look sends them back. Where the rung falls
             // back to the post, that rule takes it from there; a rung that
-            // never falls back still gives up below even odds. One waiting at
-            // its post, or still on its way out, is not out yet.
-            let out = mission.is_some_and(|mission| {
-                matches!(
-                    mission.task,
-                    Task::Defend {
-                        phase: DefendPhase::Engage { .. },
-                        ..
-                    }
-                ) && !ring(foundry.anchor, foundry.kind.size()).any(|tile| tile == mission.goal)
-                    && together(observation, mission.units.iter(), [mission.goal, goal]) > 0
-            });
-            let bar = match (out, concentrates(difficulty)) {
+            // never falls back still gives up below even odds.
+            let bar = match (
+                out_at(observation, mission, foundry, goal),
+                concentrates(difficulty),
+            ) {
                 (false, _) => Some(go),
                 (true, true) => None,
                 (true, false) => Some(met),
@@ -276,11 +260,23 @@ impl Missions {
             let gathered = post.map_or(have[0], |post| {
                 together(observation, members.iter().chain(&recruits), [post, fight])
             });
+            let sent = members.iter().chain(&recruits);
             let (goal, pursuit, gun) = match grounded
                 .filter(|_| gathering && concentrates(difficulty))
                 .filter(|_| waits(mission, foundry, [gathered, front.1], [met, go]))
                 .map(|threat| waiting_post(map, frame, foundry, threat))
-            {
+                .or_else(|| {
+                    concentrates(difficulty)
+                        .then(|| {
+                            close_up(
+                                observation,
+                                (map, frame, foundry),
+                                (pursuit, fight, mission),
+                                sent,
+                            )
+                        })?
+                        .map(Some)
+                }) {
                 Some(Some(post)) => (post, Pursuit::Fall, None),
                 Some(None) => continue,
                 None => (goal, pursuit, gun),
@@ -1046,6 +1042,66 @@ fn waits(
     }
 }
 
+/// Whether `mission` is out at its fight at `goal`: engaged, sent somewhere
+/// other than beside `foundry`, and with a member there. One waiting at its
+/// post, or still on its way out, is not out yet.
+fn out_at(
+    observation: &ObservationData,
+    mission: Option<&Mission>,
+    foundry: &BuildingObs,
+    goal: TilePos,
+) -> bool {
+    mission.is_some_and(|mission| {
+        matches!(
+            mission.task,
+            Task::Defend {
+                phase: DefendPhase::Engage { .. },
+                ..
+            }
+        ) && !ring(foundry.anchor, foundry.kind.size()).any(|tile| tile == mission.goal)
+            && together(observation, mission.units.iter(), [mission.goal, goal]) > 0
+    })
+}
+
+/// Where defenders going at a gun close up first: the waiting post beside
+/// `foundry`, while the defense has not set out, none of the units it would
+/// send is at the `fight` yet and one of them stands apart from the one
+/// nearest it.
+/// Sent from where they stand, they would reach its shells in turn and die
+/// in pairs; together, however few, they beat guns that are weak up close.
+fn close_up<'a>(
+    observation: &ObservationData,
+    (map, frame, foundry): (&MapModel, HomeFrame, &BuildingObs),
+    (pursuit, fight, mission): (Pursuit, TilePos, Option<&Mission>),
+    sent: impl Iterator<Item = &'a UnitId>,
+) -> Option<TilePos> {
+    if !matches!(pursuit, Pursuit::Gun(_) | Pursuit::Advance) {
+        return None;
+    }
+    let post = waiting_post(map, frame, foundry, fight)?;
+    // Only before setting out: a group of fast and slow units strings out on
+    // its way, and calling it back each time would never let it arrive.
+    if mission.is_some_and(|mission| !mission.units.is_empty() && mission.goal != post) {
+        return None;
+    }
+    let shooters: Vec<&UnitObs> = sent
+        .filter_map(|id| mine(observation, *id))
+        .filter(|unit| hits(unit, Domain::Ground))
+        .collect();
+    let out = shooters
+        .iter()
+        .any(|unit| unit.tile.chebyshev(fight) <= GATHER_TILES);
+    // Apart from one another, not from the post: a group that set out
+    // together stays close on its way, and is not called back.
+    let lead = shooters
+        .iter()
+        .min_by_key(|unit| (unit.tile.chebyshev(fight), unit.id))?;
+    let scattered = shooters
+        .iter()
+        .any(|unit| unit.tile.chebyshev(lead.tile) > RESERVE_TILES);
+    (!out && scattered).then_some(post)
+}
+
 /// The defenders among `members` out away from the waiting `post` or on
 /// their way, with what those near the post, at the `fight` or on the way
 /// between are worth against ground; the rest stand idle at the post as its
@@ -1311,6 +1367,25 @@ impl Siege<'_> {
             .map(|threat| threat.id)
             .chain(self.recalled.iter().copied())
             .collect()
+    }
+
+    /// The shortfall `gap` of the defense of a Foundry on `ground`, with the
+    /// attackers it answers at a `difficulty` that reads them. Builders and
+    /// producers with nothing armed beside them are met with the cheapest
+    /// unit: the first one there soonest stops the site going up.
+    fn shortfall(
+        &self,
+        ground: Option<u32>,
+        gap: [u64; 2],
+        difficulty: BotDifficulty,
+    ) -> Shortfall {
+        let read = crate::reads_threats(difficulty);
+        Shortfall {
+            ground,
+            gap,
+            attackers: self.attackers(gap, read),
+            read: read && !self.unarmed_only(),
+        }
     }
 
     /// Whether anything still presses: attackers remembered out of sight, or
@@ -1760,11 +1835,13 @@ pub(super) fn lobs(enemy: &UnitObs, impact: TilePos) -> bool {
         .any(|weapon| shells(weapon, doubled(enemy.tile), impact))
 }
 
-/// Impacts of hostile shells near any of `buildings`.
+/// Impacts of hostile shells near any of `buildings`, coming or landed lately:
+/// a gun firing every few seconds has nothing in flight between its shells.
 fn shelled(observation: &ObservationData, buildings: &[BuildingObs]) -> Vec<TilePos> {
     observation
         .incoming_shells
         .iter()
+        .chain(&observation.shell_impacts)
         .copied()
         .filter(|impact| {
             buildings.iter().any(|building| {

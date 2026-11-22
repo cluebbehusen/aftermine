@@ -517,6 +517,7 @@ pub(super) fn land_shells(state: &mut State, hits: &mut Vec<PendingHit>, events:
             at: shell.impact,
             splash: shell.splash,
         });
+        state.record_shell_impact(shell.player, TilePos::containing(shell.impact));
         // The direct hit is distance-zero to a footprint, not tile
         // containment: a shell aimed at a building lands on the footprint's
         // closest edge point, whose exact coordinate can floor into the

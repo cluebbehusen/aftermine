@@ -271,6 +271,10 @@ pub struct FogView {
     /// the seat sees, sorted by (y, x).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub incoming_shells: Vec<[i32; 2]>,
+    /// Tiles `[x, y]` where hostile shells the seat's team saw land came
+    /// down lately, sorted by (y, x).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shell_impacts: Vec<[i32; 2]>,
 }
 
 /// A hostile building every seat knows of regardless of fog.
@@ -420,6 +424,10 @@ impl FogView {
             magazines: state.known_magazines(player),
             warheads: state.known_warheads(player),
             incoming_shells: aftermine_sim::observation::incoming_shells(state, player)
+                .into_iter()
+                .map(|tile| [tile.x, tile.y])
+                .collect(),
+            shell_impacts: aftermine_sim::observation::shell_impacts(state, player)
                 .into_iter()
                 .map(|tile| [tile.x, tile.y])
                 .collect(),
