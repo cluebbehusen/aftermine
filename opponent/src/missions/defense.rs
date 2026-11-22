@@ -241,19 +241,11 @@ impl Missions {
             // margin: turned out under fire, its members only die on the way
             // home, and the next look sends them back. Where the rung falls
             // back to the post, that rule takes it from there; a rung that
-            // never falls back still gives up below even odds. One waiting at
-            // its post, or still on its way out, is not out yet.
-            let out = mission.is_some_and(|mission| {
-                matches!(
-                    mission.task,
-                    Task::Defend {
-                        phase: DefendPhase::Engage { .. },
-                        ..
-                    }
-                ) && !ring(foundry.anchor, foundry.kind.size()).any(|tile| tile == mission.goal)
-                    && together(observation, mission.units.iter(), [mission.goal, goal]) > 0
-            });
-            let bar = match (out, concentrates(difficulty)) {
+            // never falls back still gives up below even odds.
+            let bar = match (
+                out_at(observation, mission, foundry, goal),
+                concentrates(difficulty),
+            ) {
                 (false, _) => Some(go),
                 (true, true) => None,
                 (true, false) => Some(met),
@@ -276,11 +268,18 @@ impl Missions {
             let gathered = post.map_or(have[0], |post| {
                 together(observation, members.iter().chain(&recruits), [post, fight])
             });
+            let sent = members.iter().chain(&recruits);
             let (goal, pursuit, gun) = match grounded
                 .filter(|_| gathering && concentrates(difficulty))
                 .filter(|_| waits(mission, foundry, [gathered, front.1], [met, go]))
                 .map(|threat| waiting_post(map, frame, foundry, threat))
-            {
+                .or_else(|| {
+                    concentrates(difficulty)
+                        .then(|| {
+                            close_up(observation, (map, frame, foundry), (pursuit, fight), sent)
+                        })?
+                        .map(Some)
+                }) {
                 Some(Some(post)) => (post, Pursuit::Fall, None),
                 Some(None) => continue,
                 None => (goal, pursuit, gun),
@@ -1016,6 +1015,55 @@ fn waits(
     } else {
         have < go
     }
+}
+
+/// Whether `mission` is out at its fight at `goal`: engaged, sent somewhere
+/// other than beside `foundry`, and with a member there. One waiting at its
+/// post, or still on its way out, is not out yet.
+fn out_at(
+    observation: &ObservationData,
+    mission: Option<&Mission>,
+    foundry: &BuildingObs,
+    goal: TilePos,
+) -> bool {
+    mission.is_some_and(|mission| {
+        matches!(
+            mission.task,
+            Task::Defend {
+                phase: DefendPhase::Engage { .. },
+                ..
+            }
+        ) && !ring(foundry.anchor, foundry.kind.size()).any(|tile| tile == mission.goal)
+            && together(observation, mission.units.iter(), [mission.goal, goal]) > 0
+    })
+}
+
+/// Where defenders going at a gun close up first: the waiting post beside
+/// `foundry`, while none of the units it would send is at the `fight` yet
+/// and one of them stands away from the post.
+/// Sent from where they stand, they would reach its shells in turn and die
+/// in pairs; together, however few, they beat guns that are weak up close.
+fn close_up<'a>(
+    observation: &ObservationData,
+    (map, frame, foundry): (&MapModel, HomeFrame, &BuildingObs),
+    (pursuit, fight): (Pursuit, TilePos),
+    sent: impl Iterator<Item = &'a UnitId>,
+) -> Option<TilePos> {
+    if !matches!(pursuit, Pursuit::Gun(_) | Pursuit::Advance) {
+        return None;
+    }
+    let post = waiting_post(map, frame, foundry, fight)?;
+    let shooters: Vec<&UnitObs> = sent
+        .filter_map(|id| mine(observation, *id))
+        .filter(|unit| hits(unit, Domain::Ground))
+        .collect();
+    let out = shooters
+        .iter()
+        .any(|unit| unit.tile.chebyshev(fight) <= GATHER_TILES);
+    let scattered = shooters
+        .iter()
+        .any(|unit| unit.tile.chebyshev(post) > RESERVE_TILES);
+    (!out && scattered).then_some(post)
 }
 
 /// The defenders among `members` out away from the waiting `post` or on

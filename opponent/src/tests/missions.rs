@@ -3069,3 +3069,38 @@ fn an_aircraft_defender_chased_past_the_base_runs_back_too() {
         "{commands:?}"
     );
 }
+
+#[test]
+fn defenders_going_at_a_gun_close_up_at_the_post_first() {
+    // Shells come in from a gun out of sight. Two of the garrison stand far
+    // off: sent from where they stand they would reach the shells in turn
+    // and die in pairs, so the defenders close up at the post before anyone
+    // goes at the gun.
+    let closed_up = |apart: bool| {
+        let mut scenario = shelling(&[0]);
+        if apart {
+            for spec in &mut scenario.units {
+                if spec.player == 0 && [(2, 13), (4, 14)].contains(&(spec.x, spec.y)) {
+                    spec.y += 7;
+                }
+            }
+        }
+        let mut state = scenario.build().unwrap();
+        open_fire(&mut state, &[0]);
+        until_shells_come(&scenario, &mut state, &[0]);
+        let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+        (state, commands)
+    };
+    // Close beside the post already, they go at once.
+    let (_, commands) = closed_up(false);
+    assert!(!advances(&commands).is_empty(), "{commands:?}");
+    let (state, commands) = closed_up(true);
+    let far = [at(&state, 2, 20), at(&state, 4, 21)];
+    assert!(
+        runs(&commands)
+            .iter()
+            .any(|(units, _)| far.iter().any(|unit| units.contains(unit))),
+        "{commands:?}"
+    );
+    assert!(advances(&commands).is_empty(), "{commands:?}");
+}
