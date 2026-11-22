@@ -150,7 +150,10 @@ pub(super) fn accompany(
         unit.path = None;
         return;
     }
-    if stats.harvest.is_some() && party.stopped && mend(state, party, id, escorted, weld, welds) {
+    if stats.harvest.is_some()
+        && party.stopped
+        && mend(state, index, party, id, escorted, weld, welds)
+    {
         return;
     }
     if weld.is_some() {
@@ -180,6 +183,7 @@ fn set_weld(state: &mut State, id: UnitId, patient: Option<UnitId>) {
 /// weld or no route reaches the patient, leaving the welder to follow.
 fn mend(
     state: &mut State,
+    index: &UnitIndex,
     party: &Party,
     id: UnitId,
     escorted: UnitId,
@@ -204,7 +208,7 @@ fn mend(
         });
         return true;
     }
-    approach_patient(state, id, patient)
+    approach_patient(state, index, id, patient)
 }
 
 /// The party member `id` should weld, if any is wounded, on the ground, not

@@ -333,6 +333,7 @@ pub(super) fn weld_building(
 /// time. The patient's own orders are never touched.
 pub(super) fn repair_unit(
     state: &mut State,
+    index: &UnitIndex,
     id: UnitId,
     patient: UnitId,
     events: &mut Vec<Event>,
@@ -363,7 +364,7 @@ pub(super) fn repair_unit(
             patient,
         });
     } else {
-        chase_patient(state, id, patient, events);
+        chase_patient(state, index, id, patient, events);
     }
 }
 
@@ -375,6 +376,7 @@ pub(super) fn repair_unit(
 /// before a field weld can bill without reintroducing tick-parity behavior.
 pub(super) fn commit_unit_welds(
     state: &mut State,
+    index: &UnitIndex,
     welds: Vec<super::PendingFieldWeld>,
     events: &mut Vec<Event>,
     heals: &mut Vec<super::PendingUnitHeal>,
@@ -423,7 +425,7 @@ pub(super) fn commit_unit_welds(
             stationary[slot] = false;
             // Initiative welders decide their next step in their own brain.
             if welding(unit, weld.patient) == Some(Torch::Commanded) {
-                chase_patient(state, weld.welder, weld.patient, events);
+                chase_patient(state, index, weld.welder, weld.patient, events);
                 changed = true;
             }
         }
@@ -527,47 +529,64 @@ fn footprint_eviction_pending(state: &State, id: UnitId) -> bool {
 /// Reuses the current approach side as a patient moves, replanning only
 /// when its precise endpoint leaves the final tile. A patient no route
 /// reaches ends the weld order.
-fn chase_patient(state: &mut State, id: UnitId, patient: UnitId, events: &mut Vec<Event>) {
-    if approach_patient(state, id, patient) {
+fn chase_patient(
+    state: &mut State,
+    index: &UnitIndex,
+    id: UnitId,
+    patient: UnitId,
+    events: &mut Vec<Event>,
+) {
+    if approach_patient(state, index, id, patient) {
         return;
     }
     stall(state, id, Stall::Drop, StallReason::NoRoute, events);
 }
 
-/// Routes welder `id` to a working position against `patient`'s hull,
-/// keeping the current approach side while it still routes. Returns false,
-/// leaving the welder's path untouched, when no position routes.
-pub(super) fn approach_patient(state: &mut State, id: UnitId, patient: UnitId) -> bool {
+/// Routes welder `id` to a working position against `patient`'s hull that
+/// no crewmate holds or reaches first, keeping the current approach side
+/// while it stays free. Welders arriving from one side would otherwise aim
+/// at overlapping points, shove each other off them, and never stop to
+/// weld. Returns false, leaving the welder's path untouched, when no
+/// position routes.
+pub(super) fn approach_patient(
+    state: &mut State,
+    index: &UnitIndex,
+    id: UnitId,
+    patient: UnitId,
+) -> bool {
     let unit = state.unit(id).expect("caller checked");
     let target = state.unit(patient).expect("caller checked");
-    let approaches = patient_approaches(unit, target);
-    let kind = unit.kind;
-    let from = unit.tile();
-    for (goal, point) in approaches {
-        if !state.passable_for(kind.stats().domain, goal) {
-            continue;
-        }
-        let unit = state.unit(id).expect("caller checked");
-        if unit.path.as_ref().is_some_and(|p| p.goal == goal) {
-            state
-                .unit_mut(id)
-                .expect("caller checked")
-                .path
-                .as_mut()
-                .expect("checked")
-                .final_point = Some(point);
-            return true;
-        }
-        if let Some(waypoints) =
-            crate::tick::movement::route_round_hulls(state, unit, from.center(), goal)
-        {
-            let mut path = work_position_path(goal, waypoints);
-            path.final_point = Some(point);
-            state.unit_mut(id).expect("caller checked").path = Some(path);
-            return true;
-        }
+    let domain = unit.kind.stats().domain;
+    let asker = (id, crowding::Post::Contact);
+    let open = |tile| state.passable_for(domain, tile);
+    let candidates: Vec<_> = patient_approaches(unit, target)
+        .into_iter()
+        .filter(|&(goal, _)| open(goal))
+        .map(|(goal, point)| crowding::Position { goal, point })
+        .collect();
+    if let Some(held) = candidates.first()
+        && unit.path.as_ref().is_some_and(|p| p.goal == held.goal)
+        && !crowding::claimed(state, index, asker, held.point, true)
+    {
+        let point = held.point;
+        state
+            .unit_mut(id)
+            .expect("caller checked")
+            .path
+            .as_mut()
+            .expect("checked")
+            .final_point = Some(point);
+        return true;
     }
-    false
+    let from = unit.tile().center();
+    let path = crowding::choose(state, index, asker, candidates, target.pos, open, |goal| {
+        crate::tick::movement::route_round_hulls(state, unit, from, goal)
+    });
+    let reachable = path.is_some();
+    if reachable {
+        state.unit_mut(id).expect("caller checked").path = path;
+    }
+    reachable
 }
 
 /// The order a welder takes on patients in, each measured at `point`, a
