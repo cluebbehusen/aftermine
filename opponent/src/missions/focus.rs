@@ -5,7 +5,7 @@
 //! after it. Members that pick their own targets heaviest first keep their
 //! own aim: the weakest enemy would waste their single heavy shot.
 
-use super::{Missions, Task, hunt, mine, walking_gun};
+use super::{Missions, Task, hunt, mine, reached};
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled};
 use crate::map::{MapModel, Shot};
@@ -54,7 +54,7 @@ impl Missions {
                     .filter(|enemy| {
                         legal(enemy)
                             || (defending
-                                && (walking_gun(enemy) || enemy.kind.stats().weapons.is_empty()))
+                                && (reached(enemy) || enemy.kind.stats().weapons.is_empty()))
                     })
             });
             if kept.is_some() {

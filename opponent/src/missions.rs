@@ -853,9 +853,16 @@ fn hits(unit: &UnitObs, domain: Domain) -> bool {
         .any(|weapon| weapon.targets.covers(domain))
 }
 
-/// Whether `unit` is ground artillery.
-fn walking_gun(unit: &UnitObs) -> bool {
-    artillery(unit.kind)
+/// Whether defenders reach `unit` at once rather than hunt it: ground
+/// artillery, which shells them from beyond reach, or a crusher, which goes
+/// over whatever stands before it and never turns on a machine.
+fn reached(unit: &UnitObs) -> bool {
+    reached_kind(unit.kind)
+}
+
+/// Whether defenders reach a unit of `kind` at once; see [`reached`].
+fn reached_kind(kind: UnitKind) -> bool {
+    artillery(kind) || kind.crushes()
 }
 
 /// Whether `kind` is ground artillery: a walking gun that shells ground over

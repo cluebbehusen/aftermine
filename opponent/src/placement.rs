@@ -117,11 +117,12 @@ impl Fire {
         // when any of the ring lies between the gun's blind ring and its
         // range.
         // `sure` is per mille of a shooter's fire counted: all of it for one in
-        // sight, less for one remembered.
+        // sight, less for one remembered. A breacher never turns its weapon on
+        // a machine, so it deals a worker nothing.
         let mut add = |weapons: &[WeaponStats],
                        centre: (i64, i64),
                        footing: TilePos,
-                       from: Domain,
+                       (from, machines): (Domain, bool),
                        sure: u64| {
             for weapon in weapons.iter().filter(|weapon| weapon.targets.ground) {
                 let (reach, minimum) = (
@@ -143,7 +144,8 @@ impl Fire {
                 let building = Fx::from_num(footprint.near(centre)) <= reach
                     && Fx::from_num(footprint.near(centre)) >= minimum
                     && clear(footprint);
-                let worker = Fx::from_num(ring.near(centre)) <= reach
+                let worker = machines
+                    && Fx::from_num(ring.near(centre)) <= reach
                     && Fx::from_num(ring.far(centre)) >= minimum
                     && clear(ring);
                 for (barrage, hits, damage) in [
@@ -170,7 +172,7 @@ impl Fire {
                 enemy.kind.stats().weapons,
                 centre,
                 enemy.tile,
-                enemy.body_domain(),
+                (enemy.body_domain(), turns_on_machines(enemy.kind)),
                 1_000,
             );
         }
@@ -197,7 +199,7 @@ impl Fire {
                 seen.kind.stats().weapons,
                 centre,
                 seen.tile,
-                seen.kind.stats().domain,
+                (seen.kind.stats().domain, turns_on_machines(seen.kind)),
                 // One that cannot leave its ground stays where it was seen.
                 if crate::missions::stranded(seen, map, home) {
                     1_000
@@ -221,12 +223,18 @@ impl Fire {
                 enemy.kind.tier_stats(enemy.tier).weapons,
                 centre,
                 enemy.anchor,
-                Domain::Ground,
+                (Domain::Ground, true),
                 1_000,
             );
         }
         fire
     }
+}
+
+/// Whether a unit of `kind` ever turns its weapons on a machine: a breacher
+/// picks only structures.
+fn turns_on_machines(kind: aftermine_sim::UnitKind) -> bool {
+    kind.stats().target_priority != aftermine_sim::stats::TargetPriority::Buildings
 }
 
 /// A site going up: its kind and anchor, its health, and the construction
@@ -274,7 +282,8 @@ impl Raising {
 /// builder reaches it, so it stands at its health until the nearest of them
 /// walks there; then it rises to full health over the work left at their
 /// combined rate. A site that would not stand only
-/// feeds the attackers its price and its builders.
+/// feeds the attackers its price and its builders, as does one in a crusher's
+/// way before it stands.
 pub(crate) fn stands(
     observation: &ObservationData,
     map: &MapModel,
@@ -301,7 +310,12 @@ pub(crate) fn stands(
         .unwrap_or(0);
     let worth = u64::from(stats.construction.cost) * u64::from(left) / u64::from(build.max(1));
     let fire = Fire::on(observation, map, memory, site.kind, site.anchor);
-    fire.building.spares(site.hp.min(max), walk)
+    !crate::crush::in_way(
+        observation,
+        site.kind,
+        site.anchor,
+        u64::from(walk.saturating_add(ticks)),
+    ) && fire.building.spares(site.hp.min(max), walk)
         && fire.building.spares(max, walk.saturating_add(ticks))
         && sent.iter().all(|worker| {
             let share = worth * u64::from(worker.kind.stats().build_rate) / u64::from(rate);
@@ -319,18 +333,18 @@ fn walk_ticks(worker: &UnitObs, site: Raising) -> u32 {
     (Fx::from_num(tiles) / speed).ceil().to_num::<u32>()
 }
 
-/// Whether `welder` welding the own `building` adds health faster than the
-/// fire that reaches it takes it away, along the simulation's welding ramp (a
-/// Foundry's own, any other building's build time), and pays its way under
-/// that fire: the health it restores is worth its share of what the building
-/// cost.
-pub(crate) fn mends(
+/// How many welders like `welder`, welding the own `building` together, add
+/// health faster than the fire that reaches it takes it away, along the
+/// simulation's welding ramp (a Foundry's own, any other building's build
+/// time); none when they would not pay their way under that fire, the health
+/// each restores worth its share of what the building cost.
+pub(crate) fn welders(
     observation: &ObservationData,
     map: &MapModel,
     memory: &Memory,
     building: &BuildingObs,
     welder: &UnitObs,
-) -> bool {
+) -> Option<u64> {
     let (kind, tier) = (building.kind, building.tier);
     let stats = kind.tier_stats(tier);
     let ramp_ticks = if kind == BuildingKind::Foundry {
@@ -341,9 +355,14 @@ pub(crate) fn mends(
     let ramp = u64::from(stats.max_hp - stats.max_hp / 5) * 1_000 / u64::from(ramp_ticks.max(1));
     let missing = u64::from(stats.max_hp.saturating_sub(building.hp));
     let worth = u64::from(kind.invested_cost(tier)) * missing / u64::from(stats.max_hp.max(1));
-    let ticks = u32::try_from((missing * 1_000).div_ceil(ramp.max(1))).unwrap_or(u32::MAX);
     let fire = Fire::on(observation, map, memory, kind, building.anchor);
-    ramp > fire.building.rate && fire.worker.pays(welder, worth, ticks)
+    let ramp = ramp.max(1);
+    let welders = fire.building.rate / ramp + 1;
+    let gain = welders * ramp - fire.building.rate;
+    let ticks = u32::try_from((missing * 1_000).div_ceil(gain)).unwrap_or(u32::MAX);
+    fire.worker
+        .pays(welder, worth / welders, ticks)
+        .then_some(welders)
 }
 
 /// Checks `kind` at `anchor` against the seat's knowledge and the footprints
