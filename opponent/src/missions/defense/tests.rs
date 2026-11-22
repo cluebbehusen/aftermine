@@ -415,3 +415,48 @@ fn two_foundries_look_over_two_hit_structures_not_one_twice() {
     assert_eq!(found.len(), 2, "{found:?}");
     assert_ne!(found[0].1.0, found[1].1.0, "{found:?}");
 }
+
+#[test]
+fn a_sapper_is_no_unarmed_intruder() {
+    let (observation, ids) = viewed(&[
+        (0, UnitKind::Sentinel, 3, 4),
+        (1, UnitKind::Sapper, 5, 4),
+        (1, UnitKind::Surveyor, 5, 6),
+    ]);
+    assert!(!intruder(&observation, Some(ids[1])));
+    assert!(intruder(&observation, Some(ids[2])));
+}
+
+#[test]
+fn only_a_member_that_can_hit_a_site_ends_its_attack_by_standing_idle() {
+    let (mut observation, ids) = viewed(&[
+        (0, UnitKind::Sentinel, 3, 4),
+        (0, UnitKind::Flakhound, 3, 6),
+    ]);
+    let site = Pursuit::Quarry(AttackTarget::Building(aftermine_sim::BuildingId(77)));
+    for unit in &mut observation.my_units {
+        unit.idle = unit.kind == UnitKind::Flakhound;
+    }
+    assert!(!idle_at_site(&observation, &ids, site));
+    for unit in &mut observation.my_units {
+        unit.idle = true;
+    }
+    assert!(idle_at_site(&observation, &ids, site));
+}
+
+#[test]
+fn a_ground_defender_bombed_by_aircraft_it_cannot_hit_is_outweighed() {
+    let (observation, ids) = viewed(&[
+        (0, UnitKind::Scuttler, 4, 4),
+        (0, UnitKind::Scuttler, 4, 5),
+        (1, UnitKind::Buzzard, 6, 4),
+    ]);
+    let memory = Memory::default();
+    let scuttler = mine(&observation, ids[0]).unwrap();
+    assert!(outweighed(
+        (&observation, &memory),
+        &[ids[0], ids[1]],
+        scuttler,
+        engage_margin(BotDifficulty::Prime)
+    ));
+}

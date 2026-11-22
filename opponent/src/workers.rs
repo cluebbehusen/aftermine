@@ -833,13 +833,12 @@ fn withdraw(
     leaving.sort_unstable();
     leaving.dedup();
     let foundries: Vec<&BuildingObs> = built_foundries(&observation.my_buildings).collect();
-    // Out of known fire, and of where fire nobody sees has landed.
-    let covered = |tile: TilePos| {
-        hazards.iter().any(|hazard| hazard.covers(doubled(tile)))
-            || observation
-                .salvage_incidents
-                .iter()
-                .any(|incident| incident.chebyshev(tile) <= HARVEST_INCIDENT_DANGER_RADIUS)
+    let known = |tile: TilePos| hazards.iter().any(|hazard| hazard.covers(doubled(tile)));
+    let unseen_fire = |tile: TilePos| {
+        observation
+            .salvage_incidents
+            .iter()
+            .any(|incident| incident.chebyshev(tile) <= HARVEST_INCIDENT_DANGER_RADIUS)
     };
     for id in leaving {
         let Some(unit) = observation.my_units.iter().find(|unit| unit.id == id) else {
@@ -848,7 +847,12 @@ fn withdraw(
         if ledger.employs(id) {
             continue;
         }
-        let Some(refuge) = refuge(map, frame, &foundries, unit.tile, |tile| !covered(tile)) else {
+        // Out of known fire, and of where fire nobody sees has landed when
+        // some refuge is; off the job at least when none is.
+        let Some(refuge) = refuge(map, frame, &foundries, unit.tile, |tile| {
+            !known(tile) && !unseen_fire(tile)
+        })
+        .or_else(|| refuge(map, frame, &foundries, unit.tile, |tile| !known(tile))) else {
             continue;
         };
         if !ledger.order(Command::Run {

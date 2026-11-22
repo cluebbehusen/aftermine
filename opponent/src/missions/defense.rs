@@ -699,9 +699,10 @@ fn lost(
             })
 }
 
-/// Whether a defense attacking an unarmed site has a member standing idle:
-/// its attack ended, the site it was on fallen, while another it chose
-/// stands too near the first to move the goal.
+/// Whether a defense attacking an unarmed site has a member that can hit it
+/// standing idle: its attack ended, the site it was on fallen, while another
+/// it chose stands too near the first to move the goal. Anti-air members
+/// idle beside any site.
 fn idle_at_site(observation: &ObservationData, members: &[UnitId], pursuit: Pursuit) -> bool {
     matches!(
         pursuit,
@@ -709,7 +710,7 @@ fn idle_at_site(observation: &ObservationData, members: &[UnitId], pursuit: Purs
     ) && members
         .iter()
         .filter_map(|id| mine(observation, *id))
-        .any(|unit| unit.idle)
+        .any(|unit| unit.idle && crate::defenses::reach(unit.kind) > Fx::ZERO)
 }
 
 /// Runs the armed members of a defense hunting or holding an intruder that
@@ -783,10 +784,9 @@ fn exposed(observation: &ObservationData, unit: &UnitObs) -> bool {
 
 /// Whether the known enemies that would join a fight where `unit` stands,
 /// and the enemy guns that reach it, outweigh the `members` of its defense
-/// beside it that can hit what `unit` is hit as, by the `margin` per mille a
-/// fight needs,
-/// all judged in the domain `unit` is hit in: an aircraft by what can hit
-/// aircraft there.
+/// beside it by the `margin` per mille a fight needs, the aircraft that can
+/// hit it against the members that hit aircraft and the rest against the
+/// members that hit the ground. A landed aircraft is hit as a ground body.
 fn outweighed(
     (observation, memory): (&ObservationData, &Memory),
     members: &[UnitId],
@@ -794,53 +794,59 @@ fn outweighed(
     margin: u64,
 ) -> bool {
     let domain = unit.body_domain();
-    let met = if domain == Domain::Ground {
+    let reach = |weapons: &[WeaponStats]| {
+        weapons
+            .iter()
+            .filter(|weapon| weapon.targets.covers(domain))
+            .map(|weapon| weapon.range)
+            .max()
+            .unwrap_or(Fx::ZERO)
+    };
+    let near = |reach: Fx, tile: TilePos| {
+        reach > Fx::ZERO
+            && tile.chebyshev(unit.tile) <= reach.ceil().to_num::<i32>().max(LOCAL_REACH)
+    };
+    let enemies = |body: Domain| {
+        observation
+            .enemy_units
+            .iter()
+            .filter(move |enemy| enemy.body_domain() == body)
+            .filter(|enemy| near(reach(enemy.kind.stats().weapons), enemy.tile))
+            .map(value)
+            .sum::<u64>()
+    };
+    let flying = enemies(Domain::Air);
+    let standing = if domain == Domain::Ground {
         // The guns alone: remembered units near are the meeting's already.
         let counted: Vec<UnitId> = memory.units().iter().map(|seen| seen.id).collect();
         meeting::opposed(observation, memory, unit.tile)
             + defense_around(observation, memory, &[unit.tile], &counted)
     } else {
-        let near = |reach: Fx, tile: TilePos| {
-            reach > Fx::ZERO
-                && tile.chebyshev(unit.tile) <= reach.ceil().to_num::<i32>().max(LOCAL_REACH)
-        };
-        observation
-            .enemy_units
-            .iter()
-            .filter(|enemy| near(air_reach(enemy.kind.stats().weapons), enemy.tile))
-            .map(value)
-            .sum::<u64>()
+        enemies(Domain::Ground)
             + observation
                 .enemy_buildings
                 .iter()
                 .filter(|building| {
                     // A gun joins no fight: it counts only within its reach.
                     let tier = building.kind.tiers()[usize::from(building.tier)];
-                    let reach = air_reach(tier.weapons);
+                    let reach = reach(tier.weapons);
                     let gap = gap(building.anchor, building.kind.size(), unit.tile, (1, 1));
                     reach > Fx::ZERO && Fx::from_num(gap) <= reach
                 })
                 .map(building_value)
                 .sum::<u64>()
     };
-    let could: u64 = members
-        .iter()
-        .filter_map(|id| mine(observation, *id))
-        .filter(|other| other.tile.chebyshev(unit.tile) <= GATHER_TILES)
-        .filter(|other| hits(other, domain))
-        .map(value)
-        .sum();
-    met > 0 && could * 1_000 < met * margin
-}
-
-/// The longest reach of `weapons` against aircraft.
-fn air_reach(weapons: &[WeaponStats]) -> Fx {
-    weapons
-        .iter()
-        .filter(|weapon| weapon.targets.covers(Domain::Air))
-        .map(|weapon| weapon.range)
-        .max()
-        .unwrap_or(Fx::ZERO)
+    let beats = |met: u64, against: Domain| {
+        let could: u64 = members
+            .iter()
+            .filter_map(|id| mine(observation, *id))
+            .filter(|other| other.tile.chebyshev(unit.tile) <= GATHER_TILES)
+            .filter(|other| hits(other, against))
+            .map(value)
+            .sum();
+        met > 0 && could * 1_000 < met * margin
+    };
+    beats(standing, Domain::Ground) || beats(flying, Domain::Air)
 }
 
 /// Whether `tile` lies within `reach` of one of the seat's or its allies'
@@ -854,13 +860,13 @@ fn defended(observation: &ObservationData, tile: TilePos, reach: i32) -> bool {
 }
 
 /// Whether `focus` is an unarmed enemy in sight: an intruder a defense
-/// chose, such as a builder.
+/// chose, such as a builder. A Sapper's charge arms it.
 fn intruder(observation: &ObservationData, focus: Option<UnitId>) -> bool {
     focus.is_some_and(|id| {
         observation
             .enemy_units
             .iter()
-            .any(|enemy| enemy.id == id && enemy.kind.stats().weapons.is_empty())
+            .any(|enemy| enemy.id == id && ground_reach(enemy).is_none())
     })
 }
 
@@ -1394,15 +1400,19 @@ impl Siege<'_> {
     }
 
     /// Whether it looks for what hit a structure out of sight with nothing
-    /// armed in sight: an unarmed intruder, such as a scout, waits.
+    /// armed in sight, on the ground or in the air: an unarmed intruder,
+    /// such as a scout, waits.
     fn searching(&self) -> bool {
-        self.search.is_some() && self.armed_grounded().next().is_none()
+        self.search.is_some() && self.units.is_empty() && self.armed_grounded().next().is_none()
     }
 
     /// Where a threat out of sight is gone after: a gun shelling, or what
-    /// hit a structure.
+    /// hit a structure while nothing armed is in sight.
     fn hidden(&self) -> Option<TilePos> {
-        self.unseen.or(self.search.map(|(tile, _)| tile))
+        self.unseen.or(self
+            .search
+            .filter(|_| self.searching())
+            .map(|(tile, _)| tile))
     }
 
     /// What defenders go after when nothing armed threatens, nearest by
