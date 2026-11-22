@@ -704,9 +704,10 @@ fn lost(
             })
 }
 
-/// Whether a defense attacking an unarmed site has a member standing idle:
-/// its attack ended, the site it was on fallen, while another it chose
-/// stands too near the first to move the goal.
+/// Whether a defense attacking an unarmed site has a member that can hit it
+/// standing idle: its attack ended, the site it was on fallen, while another
+/// it chose stands too near the first to move the goal. Anti-air members
+/// idle beside any site.
 fn idle_at_site(observation: &ObservationData, members: &[UnitId], pursuit: Pursuit) -> bool {
     matches!(
         pursuit,
@@ -714,7 +715,7 @@ fn idle_at_site(observation: &ObservationData, members: &[UnitId], pursuit: Purs
     ) && members
         .iter()
         .filter_map(|id| mine(observation, *id))
-        .any(|unit| unit.idle)
+        .any(|unit| unit.idle && crate::defenses::reach(unit.kind) > Fx::ZERO)
 }
 
 /// Runs the armed members of a defense hunting or holding an intruder that
@@ -859,13 +860,13 @@ fn defended(observation: &ObservationData, tile: TilePos, reach: i32) -> bool {
 }
 
 /// Whether `focus` is an unarmed enemy in sight: an intruder a defense
-/// chose, such as a builder.
+/// chose, such as a builder. A Sapper's charge arms it.
 fn intruder(observation: &ObservationData, focus: Option<UnitId>) -> bool {
     focus.is_some_and(|id| {
         observation
             .enemy_units
             .iter()
-            .any(|enemy| enemy.id == id && enemy.kind.stats().weapons.is_empty())
+            .any(|enemy| enemy.id == id && ground_reach(enemy).is_none())
     })
 }
 

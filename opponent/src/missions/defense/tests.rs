@@ -337,3 +337,31 @@ fn an_aircraft_defender_is_judged_by_what_can_hit_its_attackers() {
         margin
     ));
 }
+
+#[test]
+fn a_sapper_is_no_unarmed_intruder() {
+    let (observation, ids) = viewed(&[
+        (0, UnitKind::Sentinel, 3, 4),
+        (1, UnitKind::Sapper, 5, 4),
+        (1, UnitKind::Surveyor, 5, 6),
+    ]);
+    assert!(!intruder(&observation, Some(ids[1])));
+    assert!(intruder(&observation, Some(ids[2])));
+}
+
+#[test]
+fn only_a_member_that_can_hit_a_site_ends_its_attack_by_standing_idle() {
+    let (mut observation, ids) = viewed(&[
+        (0, UnitKind::Sentinel, 3, 4),
+        (0, UnitKind::Flakhound, 3, 6),
+    ]);
+    let site = Pursuit::Quarry(AttackTarget::Building(aftermine_sim::BuildingId(77)));
+    for unit in &mut observation.my_units {
+        unit.idle = unit.kind == UnitKind::Flakhound;
+    }
+    assert!(!idle_at_site(&observation, &ids, site));
+    for unit in &mut observation.my_units {
+        unit.idle = true;
+    }
+    assert!(idle_at_site(&observation, &ids, site));
+}
