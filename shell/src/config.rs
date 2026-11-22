@@ -61,8 +61,8 @@ pub enum FrameRate {
     Capped(u32),
 }
 
-/// Mixer bus volumes, 0..=1, applied multiplicatively with each clip's
-/// authored level.
+/// Settings volumes, 0..=1: each bus's output level after its processing,
+/// then the master's.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Volumes {
     /// Everything.

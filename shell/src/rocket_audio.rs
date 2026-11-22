@@ -1,13 +1,13 @@
 //! Motor loops driven by the currently presented missile state.
 
+use crate::audio_engine::Sound;
 use crate::numeric;
 use aftermine_sim::{ProjectileKind, Target};
 use chassis::fx::Vec2Fx;
-use macroquad::audio::Sound;
 
 use crate::game::{Scene, SoundKind, world_vec};
 use crate::game::{missile_ejection_ticks, projectile_elapsed_ticks};
-use crate::loop_audio::{LoopBank, Motor, camera_gain, densest};
+use crate::loop_audio::{LoopBank, Motor, camera_voice, densest};
 
 pub(crate) const MOTOR_VOICES: usize = 16;
 
@@ -68,8 +68,8 @@ fn audible_motors(game: &Scene<'_>) -> Vec<Motor<RocketKey>> {
                     && earlier.arrival == shell.arrival
             })
             .count();
-        let gain = camera_gain(game, SoundKind::RocketMotor, at) * envelope;
-        if gain > 0.0 {
+        let voice = camera_voice(game, SoundKind::RocketMotor, at).scaled(envelope);
+        if voice.gain > 0.0 {
             motors.push(Motor {
                 key: RocketKey {
                     shooter: shell.shooter,
@@ -78,7 +78,7 @@ fn audible_motors(game: &Scene<'_>) -> Vec<Motor<RocketKey>> {
                     arrival: shell.arrival,
                     occurrence,
                 },
-                gain,
+                voice,
             });
         }
     }

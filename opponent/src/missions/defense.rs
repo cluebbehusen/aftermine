@@ -7,7 +7,8 @@
 //! attack gets the units the seat's own Foundries leave free. Shells from a
 //! known enemy building send ground fighters beside it, shells from a gun out
 //! of sight advance them on where it probably stands, and a gun in sight is
-//! attacked.
+//! attacked, once those gathered match any escort beside it. Defenders
+//! falling back run without stopping to fight on the way.
 
 use super::attack::{building_value, concentrates, defense, defense_around};
 use super::reserve::LOCAL_REACH;
@@ -59,8 +60,11 @@ impl Missions {
     /// gathered beside the Foundry or already at the fight match it, those
     /// hunting an enemy that walks in wait beside the Foundry instead, and
     /// ones already out fall back there once they have less than two thirds
-    /// of it, at a seat of `difficulty` that does not attack piecemeal;
-    /// artillery is still reached. A threat away from home that everything
+    /// of it, at a seat of `difficulty` that does not attack piecemeal,
+    /// running back without stopping to fight on the way. Artillery is still
+    /// reached: at once when nothing else would join the fight at it, else
+    /// once those gathered match everything that would. A threat away from
+    /// home that everything
     /// the defense could take would not match is given up, and defenders
     /// out at it fall back home. Unarmed enemies and enemy buildings among the seat's
     /// buildings draw defenders worth what they cost, and a shortfall
@@ -148,28 +152,38 @@ impl Missions {
             // comes first, such as a spotter overhead, while the guns shell the
             // defenders from beyond reach. A gun in sight on the Foundry's
             // ground is attacked; one out of sight is advanced on.
-            let gun = siege
+            let shelling = siege
                 .units
                 .iter()
                 .filter(|threat| walking_gun(threat) && map.component(threat.tile) == component)
-                .min_by_key(|threat| (frame.rank(centre, doubled(threat.tile)), threat.id))
-                .map(|threat| Pursuit::Gun(threat.id));
-            let pursuit = gun.unwrap_or(if grounded.is_none() && siege.unseen.is_some() {
-                Pursuit::Advance
-            } else {
-                Pursuit::Hunt
-            });
-            let gun = match pursuit {
-                Pursuit::Gun(id) => Some(id),
-                _ => None,
-            };
+                .min_by_key(|threat| (frame.rank(centre, doubled(threat.tile)), threat.id));
+            let pursuit = shelling.map_or(
+                if grounded.is_none() && siege.unseen.is_some() {
+                    Pursuit::Advance
+                } else {
+                    Pursuit::Hunt
+                },
+                |threat| Pursuit::Gun(threat.id),
+            );
+            let gun = shelling.map(|threat| threat.id);
             let hunting = matches!(pursuit, Pursuit::Hunt);
+            // A gun with others beside it that would join the fight there is
+            // met like any ground force at a seat that gathers: defenders
+            // going at it one by one die to its escort on the way.
+            let escorted = shelling
+                .filter(|_| concentrates(difficulty))
+                .is_some_and(|threat| meeting::escort(observation, memory, threat.tile) > 0);
+            let gathering = hunting || escorted;
             // Defenders hunting a ground threat meet whatever stands near
             // it, not only the enemies that came near the buildings: a line
-            // held a few tiles behind them joins in.
+            // held a few tiles behind them joins in. Going at an escorted
+            // gun, they meet what stands near it too.
             let meets = grounded
-                .filter(|_| hunting)
-                .map_or(0, |goal| meeting::opposed(observation, memory, goal));
+                .filter(|_| gathering)
+                .map_or(0, |goal| meeting::opposed(observation, memory, goal))
+                .max(shelling.filter(|_| escorted).map_or(0, |threat| {
+                    meeting::opposed(observation, memory, threat.tile)
+                }));
             let pressing = siege.pressing_value(meets);
             let besides: Vec<TilePos> = siege.batteries.iter().map(|(_, beside)| *beside).collect();
             // An escort beside a battery is pressing already: it counts once.
@@ -242,7 +256,7 @@ impl Missions {
                 (true, false) => Some(met),
             };
             if *own
-                && hunting
+                && gathering
                 && met > 0
                 && bar.is_some_and(|bar| siege.held < bar)
                 && !kept(observation, map, foundry, goal)
@@ -255,15 +269,16 @@ impl Missions {
             // Only defenders at the post or already at the fight count
             // toward going out: those still on their way would reach it
             // after it began.
+            let fight = shelling.map_or(goal, |threat| threat.tile);
             let gathered = post.map_or(have[0], |post| {
-                together(observation, members.iter().chain(&recruits), [post, goal])
+                together(observation, members.iter().chain(&recruits), [post, fight])
             });
             let (goal, pursuit, gun) = match grounded
-                .filter(|_| hunting && concentrates(difficulty))
+                .filter(|_| gathering && concentrates(difficulty))
                 .filter(|_| waits(mission, foundry, [gathered, front.1], [met, go]))
                 .map(|threat| waiting_post(map, frame, foundry, threat))
             {
-                Some(Some(post)) => (post, Pursuit::Hunt, None),
+                Some(Some(post)) => (post, Pursuit::Fall, None),
                 Some(None) => continue,
                 None => (goal, pursuit, gun),
             };
@@ -311,13 +326,13 @@ impl Missions {
             // attackers: one at a time, they only feed the fight.
             let reserve = post.filter(|post| {
                 concentrates(difficulty)
-                    && hunting
+                    && gathering
                     && goal != *post
                     && gathered < go
                     && !mission.units.is_empty()
             });
             let onward =
-                concentrates(difficulty) && hunting && post.is_some_and(|post| goal != post);
+                concentrates(difficulty) && gathering && post.is_some_and(|post| goal != post);
             let (mut sent, waiting) = self.reserve(
                 index,
                 (observation, ledger, &mut free),
@@ -512,8 +527,9 @@ impl Missions {
 
     /// Gives up the defense or guard at `index`, if any, against a threat at
     /// `goal` the seat cannot match there: its members fall back to home's
-    /// waiting post and the mission ends. Without a post on home's ground they are
-    /// let go where they stand. Production still answers the shortfall.
+    /// waiting post, without stopping to fight on the way, and the mission
+    /// ends. Without a post on home's ground they are let go where they
+    /// stand. Production still answers the shortfall.
     pub(super) fn give_up(
         &mut self,
         index: Option<usize>,
@@ -527,8 +543,12 @@ impl Missions {
             return;
         };
         let units = self.list[index].units.clone();
+        // Ended only once every member has its order: one left on its last
+        // order would fight on with no mission to bring it back.
+        let mut members = units.clone();
+        members.sort_unstable();
         if home_post(observation, map, frame, goal)
-            .is_none_or(|post| ledger.order(hunt(units, post)))
+            .is_none_or(|post| fall_back(observation, ledger, units, post) == members)
         {
             self.list.remove(index);
         }
@@ -624,7 +644,7 @@ impl Missions {
                 .collect();
             walking.sort_unstable();
             if !walking.is_empty() {
-                dispatch(observation, ledger, walking, post, Pursuit::Hunt);
+                fall_back(observation, ledger, walking, post);
             }
             take(free, &waiting);
             ledger.reserve(&waiting);
@@ -692,6 +712,8 @@ enum Pursuit {
     Advance,
     /// Attack a gun in sight.
     Gun(UnitId),
+    /// Fall back to the waiting post without stopping to fight on the way.
+    Fall,
 }
 
 /// Sends defenders after a Foundry's threats: those that can hit ground as
@@ -705,6 +727,7 @@ fn dispatch(
     pursuit: Pursuit,
 ) -> Vec<UnitId> {
     let (shooters, rest): (Vec<UnitId>, Vec<UnitId>) = match pursuit {
+        Pursuit::Fall => return fall_back(observation, ledger, units, goal),
         Pursuit::Hunt => (Vec::new(), units),
         Pursuit::Advance | Pursuit::Gun(_) => units
             .into_iter()
@@ -723,7 +746,7 @@ fn dispatch(
             target: AttackTarget::Unit(gun),
             queue: false,
         },
-        Pursuit::Hunt | Pursuit::Advance => Command::Advance {
+        Pursuit::Hunt | Pursuit::Advance | Pursuit::Fall => Command::Advance {
             units: shooters.clone(),
             goal,
             queue: false,
@@ -737,6 +760,29 @@ fn dispatch(
         ordered.extend(rest);
         ordered.sort_unstable();
     }
+    ordered
+}
+
+/// Sends `units` back to the waiting `post`: those not already at it run, so
+/// they do not stop to fight whatever stands on the way, and those at it
+/// hunt there, so a defender already fighting at the post fights on. Returns
+/// the units given an order, sorted.
+fn fall_back(
+    observation: &ObservationData,
+    ledger: &mut Ledger,
+    units: Vec<UnitId>,
+    post: TilePos,
+) -> Vec<UnitId> {
+    let (far, near): (Vec<UnitId>, Vec<UnitId>) = units.into_iter().partition(|id| {
+        mine(observation, *id).is_some_and(|unit| unit.tile.chebyshev(post) > RESERVE_TILES)
+    });
+    let mut ordered = Vec::new();
+    for (units, order) in [(far, run as fn(_, _) -> _), (near, hunt)] {
+        if !units.is_empty() && ledger.order(order(units.clone(), post)) {
+            ordered.extend(units);
+        }
+    }
+    ordered.sort_unstable();
     ordered
 }
 
@@ -818,12 +864,13 @@ fn waiting_post(
 }
 
 /// What a defense against `siege`'s ground force worth `met` must hold to go
-/// out at it: the rung's edge at the seat's `own` Foundry when nothing that
-/// stands and shells is among the attackers, even odds otherwise. Guns that
-/// stand never come to the post, and an ally's defense has no shortfall
+/// out at it: the rung's edge at the seat's `own` Foundry when no gun,
+/// standing or walking, is among the attackers, even odds otherwise. Guns
+/// shell the post rather than come to it, so waiting there for the edge
+/// only gets the defenders shelled, and an ally's defense has no shortfall
 /// training behind a wait.
 fn sortie(own: bool, siege: &Siege<'_>, met: u64, difficulty: BotDifficulty) -> u64 {
-    if own && siege.batteries.is_empty() {
+    if own && siege.batteries.is_empty() && !siege.units.iter().any(|threat| walking_gun(threat)) {
         met * engage_margin(difficulty) / 1_000
     } else {
         met

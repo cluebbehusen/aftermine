@@ -66,15 +66,6 @@ similar_names = "allow"
 [patch.crates-io]
 miniquad = { git = "https://github.com/cluebbehusen/miniquad", rev = "0e46510800fb81308c9d01cc3ef5c26528ee5114" }
 
-# quad-snd, macroquad's audio library, has no backend for tvOS, and on iOS and
-# tvOS it leaves the audio session in its default category, which stops other
-# apps' audio, such as music, as soon as the game's sound starts. The fork's
-# `aftermine` branch is the 0.2.8 release plus Core Audio on tvOS, the Ambient
-# category, which mixes with other apps' audio, and one decoded copy of a clip
-# shared by every sound loaded from the same bytes. Drop the patch once
-# releases carry these changes.
-quad-snd = { git = "https://github.com/cluebbehusen/quad-snd", rev = "1d33371e4e458f5b2ba1832cde658c41221f6742" }
-
 # `cargo run` is how the game is played day to day, and an unoptimized
 # `fixed`-point sim ticks ~25x slower than release — big battles would eat
 # the frame budget. Light optimization for our code, full for dependencies,

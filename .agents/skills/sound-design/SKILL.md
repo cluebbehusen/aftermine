@@ -34,8 +34,8 @@ substitutes for listening.
   sound should carry.
 - Use light 10- or 11-bit crush and sample-hold as glue, never harsh static on
   the transient.
-- Center the musical language around D. Reserve a falling tritone for denied,
-  defeat, and alert; victory rises D-A-D.
+- Center the musical language around D. Reserve a falling tritone for denied and
+  alert.
 - Make depth audible on laptop speakers with missing-fundamental voicing. Deep
   events still need meaningful energy above 180 Hz, especially in the first 300
   ms.
@@ -85,14 +85,16 @@ another layer.
   `tools/gen_sounds.py`. Do not leave a second production generator.
 - Use explicit fixed seeds. Pin synthesis dependencies exactly in the PEP 723
   header.
-- Keep the generator, tests, approval ledger, and generated production WAVs in
-  one reviewable change. Commit them together only when the user has explicitly
-  authorized a commit. Do not stage or commit the source audition bank.
-- SFX are mono 16-bit PCM at 44,100 Hz; generated music beds are 22,050 Hz.
+- Keep the generator, its approved hashes, tests, and generated production WAVs
+  in one reviewable change. Commit them together only when the user has
+  explicitly authorized a commit. Do not stage or commit the source audition
+  bank.
+- SFX are mono 16-bit PCM at 44,100 Hz.
 - Keep the sound-name bijection exact across generator output, loaded assets,
   event mapping, and mixer configuration.
-- Preserve the alert as a protected UI-level signal: camera distance, zoom
-  detail suppression, and mass-event coalescing must not hide an attack alert.
+- Preserve the alert as a protected UI-level signal: zoom detail suppression and
+  mass-event coalescing must not hide an attack alert. It sounds only for an
+  attack off screen; one on screen is already in view.
 - Camera mixing should emphasize nearby detail when zoomed in and coalesce or
   reduce minor reports when zoomed out. Heavy threats remain legible.
 - Inspect the dirty tree before staging, stage exact production paths rather

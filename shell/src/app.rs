@@ -246,11 +246,14 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     }
     apply_presentation(&config);
     let sprites = assets::Sprites::load()?;
-    let sounds = assets::Sounds::load().await?;
+    crate::audio_engine::start();
+    let sounds = assets::Sounds::load()?;
     let soundtrack = if args.automation {
         None
     } else {
-        Some(crate::soundtrack::Soundtrack::start(&sounds))
+        crate::soundtrack::Soundtrack::start()
+            .inspect_err(|error| eprintln!("no music: {error:#}"))
+            .ok()
     };
 
     let mut game = if let Some(path) = &args.replay {
@@ -877,6 +880,9 @@ impl App {
         }
         self.performance.reset();
         self.input.reset_session();
+        if let Some(soundtrack) = &mut self.soundtrack {
+            soundtrack.new_match();
+        }
     }
 
     /// Keeps the ticket of the seat this client plays while it can still be

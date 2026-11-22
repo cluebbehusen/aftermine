@@ -190,7 +190,8 @@ fn a_recovering_defense_lends_its_units_to_another_foundry() {
         });
     });
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
-    let [(units, _)] = &hunts(&commands)[..] else {
+    // The lent defender, far from the other Foundry, runs to its post.
+    let [(units, _)] = &runs(&commands)[..] else {
         panic!("{commands:?}");
     };
     assert_eq!(units.len(), 1);
@@ -1061,6 +1062,126 @@ fn defenders_short_of_artillery_shelling_the_base_still_go_at_it() {
     );
 }
 
+/// Lancers standing beside the gun shelling each of `shelled`, and a Surveyor
+/// of that seat watching the gun and them from beyond their reach.
+fn escort(scenario: &mut Scenario, shelled: &[u8]) {
+    for &player in shelled {
+        for dy in -1..=1 {
+            let (x, y) = turned(player, (GUN.0 + 2, GUN.1 + dy));
+            scenario
+                .units
+                .push(unit(1 - player, UnitKind::Lancer, x, y));
+        }
+    }
+    for &player in shelled {
+        let (x, y) = turned(player, (GUN.0, GUN.1 - 7));
+        scenario.units.push(unit(player, UnitKind::Surveyor, x, y));
+    }
+}
+
+#[test]
+fn defenders_short_of_an_escorted_gun_gather_beside_the_foundry_first() {
+    // Lancers stand beside the gun shelling the picket. Defenders going at
+    // the gun one by one would die to them on the way, so a seat that
+    // gathers waits beside the Foundry until it matches them and the gun,
+    // then goes at the gun; Scrapheap, which defends piecemeal, goes at once.
+    let staged = |sentinels: &[(i32, i32)]| {
+        let mut scenario = shelling(&[0]);
+        escort(&mut scenario, &[0]);
+        for (x, y) in sentinels {
+            scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
+        }
+        let mut state = scenario.build().unwrap();
+        open_fire(&mut state, &[0]);
+        until_shells_come(&scenario, &mut state, &[0]);
+        (scenario, state)
+    };
+    let (scenario, state) = staged(&[]);
+    let gun = at(&state, GUN.0, GUN.1);
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let lancers = observation
+        .enemy_units
+        .iter()
+        .filter(|enemy| enemy.kind == UnitKind::Lancer)
+        .count();
+    assert!(
+        observation.enemy_units.iter().any(|enemy| enemy.id == gun) && lancers == 3,
+        "premise: the gun and its escort are in sight"
+    );
+    let at_gun = |commands: &[PlayerCommand]| {
+        attacks(commands)
+            .iter()
+            .any(|(_, target)| *target == AttackTarget::Unit(gun))
+    };
+    let beside = beside_foundry(&state, 0, None);
+    for difficulty in [BotDifficulty::Standard, BotDifficulty::Prime] {
+        let commands =
+            seat_with(&scenario, 0, rung(difficulty)).act(&state, &mut OwnEvents::default());
+        assert!(!at_gun(&commands), "{difficulty:?}: {commands:?}");
+        let moves: Vec<(Vec<UnitId>, TilePos)> = hunts(&commands)
+            .into_iter()
+            .chain(runs(&commands))
+            .collect();
+        assert!(
+            !moves.is_empty() && moves.iter().all(|(_, goal)| beside.contains(goal)),
+            "{difficulty:?}: {commands:?}"
+        );
+    }
+    // Scrapheap decides less often: on to its next decision.
+    let mut scrapheap = seat_with(&scenario, 0, rung(BotDifficulty::Scrapheap));
+    let mut later = state.clone();
+    while !scrapheap.decision_due(&later) {
+        assert!(later.current_tick() < 1_200, "premise: Scrapheap decides");
+        later.tick(&[]);
+    }
+    let commands = scrapheap.act(&later, &mut OwnEvents::default());
+    assert!(at_gun(&commands), "{commands:?}");
+
+    // Prime waits at home for a quarter more than it would meet, but beside
+    // a gun waiting only gets the defenders shelled: once they match it and
+    // its escort, they go.
+    let (scenario, state) = staged(&[(2, 9), (3, 9)]);
+    let gun = at(&state, GUN.0, GUN.1);
+    let commands =
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
+    assert!(
+        attacks(&commands)
+            .iter()
+            .any(|(_, target)| *target == AttackTarget::Unit(gun)),
+        "{commands:?}"
+    );
+
+    // Enough beside the Foundry to match the gun and its escort: they go.
+    let (scenario, state) = staged(&[(2, 9), (3, 9), (4, 9), (5, 9), (2, 10), (5, 10)]);
+    let gun = at(&state, GUN.0, GUN.1);
+    for difficulty in [BotDifficulty::Standard, BotDifficulty::Prime] {
+        let commands =
+            seat_with(&scenario, 0, rung(difficulty)).act(&state, &mut OwnEvents::default());
+        assert!(
+            attacks(&commands)
+                .iter()
+                .any(|(_, target)| *target == AttackTarget::Unit(gun)),
+            "{difficulty:?}: {commands:?}"
+        );
+    }
+}
+
+#[test]
+fn mirrored_seats_short_of_escorted_guns_answer_alike() {
+    let mut scenario = shelling(&[0, 1]);
+    escort(&mut scenario, &[0, 1]);
+    let mut state = scenario.build().unwrap();
+    open_fire(&mut state, &[0, 1]);
+    until_shells_come(&scenario, &mut state, &[0, 1]);
+    let west = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    let east = seat(&scenario, 1).act(&state, &mut OwnEvents::default());
+    assert!(
+        !hunts(&west).is_empty() || !runs(&west).is_empty(),
+        "premise: {west:?}"
+    );
+    assert_eq!(mirror(&state, west), east);
+}
+
 #[test]
 fn mirrored_seats_under_mirrored_shelling_answer_alike() {
     let (scenario, state) = shelled(&[0, 1]);
@@ -1482,10 +1603,14 @@ fn an_escort_beside_an_enemy_building_counts_once() {
         "{going:?}"
     );
 
-    // One does not match them and waits.
+    // One does not match them and waits, running to the post.
     let scenario = escorted(&[(UnitKind::Sentinel, 5, 8)]);
     let state = scenario.build().unwrap();
-    let waiting = hunts(&seat(&scenario, 0).act(&state, &mut OwnEvents::default()));
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    let waiting: Vec<_> = hunts(&commands)
+        .into_iter()
+        .chain(runs(&commands))
+        .collect();
     assert!(
         matches!(&waiting[..], [(_, goal)] if post.contains(goal)),
         "{waiting:?}"
@@ -1908,17 +2033,27 @@ fn defenders_still_walking_in_wait_at_the_post_until_they_arrive() {
         );
         let state = scenario.build().unwrap();
         let beside = beside_foundry(&state, 0, None);
-        hunts(
-            &seat_with(&scenario, 0, rung(BotDifficulty::Prime))
-                .act(&state, &mut OwnEvents::default()),
-        )
-        .into_iter()
-        .map(|(units, goal)| (units.len(), beside.contains(&goal)))
-        .collect::<Vec<_>>()
+        let commands = seat_with(&scenario, 0, rung(BotDifficulty::Prime))
+            .act(&state, &mut OwnEvents::default());
+        // Workers running from the raiders are not the defense.
+        let sentinels = |units: &[UnitId]| {
+            units.iter().all(|id| {
+                state
+                    .unit(*id)
+                    .is_some_and(|unit| unit.kind == UnitKind::Sentinel)
+            })
+        };
+        hunts(&commands)
+            .into_iter()
+            .chain(runs(&commands))
+            .filter(|(units, _)| sentinels(units))
+            .map(|(units, goal)| (units.len(), beside.contains(&goal)))
+            .collect::<Vec<_>>()
     };
+    // Those far off run there, so they do not stop to fight on the way.
     assert_eq!(
         sent([(2, 2), (2, 3), (2, 4)]),
-        [(5, true)],
+        [(2, true), (3, true)],
         "three still far off: all gather at the post"
     );
     assert_eq!(
@@ -2004,7 +2139,10 @@ fn a_place_away_from_home_the_army_cannot_match_is_given_up() {
     let commands =
         seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
     assert!(
-        hunts(&commands).iter().all(|(_, goal)| goal.x < 20),
+        hunts(&commands)
+            .iter()
+            .chain(&runs(&commands))
+            .all(|(_, goal)| goal.x < 20),
         "{commands:?}"
     );
 
@@ -2042,6 +2180,7 @@ fn a_place_away_from_home_the_army_cannot_match_is_given_up() {
     assert!(
         hunts(&commands)
             .iter()
+            .chain(&runs(&commands))
             .any(|(_, goal)| beside.contains(goal)),
         "premise: a match is defended: {commands:?}"
     );
@@ -2488,12 +2627,13 @@ fn only_a_defense_out_at_its_fight_holds_on_and_only_where_it_can_fall_back() {
                 });
             },
         );
-        let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
-        trace
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let defends = trace
             .unwrap()
             .missions
             .iter()
-            .any(|mission| matches!(mission.kind, MissionKind::Defend { .. }))
+            .any(|mission| matches!(mission.kind, MissionKind::Defend { .. }));
+        (defends, commands, members)
     };
     let out = TilePos::new(28, 5);
     // A tile beside the expansion, on the raiders' side.
@@ -2501,19 +2641,30 @@ fn only_a_defense_out_at_its_fight_holds_on_and_only_where_it_can_fall_back() {
         .max_by_key(|tile| (tile.x, tile.y))
         .unwrap();
     assert!(
-        defended(rung(BotDifficulty::Prime), out, 24),
+        defended(rung(BotDifficulty::Prime), out, 24).0,
         "out at the fight"
     );
     assert!(
-        !defended(rung(BotDifficulty::Prime), post, 24),
+        !defended(rung(BotDifficulty::Prime), post, 24).0,
         "waiting at the post"
     );
+    let (defends, commands, members) = defended(rung(BotDifficulty::Prime), out, 17);
+    assert!(!defends, "on its way out");
+    // Given up, they run home rather than fight their way there.
     assert!(
-        !defended(rung(BotDifficulty::Prime), out, 17),
-        "on its way out"
+        runs(&commands)
+            .iter()
+            .any(|(units, goal)| *units == members && goal.x < 12),
+        "{commands:?}"
     );
     assert!(
-        !defended(rung(BotDifficulty::Scrapheap), out, 24),
+        hunts(&commands)
+            .iter()
+            .all(|(units, _)| members.iter().all(|id| !units.contains(id))),
+        "{commands:?}"
+    );
+    assert!(
+        !defended(rung(BotDifficulty::Scrapheap), out, 24).0,
         "never falls back"
     );
 }
