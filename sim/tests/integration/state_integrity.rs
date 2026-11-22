@@ -409,6 +409,10 @@ fn well_formed_additions_are_accepted() {
         }
     }
     base["vision"][0]["salvage_incidents"] = json!([incident(4, 3, 100), incident(2, 4, 100)]);
+    base["vision"][0]["shell_impacts"] = json!([
+        incident(4, 3, 100),
+        incident(2, 4, 100 + aftermine_sim::stats::SHELL_IMPACT_MEMORY_TICKS),
+    ]);
     let bombard = base["units"][1]["id"].clone();
     base["units"][0]["order"] = json!({"order": "accompany", "unit": bombard, "weld": bombard});
     let owner = base["buildings"][0]["player"].clone();
@@ -494,11 +498,12 @@ fn tending_walks_and_switched_off_workers_are_legal() {
 }
 
 #[test]
-fn a_decided_state_may_age_past_an_incident_expiry() {
+fn a_decided_state_may_age_past_remembered_expiries() {
     let mut base = snapshot();
     base["tick"] = json!(100);
     base["result"] = json!({"outcome": "victory", "team": 0});
     base["vision"][0]["salvage_incidents"] = json!([incident(3, 3, 99)]);
+    base["vision"][0]["shell_impacts"] = json!([incident(3, 3, 99)]);
     serde_json::from_value::<State>(base)
         .expect("decided worlds stop refreshing vision while their clock may still advance");
 }
@@ -571,6 +576,11 @@ checklist! {
     ExpiredSalvageIncident(PlayerId(0)),
     SalvageIncidentExpiryBeyondHorizon(PlayerId(0)),
     UnsortedSalvageIncidents(PlayerId(0)),
+    OverlongShellImpactMemory(PlayerId(0)),
+    ShellImpactOutsideEnvelope(PlayerId(0)),
+    ExpiredShellImpact(PlayerId(0)),
+    ShellImpactExpiryBeyondHorizon(PlayerId(0)),
+    UnsortedShellImpacts(PlayerId(0)),
     UnitPartMismatch(UnitId(0)),
     CargoBeyondCapacity(UnitId(0)),
     UncarriableCargo(UnitId(0)),
@@ -1972,6 +1982,58 @@ fn every_checklist_row_refuses_its_forgery() {
                     json!([incident(2, 4, 100), incident(4, 3, 100)]);
             },
             "player p0 holds salvage incidents out of canonical order",
+        ),
+        (
+            "more remembered shell impacts than the bounded memory permits",
+            |d| {
+                d["vision"][0]["shell_impacts"] = json!(
+                    (0..=aftermine_sim::stats::SHELL_IMPACT_CAP)
+                        .map(|x| incident(i32::try_from(x).unwrap(), 3, 100))
+                        .collect::<Vec<_>>()
+                );
+            },
+            "player p0 remembers more shell impacts than the cap allows",
+        ),
+        (
+            "a shell impact at the far end of the coordinate space",
+            |d| {
+                d["vision"][0]["shell_impacts"] = json!([incident(i32::MAX, 3, 100)]);
+            },
+            "player p0 remembers a shell impact outside the envelope",
+        ),
+        (
+            "a shell impact that expired before the current tick",
+            |d| {
+                d["tick"] = json!(100);
+                d["vision"][0]["shell_impacts"] = json!([incident(3, 3, 99)]);
+            },
+            "player p0 remembers an expired shell impact in an active match",
+        ),
+        (
+            "a shell impact expiry beyond the state's memory horizon",
+            |d| {
+                d["tick"] = json!(100);
+                d["vision"][0]["shell_impacts"] = json!([incident(
+                    3,
+                    3,
+                    101 + aftermine_sim::stats::SHELL_IMPACT_MEMORY_TICKS
+                )]);
+            },
+            "player p0 remembers a shell impact expiring beyond its memory horizon",
+        ),
+        (
+            "shell impacts out of canonical order",
+            |d| {
+                d["vision"][0]["shell_impacts"] = json!([incident(2, 4, 100), incident(4, 3, 100)]);
+            },
+            "player p0 remembers shell impacts out of canonical order",
+        ),
+        (
+            "one shell impact tile remembered twice",
+            |d| {
+                d["vision"][0]["shell_impacts"] = json!([incident(4, 3, 100), incident(4, 3, 120)]);
+            },
+            "player p0 remembers shell impacts out of canonical order",
         ),
         (
             "a parked harvester, which cannot land",

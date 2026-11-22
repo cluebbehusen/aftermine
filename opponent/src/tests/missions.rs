@@ -775,6 +775,45 @@ fn shells_from_a_gun_out_of_sight_advance_fighters_on_it() {
     );
 }
 
+#[test]
+fn a_gun_out_of_sight_stays_answered_between_its_shells() {
+    let (scenario, mut state) = shelled(&[0]);
+    let mut opponent = seat(&scenario, 0);
+    let mut answered = false;
+    loop {
+        assert!(
+            state.current_tick() < 600,
+            "premise: a decision falls between shells"
+        );
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        let between =
+            answered && opponent.decision_due(&state) && observation.incoming_shells.is_empty();
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        if between {
+            assert!(
+                observation
+                    .enemy_units
+                    .iter()
+                    .all(|enemy| enemy.kind != UnitKind::Bombard),
+                "premise: the gun is still out of sight"
+            );
+            assert!(
+                trace
+                    .unwrap()
+                    .missions
+                    .iter()
+                    .any(|mission| matches!(mission.kind, MissionKind::Defend { .. })
+                        && mission.phase == Phase::Engage),
+                "the defense stands"
+            );
+            assert!(runs(&commands).is_empty(), "nobody runs home: {commands:?}");
+            break;
+        }
+        answered |= !advances(&commands).is_empty();
+        state.tick(&commands);
+    }
+}
+
 /// The field with West's garrison and picket, an East Bastion shelling the
 /// picket with a Kestrel spotting for it, East Turrets around the Bastion
 /// when `guarded`, and a West Kestrel that has seen them all; played until
@@ -1091,6 +1130,13 @@ fn defenders_short_of_an_escorted_gun_gather_beside_the_foundry_first() {
     let staged = |sentinels: &[(i32, i32)]| {
         let mut scenario = shelling(&[0]);
         escort(&mut scenario, &[0]);
+        // Defenders closed up beside the picket rather than spread over the
+        // garrison's spots, which would first send them to close up.
+        if !sentinels.is_empty() {
+            scenario.units.retain(|spec| {
+                spec.player != 0 || !GARRISON.contains(&turned(0, (spec.x, spec.y)))
+            });
+        }
         for (x, y) in sentinels {
             scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
         }
@@ -1143,7 +1189,7 @@ fn defenders_short_of_an_escorted_gun_gather_beside_the_foundry_first() {
     // Prime waits at home for a quarter more than it would meet, but beside
     // a gun waiting only gets the defenders shelled: once they match it and
     // its escort, they go.
-    let (scenario, state) = staged(&[(2, 9), (3, 9)]);
+    let (scenario, state) = staged(&[(6, 11), (7, 11), (6, 13), (7, 13), (8, 11), (8, 13)]);
     let gun = at(&state, GUN.0, GUN.1);
     let commands =
         seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
@@ -1155,7 +1201,18 @@ fn defenders_short_of_an_escorted_gun_gather_beside_the_foundry_first() {
     );
 
     // Enough beside the Foundry to match the gun and its escort: they go.
-    let (scenario, state) = staged(&[(2, 9), (3, 9), (4, 9), (5, 9), (2, 10), (5, 10)]);
+    let (scenario, state) = staged(&[
+        (6, 11),
+        (7, 11),
+        (6, 13),
+        (7, 13),
+        (8, 11),
+        (8, 13),
+        (6, 12),
+        (7, 12),
+        (9, 11),
+        (9, 13),
+    ]);
     let gun = at(&state, GUN.0, GUN.1);
     for difficulty in [BotDifficulty::Standard, BotDifficulty::Prime] {
         let commands =

@@ -124,17 +124,61 @@ impl GhostBuilding {
     }
 }
 
-/// A recent hostile hit remembered by the team that suffered it.
+/// A tile a team remembers for a short while: where one of its own assets
+/// was hit, or where it saw a hostile shell land.
 ///
-/// Only the allied victim's tile is retained. The record deliberately does
-/// not identify or locate the attacker, so artillery landing from fog adds
-/// caution without turning damage into reconnaissance.
+/// Only the tile is retained. The record deliberately does not identify or
+/// locate the attacker, so artillery landing from fog adds caution without
+/// turning damage into reconnaissance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct SalvageIncident {
-    /// Where the allied asset stood when damage landed.
-    pub(crate) tile: TilePos,
-    /// First tick on which this caution zone no longer applies.
-    pub(crate) expires_at: crate::Tick,
+pub struct RecentTile {
+    /// Where it happened.
+    pub tile: TilePos,
+    /// First tick on which the memory no longer applies.
+    pub expires_at: crate::Tick,
+}
+
+/// Remembers `tile` until `expires_at` in `memory`, which stays sorted and
+/// deduplicated by (y, x), keeping the later expiry, and holds at most `cap`
+/// tiles of a map `dims` in size.
+fn remember_recent(
+    memory: &mut Vec<RecentTile>,
+    cap: usize,
+    dims: (i32, i32),
+    tile: TilePos,
+    expires_at: crate::Tick,
+) {
+    let key = (tile.y, tile.x);
+    match memory.binary_search_by_key(&key, |recent| (recent.tile.y, recent.tile.x)) {
+        Ok(index) => memory[index].expires_at = memory[index].expires_at.max(expires_at),
+        Err(mut index) => {
+            if memory.len() == cap {
+                // Of those expiring first, the one farthest from the
+                // newcomer goes, equal ones ranked out from the map
+                // centre so a mirrored memory drops the mirrored site.
+                let frame = tracking::TieFrame::outward(tile, dims);
+                let evict = memory
+                    .iter()
+                    .enumerate()
+                    .min_by_key(|(_, recent)| {
+                        (
+                            recent.expires_at,
+                            std::cmp::Reverse(recent.tile.center().dist_sq(tile.center())),
+                            frame.rank(tile, recent.tile),
+                            recent.tile.y,
+                            recent.tile.x,
+                        )
+                    })
+                    .map(|(index, _)| index)
+                    .expect("a full memory is nonempty");
+                memory.remove(evict);
+                index = memory
+                    .binary_search_by_key(&key, |recent| (recent.tile.y, recent.tile.x))
+                    .unwrap_or_else(|index| index);
+            }
+            memory.insert(index, RecentTile { tile, expires_at });
+        }
+    }
 }
 
 /// One player's view of the map.
@@ -163,7 +207,11 @@ pub struct Vision {
     /// Recent tiles where this team saw one of its own assets take damage.
     /// Sorted and deduplicated by (y, x).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    salvage_incidents: Vec<SalvageIncident>,
+    salvage_incidents: Vec<RecentTile>,
+    /// Recent tiles where this team saw a hostile shell land. Sorted and
+    /// deduplicated by (y, x).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    shell_impacts: Vec<RecentTile>,
     /// Hostile warheads in flight this team has had in sight or radar,
     /// sorted by id.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -228,6 +276,7 @@ impl Vision {
             contacts: Vec::new(),
             tracking: tracking::Tracking::default(),
             salvage_incidents: Vec::new(),
+            shell_impacts: Vec::new(),
             warheads: Vec::new(),
         }
     }
@@ -308,59 +357,32 @@ impl Vision {
         id.0 < self.tracking.next_id
     }
 
-    pub(crate) fn salvage_incidents(&self) -> &[SalvageIncident] {
+    pub(crate) fn salvage_incidents(&self) -> &[RecentTile] {
         &self.salvage_incidents
     }
 
     pub(crate) fn remember_salvage_incident(&mut self, tile: TilePos, expires_at: crate::Tick) {
-        let key = (tile.y, tile.x);
-        match self
-            .salvage_incidents
-            .binary_search_by_key(&key, |incident| (incident.tile.y, incident.tile.x))
-        {
-            Ok(index) => {
-                self.salvage_incidents[index].expires_at =
-                    self.salvage_incidents[index].expires_at.max(expires_at);
-            }
-            Err(mut index) => {
-                if self.salvage_incidents.len() == crate::stats::HARVEST_INCIDENT_CAP {
-                    // Of those expiring first, the one farthest from the
-                    // newcomer goes, equal ones ranked out from the map
-                    // centre so a mirrored memory drops the mirrored site.
-                    let frame = tracking::TieFrame::outward(
-                        tile,
-                        (self.visible.width(), self.visible.height()),
-                    );
-                    let evict = self
-                        .salvage_incidents
-                        .iter()
-                        .enumerate()
-                        .min_by_key(|(_, incident)| {
-                            (
-                                incident.expires_at,
-                                std::cmp::Reverse(incident.tile.center().dist_sq(tile.center())),
-                                frame.rank(tile, incident.tile),
-                                incident.tile.y,
-                                incident.tile.x,
-                            )
-                        })
-                        .map(|(index, _)| index)
-                        .expect("a full incident table is nonempty");
-                    self.salvage_incidents.remove(evict);
-                    index = self
-                        .salvage_incidents
-                        .binary_search_by_key(&key, |incident| (incident.tile.y, incident.tile.x))
-                        .unwrap_or_else(|index| index);
-                }
-                self.salvage_incidents
-                    .insert(index, SalvageIncident { tile, expires_at });
-            }
-        }
+        let dims = (self.visible.width(), self.visible.height());
+        let cap = crate::stats::HARVEST_INCIDENT_CAP;
+        remember_recent(&mut self.salvage_incidents, cap, dims, tile, expires_at);
     }
 
-    fn prune_salvage_incidents(&mut self, tick: crate::Tick) {
+    /// Recent tiles where this team saw a hostile shell land, sorted by
+    /// (y, x). A record still listed on its expiry tick no longer counts.
+    pub fn shell_impacts(&self) -> &[RecentTile] {
+        &self.shell_impacts
+    }
+
+    pub(crate) fn remember_shell_impact(&mut self, tile: TilePos, expires_at: crate::Tick) {
+        let dims = (self.visible.width(), self.visible.height());
+        let cap = crate::stats::SHELL_IMPACT_CAP;
+        remember_recent(&mut self.shell_impacts, cap, dims, tile, expires_at);
+    }
+
+    fn forget_expired(&mut self, tick: crate::Tick) {
         self.salvage_incidents
             .retain(|incident| incident.expires_at > tick);
+        self.shell_impacts.retain(|impact| impact.expires_at > tick);
     }
 
     /// Whether the player currently sees `pos`.
@@ -399,6 +421,7 @@ impl Vision {
             contacts,
             tracking,
             salvage_incidents,
+            shell_impacts,
             warheads,
         } = self;
         visible.copy_from(&src.visible);
@@ -409,6 +432,7 @@ impl Vision {
         contacts.clone_from(&src.contacts);
         tracking.clone_from(&src.tracking);
         salvage_incidents.clone_from(&src.salvage_incidents);
+        shell_impacts.clone_from(&src.shell_impacts);
         warheads.clone_from(&src.warheads);
     }
 
@@ -1543,7 +1567,7 @@ pub(crate) fn refresh(state: &mut State) {
             continue;
         }
         let view = &mut vision[index];
-        view.prune_salvage_incidents(state.tick);
+        view.forget_expired(state.tick);
         let my_team = state.players[index].team;
         let allied = |p: PlayerId| state.players[p.0 as usize].team == my_team;
         let viewer = PlayerId::from_index(index);

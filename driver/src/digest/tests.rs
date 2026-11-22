@@ -89,6 +89,25 @@ fn the_map_draws_remembered_scrap_and_never_the_live_ground() {
 }
 
 #[test]
+fn shells_read_as_coming_and_landed_lately() {
+    let (_, mut view) = opening();
+    assert!(!render(&view, None).contains("SHELLS"));
+    view.shell_impacts = vec![[8, 12], [9, 12]];
+    let text = render(&view, None);
+    assert!(
+        text.contains("\nSHELLS LANDED lately at (8,12) (9,12)\n"),
+        "{text}"
+    );
+    assert!(!text.contains("INCOMING"), "{text}");
+    view.incoming_shells = vec![[8, 12]];
+    let text = render(&view, None);
+    assert!(
+        text.contains("\nINCOMING SHELLS land at (8,12)\nSHELLS LANDED lately at (8,12) (9,12)\n"),
+        "{text}"
+    );
+}
+
+#[test]
 fn orders_read_as_a_tag_and_fields() {
     let tracks = Tracks {
         contacts: BTreeMap::new(),

@@ -1040,7 +1040,7 @@ fn out_at(
 
 /// Where defenders going at a gun close up first: the waiting post beside
 /// `foundry`, while none of the units it would send is at the `fight` yet
-/// and one of them stands away from the post.
+/// and one of them stands apart from the one nearest it.
 /// Sent from where they stand, they would reach its shells in turn and die
 /// in pairs; together, however few, they beat guns that are weak up close.
 fn close_up<'a>(
@@ -1060,9 +1060,14 @@ fn close_up<'a>(
     let out = shooters
         .iter()
         .any(|unit| unit.tile.chebyshev(fight) <= GATHER_TILES);
+    // Apart from one another, not from the post: a group that set out
+    // together stays close on its way, and is not called back.
+    let lead = shooters
+        .iter()
+        .min_by_key(|unit| (unit.tile.chebyshev(fight), unit.id))?;
     let scattered = shooters
         .iter()
-        .any(|unit| unit.tile.chebyshev(post) > RESERVE_TILES);
+        .any(|unit| unit.tile.chebyshev(lead.tile) > RESERVE_TILES);
     (!out && scattered).then_some(post)
 }
 
@@ -1750,11 +1755,13 @@ pub(super) fn lobs(enemy: &UnitObs, impact: TilePos) -> bool {
         .any(|weapon| shells(weapon, doubled(enemy.tile), impact))
 }
 
-/// Impacts of hostile shells near any of `buildings`.
+/// Impacts of hostile shells near any of `buildings`, coming or landed lately:
+/// a gun firing every few seconds has nothing in flight between its shells.
 fn shelled(observation: &ObservationData, buildings: &[BuildingObs]) -> Vec<TilePos> {
     observation
         .incoming_shells
         .iter()
+        .chain(&observation.shell_impacts)
         .copied()
         .filter(|impact| {
             buildings.iter().any(|building| {

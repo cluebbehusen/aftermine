@@ -472,6 +472,10 @@ Foundry, or an allied loss, from an attacker the victim's team cannot see leaves
 an incident. It remembers only the victim's tile, for a bounded caution period,
 and never the attacker.
 
+A team also remembers, for a few seconds, the tile where each hostile shell it
+saw land came down, so a gun firing from out of sight stays known between its
+shells. The memory names the impact tile only, never the gun.
+
 All allegiance checks go through normalized team ids. Teammates share vision,
 cannot target one another, and win or lose together. A resigned seat can no
 longer command, and its Foundries no longer count toward victory; its remaining

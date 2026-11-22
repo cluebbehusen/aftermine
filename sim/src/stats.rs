@@ -3022,6 +3022,17 @@ pub const HARVEST_INCIDENT_DANGER_RADIUS: i32 = 4;
 /// tile coalesce, and the oldest expiry is evicted first at the ceiling.
 pub const HARVEST_INCIDENT_CAP: usize = 64;
 
+/// How long a team remembers where a hostile shell it saw land came down.
+/// Like [`HARVEST_INCIDENT_MEMORY_TICKS`] it outlasts the slowest artillery
+/// cooldown (Avalanche, 6 s), so a gun firing steadily from out of sight
+/// stays known between its shells while a stopped barrage is soon forgotten.
+pub const SHELL_IMPACT_MEMORY_TICKS: crate::Tick = 8 * crate::TICKS_PER_SECOND as crate::Tick;
+
+/// Maximum recent hostile shell impacts retained per team, bounding the
+/// memory a barrage can grow. Impacts on one tile coalesce, and the oldest
+/// expiry is evicted first at the ceiling.
+pub const SHELL_IMPACT_CAP: usize = 64;
+
 /// Mobile ground threats are treated as dangerous this many tiles beyond
 /// their current weapon reach. It gives a visible raider's approach time
 /// weight while sight is live; incident memory is the separate, deliberately

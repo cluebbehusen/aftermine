@@ -292,6 +292,11 @@ pub struct ObservationData {
     /// seeing (fog-honest: the impact tile must be visible). Sorted by
     /// (y, x).
     pub incoming_shells: Vec<TilePos>,
+    /// Tiles where hostile shells this seat's team saw land came down
+    /// lately, so fire from out of sight stays known between shells. Bounded
+    /// and expired by the authoritative vision system; sorted by (y, x).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shell_impacts: Vec<TilePos>,
     /// Magazines this seat may know of, in building-id order: its team's
     /// in full, hostile ones' loaded rounds, round in assembly and deck
     /// while in sight.
@@ -556,6 +561,7 @@ impl ObservationData {
             blips: Vec::new(),
             public_buildings: hostile_public_buildings(state, me),
             incoming_shells: Vec::new(),
+            shell_impacts: shell_impacts(state, me),
             magazines: Vec::new(),
             warheads: Vec::new(),
             works: Vec::new(),
@@ -576,6 +582,18 @@ pub fn incoming_shells(state: &State, me: PlayerId) -> Vec<TilePos> {
         .collect();
     tiles.sort_by_key(|tile| (tile.y, tile.x));
     tiles
+}
+
+/// Tiles where hostile shells `me`'s team saw land came down and are still
+/// remembered, sorted by (y, x).
+pub fn shell_impacts(state: &State, me: PlayerId) -> Vec<TilePos> {
+    state
+        .vision(me)
+        .shell_impacts()
+        .iter()
+        .filter(|impact| impact.expires_at > state.current_tick())
+        .map(|impact| impact.tile)
+        .collect()
 }
 
 /// The public buildings hostile to `me`, sorted by (y, x, owner). Own and

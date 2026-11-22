@@ -3037,38 +3037,34 @@ impl State {
         {
             return Err(E::UnsortedContacts(seat));
         }
-        let incidents = v.salvage_incidents();
-        if incidents.len() > crate::stats::HARVEST_INCIDENT_CAP {
-            return Err(E::OverlongSalvageIncidentMemory(seat));
-        }
-        if incidents
-            .iter()
-            .any(|incident| !tile_inside_envelope(incident.tile))
-        {
-            return Err(E::SalvageIncidentOutsideEnvelope(seat));
-        }
-        if self.result.is_none()
-            && incidents
-                .iter()
-                .any(|incident| incident.expires_at < self.tick)
-        {
-            return Err(E::ExpiredSalvageIncident(seat));
-        }
-        let expiry_horizon = self
-            .tick
-            .saturating_add(crate::stats::HARVEST_INCIDENT_MEMORY_TICKS);
-        if incidents
-            .iter()
-            .any(|incident| incident.expires_at > expiry_horizon)
-        {
-            return Err(E::SalvageIncidentExpiryBeyondHorizon(seat));
-        }
-        if !incidents
-            .windows(2)
-            .all(|a| (a[0].tile.y, a[0].tile.x) < (a[1].tile.y, a[1].tile.x))
-        {
-            return Err(E::UnsortedSalvageIncidents(seat));
-        }
+        self.validate_recent_tiles(
+            v.salvage_incidents(),
+            (
+                crate::stats::HARVEST_INCIDENT_CAP,
+                crate::stats::HARVEST_INCIDENT_MEMORY_TICKS,
+            ),
+            [
+                E::OverlongSalvageIncidentMemory(seat),
+                E::SalvageIncidentOutsideEnvelope(seat),
+                E::ExpiredSalvageIncident(seat),
+                E::SalvageIncidentExpiryBeyondHorizon(seat),
+                E::UnsortedSalvageIncidents(seat),
+            ],
+        )?;
+        self.validate_recent_tiles(
+            v.shell_impacts(),
+            (
+                crate::stats::SHELL_IMPACT_CAP,
+                crate::stats::SHELL_IMPACT_MEMORY_TICKS,
+            ),
+            [
+                E::OverlongShellImpactMemory(seat),
+                E::ShellImpactOutsideEnvelope(seat),
+                E::ExpiredShellImpact(seat),
+                E::ShellImpactExpiryBeyondHorizon(seat),
+                E::UnsortedShellImpacts(seat),
+            ],
+        )?;
         if !v.tracking_valid(self, seat) {
             return Err(E::InvalidContactTracking(seat));
         }
@@ -3092,6 +3088,44 @@ impl State {
                 .is_some_and(|other| self.vision[other].warheads() != v.warheads())
         {
             return Err(E::InvalidWarheadTracking(seat));
+        }
+        Ok(())
+    }
+
+    /// Checks a team's memory of recent tiles against what recording and
+    /// pruning keep, failing with the matching one of `errors` in this
+    /// order: more than `cap` tiles, a tile outside the envelope, an expiry
+    /// already past in an undecided match, an expiry more than `memory` ticks
+    /// ahead, and tiles not strictly sorted by (y, x).
+    fn validate_recent_tiles(
+        &self,
+        tiles: &[crate::vision::RecentTile],
+        (cap, memory): (usize, Tick),
+        [overlong, outside, expired, beyond, unsorted]: [StateIntegrityError; 5],
+    ) -> Result<(), StateIntegrityError> {
+        if tiles.len() > cap {
+            return Err(overlong);
+        }
+        if tiles
+            .iter()
+            .any(|recent| !tile_inside_envelope(recent.tile))
+        {
+            return Err(outside);
+        }
+        // A decided match stops refreshing vision while its clock may still
+        // advance.
+        if self.result.is_none() && tiles.iter().any(|recent| recent.expires_at < self.tick) {
+            return Err(expired);
+        }
+        let horizon = self.tick.saturating_add(memory);
+        if tiles.iter().any(|recent| recent.expires_at > horizon) {
+            return Err(beyond);
+        }
+        if !tiles
+            .windows(2)
+            .all(|a| (a[0].tile.y, a[0].tile.x) < (a[1].tile.y, a[1].tile.x))
+        {
+            return Err(unsorted);
         }
         Ok(())
     }
@@ -3266,6 +3300,22 @@ impl State {
         for (player, vision) in self.players.iter().zip(&mut self.vision) {
             if player.team == team {
                 vision.remember_salvage_incident(tile, expires_at);
+            }
+        }
+    }
+
+    /// Remembers where a shell of `owner`'s landed for every seat hostile to
+    /// it that sees `tile`, never where it came from. Teammates share sight,
+    /// so each receives the same record whatever order seats are visited in.
+    pub(crate) fn record_shell_impact(&mut self, owner: PlayerId, tile: TilePos) {
+        let expires_at = self
+            .tick
+            .saturating_add(crate::stats::SHELL_IMPACT_MEMORY_TICKS)
+            .saturating_add(1);
+        for index in 0..self.players.len() {
+            if self.hostile(PlayerId::from_index(index), owner) && self.vision[index].visible(tile)
+            {
+                self.vision[index].remember_shell_impact(tile, expires_at);
             }
         }
     }
@@ -4260,6 +4310,23 @@ pub enum StateIntegrityError {
     /// Recent allied impact sites are not sorted and deduplicated.
     #[error("player {0} holds salvage incidents out of canonical order")]
     UnsortedSalvageIncidents(PlayerId),
+    /// A team remembers more recent hostile shell impacts than the bounded
+    /// memory permits.
+    #[error("player {0} remembers more shell impacts than the cap allows")]
+    OverlongShellImpactMemory(PlayerId),
+    /// A remembered hostile shell impact sits outside the sanity envelope.
+    #[error("player {0} remembers a shell impact outside the envelope")]
+    ShellImpactOutsideEnvelope(PlayerId),
+    /// An active match retained a hostile shell impact past its expiry.
+    #[error("player {0} remembers an expired shell impact in an active match")]
+    ExpiredShellImpact(PlayerId),
+    /// A remembered hostile shell impact expires further ahead than its
+    /// memory lasts from the state's current tick.
+    #[error("player {0} remembers a shell impact expiring beyond its memory horizon")]
+    ShellImpactExpiryBeyondHorizon(PlayerId),
+    /// Remembered hostile shell impacts are not sorted and deduplicated.
+    #[error("player {0} remembers shell impacts out of canonical order")]
+    UnsortedShellImpacts(PlayerId),
     /// A magazine on a kind without one, missing from a kind with one,
     /// past its capacity, with a meter out of range, or stocked before the
     /// building stands.

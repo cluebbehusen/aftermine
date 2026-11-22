@@ -545,6 +545,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
     let mut compared_tiered_ghost = false;
     let mut compared_hostile_assembly = false;
     let mut compared_shells = false;
+    let mut compared_impacts = false;
     let mut compared_hostile_works = false;
     let mut compared_wreck = false;
     let mut cradle_ordered = false;
@@ -718,16 +719,21 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     .magazines
                     .iter()
                     .any(|magazine| magazine.detail.is_none() && magazine.assembly.is_some());
-                let fog_shells: Vec<TilePos> = fog
-                    .incoming_shells
-                    .iter()
-                    .map(|&[x, y]| TilePos::new(x, y))
-                    .collect();
+                let tiles = |at: &[[i32; 2]]| -> Vec<TilePos> {
+                    at.iter().map(|&[x, y]| TilePos::new(x, y)).collect()
+                };
                 assert_eq!(
-                    fog_shells, obs.incoming_shells,
+                    tiles(&fog.incoming_shells),
+                    obs.incoming_shells,
                     "tick {tick} seat {seat:?} incoming shells"
                 );
                 compared_shells |= !obs.incoming_shells.is_empty();
+                assert_eq!(
+                    tiles(&fog.shell_impacts),
+                    obs.shell_impacts,
+                    "tick {tick} seat {seat:?} shell impacts"
+                );
+                compared_impacts |= !obs.shell_impacts.is_empty();
                 assert_eq!(
                     fog.warheads, obs.warheads,
                     "tick {tick} seat {seat:?} warheads"
@@ -774,6 +780,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
         "a hostile round in assembly was compared"
     );
     assert!(compared_shells, "a hostile shell in flight was compared");
+    assert!(compared_impacts, "a hostile shell's landing was compared");
     assert!(
         compared_hostile_works,
         "a hostile producer at work was compared"
