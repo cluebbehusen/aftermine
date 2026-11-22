@@ -487,13 +487,13 @@ fn a_remote_extractor_is_never_deepened() {
 }
 
 #[test]
-fn a_supported_extractor_becomes_a_deep_bore_once_a_crucible_stands_at_every_rung() {
+fn a_supported_extractor_becomes_a_deep_bore_before_harvesting_saturates_at_every_rung() {
+    // Two Harvesters on untouched home nodes leave the crews far short, and
+    // nothing is mined until they deliver.
     let scenario = bore_arena(12);
     for difficulty in BotDifficulty::ALL {
         let mut state = scenario.build().unwrap();
         let extractor = own_extractor(&state);
-        // Deep Bores wait for harvesting to saturate and home scrap to run
-        // down.
         let config = rung(difficulty);
         let mut opponent = seat_with(&scenario, 0, config);
         let mut events = OwnEvents::default();
@@ -513,6 +513,18 @@ fn a_supported_extractor_becomes_a_deep_bore_once_a_crucible_stands_at_every_run
                     }
                 )),
                 "{difficulty:?} tick {}",
+                report.tick
+            );
+            assert!(
+                upgraded
+                    || !report.events.iter().any(|event| matches!(
+                        event,
+                        Event::ScrapDeposited {
+                            player: PlayerId(0),
+                            ..
+                        }
+                    )),
+                "{difficulty:?} deepens before its first delivery, tick {}",
                 report.tick
             );
             events.record(PlayerId(0), &report.events);

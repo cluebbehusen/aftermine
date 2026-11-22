@@ -101,8 +101,11 @@ actions affect the running total and mission state.
   Foundry holds is home. An expansion Foundry also scores what its support would
   pay back to the seat's stranded remote Extractors, and one bought for that
   waits until the army holds the known enemy. A Crucible still to buy counts
-  toward the first Deep Bore's price. Growth outranks tech by what it pays back,
-  never by a rule that holds tech down.
+  toward the first Deep Bore's price. A Deep Bore competes as soon as an
+  Extractor the seat's Foundry supports stands, whether or not harvesting is
+  saturated; Reclaimers wait until it is and the scrap around the start has
+  begun to run down. Growth outranks tech by what it pays back, never by a rule
+  that holds tech down.
 - A site of frames alone is taken once an ally's Foundry supports one of its
   frames, so teammates do not crowd one expansion, or once the seat's own
   Foundries support every frame no other seat holds. An enemy's Foundry never

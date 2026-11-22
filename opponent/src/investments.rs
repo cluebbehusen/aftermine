@@ -258,8 +258,47 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
             .into_iter()
             .map(|(investment, score)| (investment, grown(score, situation.economy))),
     );
+    // A Deep Bore pays back like an Extractor, so it competes whether or not
+    // harvesting is saturated. It goes on the supported Extractor nearest
+    // home in the seat's frame, so mirrored seats deepen mirrored frames, and
+    // is wanted before the Crucible stands, so its worth pulls the Crucible
+    // forward as the first step.
+    let frame = situation.frame;
+    let bore = observation
+        .my_buildings
+        .iter()
+        .filter(|building| {
+            building.kind == BuildingKind::Extractor
+                && building.built
+                && building.tier == 0
+                && expansion::supported(observation, building.anchor)
+        })
+        .min_by_key(|building| {
+            let centre = footprint_centre(BuildingKind::Extractor, building.anchor);
+            frame.rank(frame.home, centre)
+        });
+    if let Some(extractor) = bore {
+        let deep_bore = Investment::Upgrade {
+            building: extractor.id,
+            tier: 1,
+        };
+        let crucible = !built(observation, BuildingKind::Crucible);
+        // Until a Crucible stands its price is part of the first Deep Bore's.
+        let price = BuildingKind::Extractor.tier_stats(1).construction.cost
+            + if crucible {
+                expansion::construction_cost(BuildingKind::Crucible)
+            } else {
+                0
+            };
+        let gain = expansion::yield_per_minute(1, true) - expansion::yield_per_minute(0, true);
+        let score = expansion::payback(gain, u64::from(price), traits.greed);
+        list.push((deep_bore, grown(score, situation.economy)));
+        if crucible {
+            early_bore = Some(deep_bore);
+        }
+    }
     // Once harvesting is saturated and home scrap has begun to run down, more
-    // workers add no income: salvage and deeper extraction grow it then.
+    // workers add no income: Reclaimers and Refineries grow it then.
     if saturated && situation.depletion > 0 {
         let base = 150
             + 3 * u32::from(traits.greed)
@@ -285,45 +324,6 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
                 tier: 1,
             };
             list.push((refinery, grown(base * 7 / 5, situation.economy)));
-        }
-        // The supported Extractor nearest home in the seat's frame, so
-        // mirrored seats deepen mirrored frames. Its Deep Bore is wanted
-        // before the Crucible stands, so its worth pulls the Crucible
-        // forward as the first step.
-        let frame = situation.frame;
-        let bore = observation
-            .my_buildings
-            .iter()
-            .filter(|building| {
-                building.kind == BuildingKind::Extractor
-                    && building.built
-                    && building.tier == 0
-                    && expansion::supported(observation, building.anchor)
-            })
-            .min_by_key(|building| {
-                let centre = footprint_centre(BuildingKind::Extractor, building.anchor);
-                frame.rank(frame.home, centre)
-            });
-        if let Some(extractor) = bore {
-            let deep_bore = Investment::Upgrade {
-                building: extractor.id,
-                tier: 1,
-            };
-            let crucible = !built(observation, BuildingKind::Crucible);
-            // Until a Crucible stands its price is part of the first Deep
-            // Bore's.
-            let price = BuildingKind::Extractor.tier_stats(1).construction.cost
-                + if crucible {
-                    expansion::construction_cost(BuildingKind::Crucible)
-                } else {
-                    0
-                };
-            let gain = expansion::yield_per_minute(1, true) - expansion::yield_per_minute(0, true);
-            let score = expansion::payback(gain, u64::from(price), traits.greed);
-            list.push((deep_bore, grown(score, situation.economy)));
-            if crucible {
-                early_bore = Some(deep_bore);
-            }
         }
     }
     let tech = |investment: &Investment| {

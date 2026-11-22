@@ -556,9 +556,11 @@ fn saving_for_a_cradle(bore: bool) -> (Vec<PlayerCommand>, Trace) {
 fn a_seat_with_no_deep_bore_in_reach_spends_what_it_held_for_a_cradle() {
     let cradle = Some(Investment::Tech(BuildingKind::MawCradle));
     let (commands, trace) = saving_for_a_cradle(true);
-    assert_eq!(trace.target.map(|target| target.investment), cradle);
     assert!(
-        trace.target.and_then(|target| target.next).is_some() && trains(&commands).is_empty(),
+        matches!(
+            trace.target.and_then(|target| target.next),
+            Some(next) if matches!(next.step, crate::Step::Upgrade(_))
+        ) && trains(&commands).is_empty(),
         "premise: the seat saves toward a Deep Bore: {trace:?}"
     );
     let (commands, trace) = saving_for_a_cradle(false);
