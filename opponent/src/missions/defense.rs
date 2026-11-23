@@ -335,9 +335,10 @@ impl Missions {
             );
             let members = &self.list[index].units;
             let away = recall(
-                (observation, memory),
+                (observation, memory, map),
                 ledger,
                 (members, siege, post, pursuit),
+                goal,
             );
             sent.retain(|id| !away.contains(id));
             if sent.is_empty() {
@@ -705,15 +706,22 @@ fn idle_at_site(observation: &ObservationData, members: &[UnitId], pursuit: Purs
 /// stand past what it defends back to the `post`: hunting, a defender chases
 /// whatever it fights until that dies or leaves sight, out across the map.
 /// Past is farther from every own building than the `siege`'s threats
-/// stand, with the member's own reach on top. Returns those sent running.
+/// stand, with the member's own reach on top, and farther from home over the
+/// ground than its fight at `goal` by that reach: one still on its way out to
+/// a fight away from the buildings is not chasing. Returns those sent
+/// running.
 fn recall(
-    (observation, memory): (&ObservationData, &Memory),
+    (observation, memory, map): (&ObservationData, &Memory, &MapModel),
     ledger: &mut Ledger,
     (members, siege, post, pursuit): (&[UnitId], &Siege<'_>, Option<TilePos>, Pursuit),
+    goal: TilePos,
 ) -> Vec<UnitId> {
     let (Some(post), Pursuit::Hunt | Pursuit::Quarry(_)) = (post, pursuit) else {
         return Vec::new();
     };
+    // Ground distance from the seat's start, in tenths of a tile.
+    let out = |tile: TilePos| u32::from(map.distance(observation.me, tile));
+    let fight = out(goal);
     let area = siege
         .units
         .iter()
@@ -729,6 +737,7 @@ fn recall(
         .filter(|unit| {
             let own = crate::defenses::reach(unit.kind).ceil().to_num::<i32>();
             !defended(observation, unit.tile, area + own)
+                && out(unit.tile) > fight.saturating_add(10 * own.unsigned_abs())
         })
         .filter(|unit| {
             !exposed(observation, unit) || outweighed((observation, memory), members, unit)

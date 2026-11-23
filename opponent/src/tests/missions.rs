@@ -2970,6 +2970,59 @@ fn a_defender_chased_past_the_base_runs_back_while_one_at_the_fight_stays() {
 }
 
 #[test]
+fn defenders_on_their_way_to_a_remote_extractor_keep_going() {
+    // Two East Sentinels attack a West Extractor out on the field. Three West
+    // defenders are halfway there, out of reach of every West building but
+    // still short of the fight: they are on their way, not chasing, so none
+    // is run back to the post.
+    let mut scenario = field();
+    scenario.map[4].replace_range(34..35, "E");
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Extractor, 34, 4));
+    scenario.units.extend([
+        unit(0, UnitKind::Sentinel, 18, 5),
+        unit(0, UnitKind::Sentinel, 18, 6),
+        unit(0, UnitKind::Sentinel, 19, 5),
+        unit(1, UnitKind::Sentinel, 37, 4),
+        unit(1, UnitKind::Sentinel, 37, 5),
+    ]);
+    let state = scenario.build().unwrap();
+    let home = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
+        .unwrap();
+    let mut members = vec![at(&state, 18, 5), at(&state, 18, 6), at(&state, 19, 5)];
+    members.sort_unstable();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {"task": "defend", "asset": home.id.0, "phase": {"engage": {"focus": null}}},
+                "since": 0,
+                "units": members,
+                "goal": {"x": 37, "y": 4},
+            }],
+        });
+    });
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    assert!(
+        trace.unwrap().missions.iter().any(|mission| {
+            matches!(mission.kind, MissionKind::Defend { .. }) && mission.phase == Phase::Engage
+        }),
+        "premise: the defense stays engaged"
+    );
+    assert!(
+        runs(&commands)
+            .iter()
+            .all(|(units, _)| units.iter().all(|id| !members.contains(id))),
+        "{commands:?}"
+    );
+}
+
+#[test]
 fn a_structure_hit_by_fire_nobody_sees_draws_a_search_and_no_welder() {
     // An East Lancer shoots a West Extractor from beyond what the Extractor
     // sees. Defenders worth it advance beside it to find the shooter,
