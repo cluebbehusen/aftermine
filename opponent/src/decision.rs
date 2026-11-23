@@ -150,7 +150,7 @@ impl Ledger {
         });
     }
 
-    fn upgrade(&mut self, building: BuildingId, price: u32) {
+    pub(crate) fn upgrade(&mut self, building: BuildingId, price: u32) {
         self.decision.spent += price;
         self.decision.purchases.push(Purchase::Upgrade { building });
         self.push(Command::UpgradeBuilding { building });

@@ -1918,10 +1918,10 @@ fn turret_under(attackers: &[(UnitKind, i32, i32)]) -> Scenario {
 }
 
 #[test]
-fn lancers_that_outrange_the_turret_draw_an_emergency_bastion() {
+fn lancers_that_outrange_the_turret_draw_its_upgrade() {
     // Three Lancers outrange the Turret guarding the Foundry: it answers
-    // none of them, so it covers nothing, and the emergency puts up a Bastion,
-    // which outranges them.
+    // none of them, so it covers nothing. A Heavy Turret reaches them, and
+    // raising this one holds them off for less than a new Bastion would.
     let lancers = [
         (UnitKind::Lancer, 12, 4),
         (UnitKind::Lancer, 12, 5),
@@ -1929,17 +1929,44 @@ fn lancers_that_outrange_the_turret_draw_an_emergency_bastion() {
     ];
     let scenario = turret_under(&lancers);
     let state = scenario.build().unwrap();
+    let turret = state
+        .buildings()
+        .iter()
+        .find(|building| building.player == PlayerId(0) && building.kind == BuildingKind::Turret)
+        .unwrap()
+        .id;
     for difficulty in [BotDifficulty::Standard, BotDifficulty::Prime] {
         let commands =
             seat_with(&scenario, 0, rung(difficulty)).act(&state, &mut OwnEvents::default());
-        assert!(
-            builds(&commands)
-                .iter()
-                .any(|(kind, anchor)| *kind == BuildingKind::Bastion
-                    && crate::frame::gap(FOUNDRY, (2, 2), *anchor, (2, 2)) <= 3),
-            "{difficulty:?}: {commands:?}"
-        );
+        let raised: Vec<BuildingId> = commands_of(&commands, |command| match command {
+            Command::UpgradeBuilding { building } => Some(*building),
+            _ => None,
+        });
+        assert_eq!(raised, [turret], "{difficulty:?}: {commands:?}");
     }
+}
+
+#[test]
+fn lancers_with_no_gun_to_raise_draw_an_emergency_bastion() {
+    // The same Lancers with no gun beside the Foundry: a Bastion outranges
+    // them, and a new Turret would not.
+    let mut scenario = arena(600);
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Fabricator, 3, 8));
+    for y in 4..=6 {
+        scenario.units.push(unit(1, UnitKind::Lancer, 12, y));
+    }
+    let state = scenario.build().unwrap();
+    let commands =
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
+    assert!(
+        builds(&commands)
+            .iter()
+            .any(|(kind, anchor)| *kind == BuildingKind::Bastion
+                && crate::frame::gap(FOUNDRY, (2, 2), *anchor, (2, 2)) <= 3),
+        "{commands:?}"
+    );
 }
 
 #[test]

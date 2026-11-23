@@ -23,9 +23,9 @@ use crate::memory::Memory;
 use crate::placement::{self, Layout};
 use crate::profile::{PersonalityTraits, ResolvedProfile};
 use crate::workers;
-use aftermine_sim::observation::ObservationData;
+use aftermine_sim::observation::{BuildingObs, ObservationData};
 use aftermine_sim::stats::{BuildingStats, Domain};
-use aftermine_sim::{BuildingKind, UnitKind};
+use aftermine_sim::{BuildingId, BuildingKind, UnitKind};
 pub(crate) use bay::Span;
 use chassis::fx::Fx;
 use chassis::grid::TilePos;
@@ -302,15 +302,13 @@ impl Cover {
 
     /// Whether the gun fires back at an enemy of `reach` attacking it. The
     /// enemy measures to the footprint's nearest edge and the gun from its
-    /// centre, so the gun must reach the enemy at a corner, and the enemy
-    /// at a flat side must stand clear of the gun's minimum range.
+    /// centre, so the gun must reach the enemy across half the footprint on
+    /// the side it comes from, where the enemy must also stand clear of the
+    /// gun's minimum range. One firing from a corner stands a little
+    /// further off, but attackers come at a side.
     fn answers(self, reach: Fx) -> bool {
-        let (width, height) = (i64::from(self.size.0), i64::from(self.size.1));
-        let past = self.range - reach;
-        // Four squared half-diagonals, against four squared reach to spare.
-        let corner = Fx::from_num(width * width + height * height);
-        let side = Fx::from_num(width.min(height)) / 2;
-        past >= Fx::ZERO && past * past * 4 >= corner && side + reach >= self.minimum
+        let side = Fx::from_num(self.size.0.min(self.size.1)) / 2;
+        self.range >= reach + side && side + reach >= self.minimum
     }
 
     /// Whether the gun reaches `point`, in doubled coordinates, in
@@ -555,11 +553,12 @@ pub(crate) fn investments(
 
 /// Buys a defense now beside each valuable building whose approach visible
 /// attackers near it find uncovered, a gun the attackers outrange covering
-/// nothing: against ground attackers a Turret or, once a Fabricator stands, a
-/// Bastion, whichever holds them off better per scrap, and a Flak Turret
-/// against aircraft, on a spot where the site would stand before the fire on
-/// it pulls it down. Each such building has one standing unfinished of the
-/// chosen kind at a time.
+/// nothing: whichever holds them off better per scrap of a new gun, a Turret
+/// or, once a Fabricator stands, a Bastion against ground attackers and a
+/// Flak Turret against aircraft, on a spot where the site would stand before
+/// the fire on it pulls it down, or a tier more for a gun beside the
+/// building that holds off none of them. Each such building has one gun of
+/// the chosen kind standing unfinished, or one being raised, at a time.
 pub(crate) fn emergency(
     observation: &ObservationData,
     map: &MapModel,
@@ -579,6 +578,8 @@ pub(crate) fn emergency(
     ) else {
         return;
     };
+    // Guns raised this decision: one answers every building beside it.
+    let mut raised: Vec<BuildingId> = Vec::new();
     for (domain, kinds) in [
         (
             Domain::Ground,
@@ -614,22 +615,27 @@ pub(crate) fn emergency(
                 let centre = footprint_centre(kind, anchor);
                 workers::builder(observation, map, frame, anchor, centre, ledger)
             };
-            // The kind that holds the attackers off best for its price, the
-            // cheaper on a tie.
-            let chosen = kinds
-                .iter()
-                .filter_map(|&kind| {
-                    let (anchor, worth) = guard.best_where(
-                        kind,
-                        |other| other.anchor == asset.anchor,
-                        |anchor| {
-                            !crate::missions::meeting::overruns(
-                                observation,
-                                memory,
-                                map,
-                                kind,
-                                anchor,
-                            ) && placement::stands(
+            let beside = |building: &BuildingObs| {
+                asset.members.iter().any(|(anchor, footprint)| {
+                    gap(*anchor, *footprint, building.anchor, building.kind.size()) <= STANDOFF[1]
+                })
+            };
+            // A gun beside the building still being raised already answers it.
+            if observation.my_buildings.iter().any(|building| {
+                beside(building)
+                    && ((building.tier > 0 && !building.built) || raised.contains(&building.id))
+            }) {
+                continue;
+            }
+            // A new gun of each kind, or a tier more for a gun beside the
+            // building that holds off none of the attackers today.
+            let sites = kinds.iter().filter_map(|&kind| {
+                let (anchor, worth) = guard.best_where(
+                    kind,
+                    |other| other.anchor == asset.anchor,
+                    |anchor| {
+                        !crate::missions::meeting::overruns(observation, memory, map, kind, anchor)
+                            && placement::stands(
                                 observation,
                                 map,
                                 memory,
@@ -637,42 +643,66 @@ pub(crate) fn emergency(
                                 &[],
                                 builder(kind, anchor).as_slice(),
                             )
-                        },
-                    )?;
-                    let price = u64::from(kind.base_stats().construction.cost);
-                    Some((
-                        worth * QUOTE / price,
-                        std::cmp::Reverse(price),
-                        kind,
-                        anchor,
-                    ))
-                })
-                .max_by_key(|(per_scrap, cheaper, _, _)| (*per_scrap, *cheaper));
-            let Some((_, _, kind, anchor)) = chosen else {
+                    },
+                )?;
+                let price = kind.base_stats().construction.cost;
+                Some((worth, price, Answer::Site(kind, anchor)))
+            });
+            let raises = observation
+                .my_buildings
+                .iter()
+                .filter(|building| beside(building))
+                .filter_map(|building| {
+                    let (worth, price) = guard.raise_worth(building, asset, domain)?;
+                    Some((worth, price, Answer::Raise(building.id)))
+                });
+            // The answer that holds the attackers off best for its price, the
+            // cheaper on a tie.
+            let Some((_, price, answer)) = sites.chain(raises).max_by_key(|(worth, price, _)| {
+                (
+                    worth * QUOTE / u64::from(*price).max(1),
+                    std::cmp::Reverse(*price),
+                )
+            }) else {
                 continue;
             };
-            if !unanswered(asset, kind) {
-                continue;
-            }
-            let Ok(allowed) = placement::check(
-                guard.map,
-                observation,
-                kind,
-                anchor,
-                ledger.planned(),
-                Layout::Apart,
-            ) else {
-                continue;
-            };
-            let price = kind.base_stats().construction.cost;
             if ledger.spendable() < price {
                 break;
             }
-            if let Some(builder) = builder(kind, anchor) {
-                ledger.build(builder.id, kind, anchor, allowed.defer, price);
+            match answer {
+                Answer::Raise(building) => {
+                    ledger.upgrade(building, price);
+                    raised.push(building);
+                }
+                Answer::Site(kind, anchor) => {
+                    if !unanswered(asset, kind) {
+                        continue;
+                    }
+                    let Ok(allowed) = placement::check(
+                        guard.map,
+                        observation,
+                        kind,
+                        anchor,
+                        ledger.planned(),
+                        Layout::Apart,
+                    ) else {
+                        continue;
+                    };
+                    if let Some(builder) = builder(kind, anchor) {
+                        ledger.build(builder.id, kind, anchor, allowed.defer, price);
+                    }
+                }
             }
         }
     }
+}
+
+/// What an emergency buys against a building's attackers.
+enum Answer {
+    /// A new gun of the kind, at the anchor.
+    Site(BuildingKind, TilePos),
+    /// A tier more for the gun.
+    Raise(BuildingId),
 }
 
 /// How far `kind` strikes buildings, a demolition charge's contact
