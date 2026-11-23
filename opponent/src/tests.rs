@@ -107,8 +107,10 @@ pub(crate) const ARENA: [&str; 12] = [
     "########################",
 ];
 
+/// The seat most stagings use: a Balanced Veteran, the rung that decides
+/// every 12 ticks, which their timing assumes.
 fn config() -> BotConfig {
-    rung(BotDifficulty::Standard)
+    rung(BotDifficulty::Veteran)
 }
 
 /// A Balanced seat at `difficulty`.
@@ -119,13 +121,13 @@ fn rung(difficulty: BotDifficulty) -> BotConfig {
 /// A seat that seldom builds static defense before it sees a threat, for
 /// stagings about its economy.
 fn thrifty() -> BotConfig {
-    BotConfig::new(BotDifficulty::Standard, BotStance::Aggressive, 38)
+    BotConfig::new(BotDifficulty::Veteran, BotStance::Aggressive, 38)
 }
 
-/// [`thrifty`] at a rung that reads what attackers are, for stagings of
-/// which answer a short defense picks.
-fn reading_thrifty() -> BotConfig {
-    BotConfig::new(BotDifficulty::Veteran, BotStance::Aggressive, 38)
+/// [`thrifty`] at a rung that reads only how much of the attackers there
+/// is, for stagings of which answer a short defense picks.
+fn sizing_thrifty() -> BotConfig {
+    BotConfig::new(BotDifficulty::Standard, BotStance::Aggressive, 38)
 }
 
 /// A seat that fortifies readily.
@@ -222,8 +224,8 @@ pub(crate) fn middling() -> PersonalityTraits {
 }
 
 /// A saturated seat's situation, not exposed and not severed, with middling
-/// traits, nothing pulled, wanted or waited on, and Standard's margin and
-/// economy.
+/// traits, nothing pulled, wanted or waited on, and Standard's margin,
+/// economy and Deep Bore planning.
 fn calm<'a>(
     observation: &'a ObservationData,
     map: &'a MapModel,
@@ -247,6 +249,7 @@ fn calm<'a>(
         waiting: None,
         margin: crate::missions::margin(BotDifficulty::Standard),
         economy: crate::economy(BotDifficulty::Standard),
+        plans_bores: crate::plans_deep_bores(BotDifficulty::Standard),
         lift_flak: 0,
         air_share: 0,
     }
@@ -808,7 +811,7 @@ fn a_staged_foundry_spreads_its_harvesters_and_trains_its_army_first() {
                 unit: UnitKind::Sentinel,
             }],
             unit_orders: 2,
-            allowance: crate::decision::allowance(BotDifficulty::Standard),
+            allowance: crate::decision::allowance(config().difficulty),
             target: None,
             protected: 0,
             missions: Vec::new(),

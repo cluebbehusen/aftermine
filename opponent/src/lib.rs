@@ -174,20 +174,24 @@ impl Opponent {
     }
 }
 
-/// Ticks between decisions: Scrapheap decides half as often as Standard and
-/// Veteran, Prime twice as often. A difficulty limit on reaction time.
+/// Ticks between decisions: Scrapheap decides every five seconds, Standard
+/// every 1.8, Veteran every 0.6 and Prime every 0.3. A difficulty limit on
+/// reaction time.
 pub(crate) fn decision_interval(difficulty: BotDifficulty) -> u64 {
     match difficulty {
-        BotDifficulty::Scrapheap => 24,
-        BotDifficulty::Standard | BotDifficulty::Veteran => 12,
+        BotDifficulty::Scrapheap => 100,
+        BotDifficulty::Standard => 36,
+        BotDifficulty::Veteran => 12,
         BotDifficulty::Prime => 6,
     }
 }
 
 /// Per mille of its full economy a seat builds: Scrapheap half of it,
 /// Standard seven tenths, Veteran most and Prime all of it. It thins the crew
-/// on every scrap node and lowers how much each kind of growth is wanted,
-/// never whether it is. A difficulty limit on macro competence.
+/// on every scrap node, refits that share of the Extractors its Foundries
+/// support into Deep Bores, rounded up, and lowers how much each kind of
+/// growth is wanted, never whether it is. A difficulty limit on macro
+/// competence.
 pub(crate) fn economy(difficulty: BotDifficulty) -> u64 {
     match difficulty {
         BotDifficulty::Scrapheap => 500,
@@ -195,6 +199,14 @@ pub(crate) fn economy(difficulty: BotDifficulty) -> u64 {
         BotDifficulty::Veteran => 850,
         BotDifficulty::Prime => 1_000,
     }
+}
+
+/// Whether a seat saves for a Deep Bore before a Crucible stands, buying the
+/// Crucible and the Fabricator it needs on the way: Veteran and Prime do,
+/// while Standard and Scrapheap refit an Extractor only once a Crucible stands
+/// for something else. A difficulty limit on macro competence.
+pub(crate) fn plans_deep_bores(difficulty: BotDifficulty) -> bool {
+    matches!(difficulty, BotDifficulty::Veteran | BotDifficulty::Prime)
 }
 
 /// Whether a short defense weighs what the attackers are, to train what

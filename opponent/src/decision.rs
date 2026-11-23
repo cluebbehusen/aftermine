@@ -552,6 +552,7 @@ pub(crate) fn decide(
         waiting,
         margin: crate::missions::margin(profile.difficulty),
         economy: crate::economy(profile.difficulty),
+        plans_bores: crate::plans_deep_bores(profile.difficulty),
         lift_flak: persistent.missions.lift_flak(
             observation,
             map,

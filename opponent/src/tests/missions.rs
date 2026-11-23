@@ -365,14 +365,14 @@ fn a_short_defense_nothing_pays_back_against_keeps_its_savings() {
         scenario
     };
     let calm = threatened(false);
-    let (_, trace) = seat_with(&calm, 0, reading_thrifty())
+    let (_, trace) = seat_with(&calm, 0, thrifty())
         .act_traced(&calm.build().unwrap(), &mut OwnEvents::default());
     assert!(trace.unwrap().protected > 0, "premise: scrap is protected");
 
     let scenario = threatened(true);
     let state = scenario.build().unwrap();
     let (commands, trace) =
-        seat_with(&scenario, 0, reading_thrifty()).act_traced(&state, &mut OwnEvents::default());
+        seat_with(&scenario, 0, thrifty()).act_traced(&state, &mut OwnEvents::default());
     // Armed enemies near the base lower the share protected, but what is
     // protected stays so: nothing is trained from it.
     assert!(trace.unwrap().protected > 0, "{commands:?}");
@@ -387,7 +387,7 @@ fn a_short_defense_nothing_pays_back_against_keeps_its_savings() {
         )),
         "{commands:?}"
     );
-    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    let commands = seat_with(&scenario, 0, sizing_thrifty()).act(&state, &mut OwnEvents::default());
     assert!(!trains(&commands).is_empty(), "{commands:?}");
 }
 
@@ -409,8 +409,7 @@ fn a_short_defense_defers_the_saving_target_and_spends_protected_scrap() {
     };
     let scenario = threatened(400);
     let state = scenario.build().unwrap();
-    let commands =
-        seat_with(&scenario, 0, reading_thrifty()).act(&state, &mut OwnEvents::default());
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
     assert!(
         commands.iter().all(|command| !matches!(
             command.command,
@@ -423,7 +422,7 @@ fn a_short_defense_defers_the_saving_target_and_spends_protected_scrap() {
     let state = scenario.build().unwrap();
     let mut calm = scenario.clone();
     calm.units.pop();
-    let (quiet, trace) = seat_with(&calm, 0, reading_thrifty())
+    let (quiet, trace) = seat_with(&calm, 0, thrifty())
         .act_traced(&calm.build().unwrap(), &mut OwnEvents::default());
     assert!(trace.unwrap().protected > 0, "premise: scrap is protected");
     assert!(trains(&quiet).is_empty(), "premise");
@@ -438,14 +437,12 @@ fn a_short_defense_defers_the_saving_target_and_spends_protected_scrap() {
             )
         })
     };
-    let commands =
-        seat_with(&scenario, 0, reading_thrifty()).act(&state, &mut OwnEvents::default());
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
     assert!(turret(&commands), "an emergency Turret first: {commands:?}");
 
     let scenario = threatened(200);
     let state = scenario.build().unwrap();
-    let commands =
-        seat_with(&scenario, 0, reading_thrifty()).act(&state, &mut OwnEvents::default());
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
     let foundry = foundries(&state, PlayerId(0))[0];
     assert!(turret(&commands), "{commands:?}");
     assert_eq!(trains(&commands), [(foundry, UnitKind::Sentinel)]);
@@ -1163,9 +1160,21 @@ fn defenders_short_of_an_escorted_gun_gather_beside_the_foundry_first() {
             .any(|(_, target)| *target == AttackTarget::Unit(gun))
     };
     let beside = beside_foundry(&state, 0, None);
+    // Each rung at its next decision.
+    let decide = |scenario: &Scenario, state: &State, difficulty| {
+        let mut seat = seat_with(scenario, 0, rung(difficulty));
+        let mut later = state.clone();
+        while !seat.decision_due(&later) {
+            assert!(
+                later.current_tick() < 1_200,
+                "premise: {difficulty:?} decides"
+            );
+            later.tick(&[]);
+        }
+        seat.act(&later, &mut OwnEvents::default())
+    };
     for difficulty in [BotDifficulty::Standard, BotDifficulty::Prime] {
-        let commands =
-            seat_with(&scenario, 0, rung(difficulty)).act(&state, &mut OwnEvents::default());
+        let commands = decide(&scenario, &state, difficulty);
         assert!(!at_gun(&commands), "{difficulty:?}: {commands:?}");
         let moves: Vec<(Vec<UnitId>, TilePos)> = hunts(&commands)
             .into_iter()
@@ -1176,19 +1185,11 @@ fn defenders_short_of_an_escorted_gun_gather_beside_the_foundry_first() {
             "{difficulty:?}: {commands:?}"
         );
     }
-    // Scrapheap decides less often: on to its next decision.
-    let mut scrapheap = seat_with(&scenario, 0, rung(BotDifficulty::Scrapheap));
-    let mut later = state.clone();
-    while !scrapheap.decision_due(&later) {
-        assert!(later.current_tick() < 1_200, "premise: Scrapheap decides");
-        later.tick(&[]);
-    }
-    let commands = scrapheap.act(&later, &mut OwnEvents::default());
+    let commands = decide(&scenario, &state, BotDifficulty::Scrapheap);
     assert!(at_gun(&commands), "{commands:?}");
 
-    // Prime waits at home for a quarter more than it would meet, but beside
-    // a gun waiting only gets the defenders shelled: once they match it and
-    // its escort, they go.
+    // Beside a gun, waiting only gets the defenders shelled: once they match
+    // it and its escort, they go.
     let (scenario, state) = staged(&[(6, 11), (7, 11), (6, 13), (7, 13), (8, 11), (8, 13)]);
     let gun = at(&state, GUN.0, GUN.1);
     let commands =
@@ -1215,8 +1216,7 @@ fn defenders_short_of_an_escorted_gun_gather_beside_the_foundry_first() {
     ]);
     let gun = at(&state, GUN.0, GUN.1);
     for difficulty in [BotDifficulty::Standard, BotDifficulty::Prime] {
-        let commands =
-            seat_with(&scenario, 0, rung(difficulty)).act(&state, &mut OwnEvents::default());
+        let commands = decide(&scenario, &state, difficulty);
         assert!(
             attacks(&commands)
                 .iter()

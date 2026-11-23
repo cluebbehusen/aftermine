@@ -1526,12 +1526,12 @@ fn lifts(mut opponent: Opponent, state: &State) -> bool {
 #[test]
 fn a_lift_waits_for_a_recent_look_at_its_target_except_at_the_lowest_rung() {
     let mut state = strait().build().unwrap();
-    advance_to(&mut state, 1_200, &[]);
+    advance_to(&mut state, 1_800, &[]);
     let after = |difficulty, looked| {
         let (_, opponent) = recalled(rung(difficulty), &state, looked, serde_json::json!([]));
         lifts(opponent, &state)
     };
-    assert!(after(BotDifficulty::Standard, 1_200), "a fresh look");
+    assert!(after(BotDifficulty::Standard, 1_800), "a fresh look");
     assert!(
         !after(BotDifficulty::Standard, 0),
         "the look has gone stale"
@@ -1622,9 +1622,9 @@ fn the_upper_rungs_time_a_lift_to_bombers_clearing_its_target() {
     bombed.units.push(unit(0, UnitKind::Condor, 12, 2));
     let mut state = bombed.build().unwrap();
     let condor = at(&state, 12, 2);
-    advance_to(&mut state, 12, &[run(0, vec![condor], 30, 4)]);
+    advance_to(&mut state, 36, &[run(0, vec![condor], 30, 4)]);
     let mut alone = plain.build().unwrap();
-    advance_to(&mut alone, 12, &[]);
+    advance_to(&mut alone, 36, &[]);
     // Six Sentinels on East's island that West's eight alone do not
     // outweigh by any rung's margin.
     let island = remembered((0..6).map(|index| {
@@ -2257,7 +2257,11 @@ fn shoals() -> Scenario {
 fn mirrored_seats_walk_counterpart_islands_first_when_orders_run_out() {
     let scenario = shoals();
     let mut state = scenario.build().unwrap();
-    advance_to(&mut state, 24, &[]);
+    advance_to(
+        &mut state,
+        crate::decision_interval(BotDifficulty::Scrapheap),
+        &[],
+    );
     let scrapheap = rung(BotDifficulty::Scrapheap);
     let (west, trace) =
         seat_with(&scenario, 0, scrapheap).act_traced(&state, &mut OwnEvents::default());

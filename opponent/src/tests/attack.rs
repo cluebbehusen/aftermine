@@ -950,7 +950,7 @@ fn the_upper_rungs_go_after_the_unguarded_target() {
     let prime = rung(BotDifficulty::Prime);
     assert_eq!(target_of(&scenario, prime), open);
     assert_eq!(
-        target_of(&scenario, config()),
+        target_of(&scenario, rung(BotDifficulty::Standard)),
         guarded,
         "Standard takes the nearer one, guards or not"
     );
@@ -1109,8 +1109,9 @@ fn no_attack_sets_out_for_a_start_seen_cleared() {
 
 #[test]
 fn an_attack_that_razes_a_start_does_not_go_back_to_it() {
-    let (scenario, mut state, _, killers) = worn_start();
-    advance_to(&mut state, 12, &[]);
+    let (mut scenario, mut state, _, killers) = worn_start();
+    scenario.players[0].bot_config = Some(rung(BotDifficulty::Standard));
+    advance_to(&mut state, 36, &[]);
     let missions = serde_json::json!({
         "next": 1,
         "list": [{
@@ -1245,7 +1246,7 @@ fn the_upper_rungs_send_new_units_after_an_attack_under_way() {
         let scenario = advanced(difficulty, &[]);
         let mut state = scenario.build().unwrap();
         let (members, missions) = under_way(&state, &"travel".into(), 0);
-        advance_to(&mut state, 12, &[run(0, members.clone(), 30, 11)]);
+        advance_to(&mut state, 36, &[run(0, members.clone(), 30, 11)]);
         let mut opponent = restaged(&scenario, &state, missions);
         let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
         let home: Vec<UnitId> = WEST.iter().map(|(x, y)| at(&state, *x, *y)).collect();
@@ -1867,8 +1868,6 @@ fn a_front_outweighed_falls_back_onto_the_army() {
                 "goal": {"x": 42, "y": 11},
             }],
         });
-        let mut state = state;
-        advance_to(&mut state, crate::decision_interval(difficulty), &[]);
         let mut opponent = restaged(&scenario, &state, missions);
         let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
         let withdraws = trace

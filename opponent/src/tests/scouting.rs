@@ -341,7 +341,7 @@ fn standard_focuses_by_health_bar_quarters() {
         AttackTarget::Unit(sentinel)
     );
     assert_eq!(
-        focused(&scenario, &state, config()),
+        focused(&scenario, &state, rung(BotDifficulty::Standard)),
         AttackTarget::Unit(warden)
     );
 }
