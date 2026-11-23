@@ -840,18 +840,29 @@ fn frames_and_deep_bores_rank_by_what_they_pay_back() {
 fn a_seat_refits_its_economy_s_share_of_its_extractors() {
     // Two Extractors West's Foundry supports and a Crucible: a seat that
     // builds half its economy deepens one of them, the full economy both.
-    let wanted = |deepened: bool, difficulty: BotDifficulty| {
-        let mut scenario = lane(&[(6, 3), (6, 9)]);
-        for (kind, x, y) in [
+    // Deep Bores out of every Foundry's support count toward neither.
+    let wanted = |deepened: bool, orphans: bool, difficulty: BotDifficulty| {
+        let mut scenario = lane(&[(6, 3), (6, 9), (24, 3), (24, 9)]);
+        let mut buildings = vec![
             (BuildingKind::Extractor, 6, 3),
             (BuildingKind::Extractor, 6, 9),
             (BuildingKind::Crucible, 9, 5),
-        ] {
+        ];
+        if orphans {
+            buildings.extend([
+                (BuildingKind::Extractor, 24, 3),
+                (BuildingKind::Extractor, 24, 9),
+            ]);
+        }
+        for (kind, x, y) in buildings {
             scenario.buildings.push(building(0, kind, x, y));
         }
         let mut value = serde_json::to_value(scenario.build().unwrap()).unwrap();
         for entry in value["buildings"].as_array_mut().unwrap() {
-            if deepened && entry["kind"] == "extractor" && entry["anchor"]["y"] == 3 {
+            let anchor = (entry["anchor"]["x"].clone(), entry["anchor"]["y"].clone());
+            let refitted =
+                (deepened && anchor == (6.into(), 3.into())) || entry["anchor"]["x"] == 24;
+            if entry["kind"] == "extractor" && refitted {
                 entry["tier"] = 1.into();
             }
         }
@@ -866,12 +877,22 @@ fn a_seat_refits_its_economy_s_share_of_its_extractors() {
         .iter()
         .any(|candidate| matches!(candidate.investment, Investment::Upgrade { tier: 1, .. }))
     };
-    assert!(wanted(false, BotDifficulty::Scrapheap), "the first of two");
     assert!(
-        !wanted(true, BotDifficulty::Scrapheap),
+        wanted(false, false, BotDifficulty::Scrapheap),
+        "the first of two"
+    );
+    assert!(
+        !wanted(true, false, BotDifficulty::Scrapheap),
         "half of two is one"
     );
-    assert!(wanted(true, BotDifficulty::Prime), "Prime deepens both");
+    assert!(
+        wanted(true, false, BotDifficulty::Prime),
+        "Prime deepens both"
+    );
+    assert!(
+        wanted(false, true, BotDifficulty::Scrapheap),
+        "Deep Bores no Foundry supports leave the supported two their share"
+    );
 }
 
 /// A frames-only site of two frames in the lane's middle, with `foundries`

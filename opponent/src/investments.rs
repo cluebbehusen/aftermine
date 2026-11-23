@@ -281,7 +281,9 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
                 && expansion::supported(observation, building.anchor)
         })
         .collect();
-    let deep = extractors().filter(|building| building.tier > 0).count();
+    let deep = extractors()
+        .filter(|building| building.tier > 0 && expansion::supported(observation, building.anchor))
+        .count();
     let share = u64::try_from(deep + shallow.len())
         .unwrap_or(u64::MAX)
         .saturating_mul(situation.economy)
