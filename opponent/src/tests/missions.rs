@@ -3600,3 +3600,76 @@ fn an_armed_aircraft_in_sight_comes_before_a_search() {
     );
     assert!(!searched(&state));
 }
+
+/// The field with a West Fabricator far out east of its Foundry, three East
+/// Lancers at it, and West's `defenders` at home.
+fn lancers_far_out(defenders: &[UnitKind]) -> Scenario {
+    let mut scenario = field();
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Fabricator, 17, 10));
+    let home = (5..=7).flat_map(|x| (9..=13).map(move |y| (x, y)));
+    for (kind, (x, y)) in defenders.iter().zip(home) {
+        scenario.units.push(unit(0, *kind, x, y));
+    }
+    for y in 10..=12 {
+        scenario.units.push(unit(1, UnitKind::Lancer, 22, y));
+    }
+    scenario
+}
+
+/// Whether West's first decision at `difficulty` sends defenders at the
+/// Lancers of `lancers_far_out`.
+fn goes_at_the_lancers(scenario: &Scenario, difficulty: BotDifficulty) -> bool {
+    let state = scenario.build().unwrap();
+    let commands = seat_with(scenario, 0, rung(difficulty)).act(&state, &mut OwnEvents::default());
+    hunts(&commands)
+        .iter()
+        .any(|(_, goal)| goal.chebyshev(TilePos::new(22, 11)) <= 6)
+}
+
+#[test]
+fn a_defense_counts_its_units_by_what_they_trade_against_the_attackers() {
+    // Scuttlers and a Sentinel cost more than the Lancers but trade poorly
+    // against them: at the rungs that read threats they stay home rather
+    // than walk out to fight them in the open.
+    let mut cheap = vec![UnitKind::Scuttler; 8];
+    cheap.push(UnitKind::Sentinel);
+    let scenario = lancers_far_out(&cheap);
+    assert!(
+        goes_at_the_lancers(&scenario, BotDifficulty::Standard),
+        "premise: a rung that judges by price alone goes out"
+    );
+    for difficulty in [BotDifficulty::Veteran, BotDifficulty::Prime] {
+        assert!(
+            !goes_at_the_lancers(&scenario, difficulty),
+            "{difficulty:?}"
+        );
+    }
+    // Lancers of their own go out against them.
+    let scenario = lancers_far_out(&[UnitKind::Lancer; 4]);
+    assert!(goes_at_the_lancers(&scenario, BotDifficulty::Prime));
+}
+
+#[test]
+fn defenders_that_trade_poorly_against_the_attackers_leave_a_shortfall() {
+    // Fourteen Scuttlers cost more than the Lancers press, but trade for a
+    // fraction of it: production answers the shortfall at the Fabricator.
+    let mut scenario = lancers_far_out(&[UnitKind::Scuttler; 14]);
+    scenario.players[0].scrap = 600;
+    let state = scenario.build().unwrap();
+    let fabricator = state
+        .buildings()
+        .iter()
+        .find(|building| building.kind == BuildingKind::Fabricator)
+        .unwrap()
+        .id;
+    let (_, trace) = seat_with(&scenario, 0, rung(BotDifficulty::Prime))
+        .act_traced(&state, &mut OwnEvents::default());
+    assert!(
+        trace.unwrap().army.picks.iter().any(|pick| {
+            pick.building == fabricator && matches!(pick.path, crate::trace::PickPath::Shortfall)
+        }),
+        "the Fabricator trains an answer to the Lancers"
+    );
+}

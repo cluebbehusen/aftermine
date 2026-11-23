@@ -1651,10 +1651,19 @@ fn arm(
     }
     let cover = |shortfalls: &mut [Shortfall], kind: UnitKind, at: Option<u32>| {
         if let Some(short) = shortfalls.iter_mut().find(|short| helps(kind, at, short)) {
+            // On the ground a unit makes up what it trades against the
+            // attackers, as the defense counted its own.
+            let grounded: Vec<(UnitKind, u64)> = short
+                .attackers
+                .iter()
+                .copied()
+                .filter(|(attacker, _)| attacker.stats().domain == Domain::Ground)
+                .collect();
+            let cost = u64::from(kind.stats().cost);
+            let made = [cost * composition::traded(kind, &grounded) / 1_000, cost];
             for (index, domain) in [Domain::Ground, Domain::Air].into_iter().enumerate() {
                 if hits(kind, domain) {
-                    short.gap[index] =
-                        short.gap[index].saturating_sub(u64::from(kind.stats().cost));
+                    short.gap[index] = short.gap[index].saturating_sub(made[index]);
                 }
             }
         }

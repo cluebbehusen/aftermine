@@ -253,8 +253,8 @@ fn a_defender_far_off_chasing_is_in_neither_fight() {
     let (out, worth) = front(
         &observation,
         &[at_fight, chaser],
-        Some(TilePos::new(4, 1)),
-        TilePos::new(6, 3),
+        (Some(TilePos::new(4, 1)), TilePos::new(6, 3)),
+        &Trades::default(),
     );
     assert!(out.contains(&at_fight) && out.contains(&chaser), "{out:?}");
     let alone = value(mine(&observation, at_fight).unwrap());

@@ -723,6 +723,21 @@ pub(crate) fn matchup(fighter: Fighter, attacker: UnitKind) -> u64 {
     }
 }
 
+/// Per mille of its price a unit of `kind` destroys in value of `attackers`,
+/// each weighed by its value, by [`matchup`]; never above its price, and
+/// its whole price against attackers worth nothing.
+pub(crate) fn traded(kind: UnitKind, attackers: &[(UnitKind, u64)]) -> u64 {
+    let total: u64 = attackers.iter().map(|(_, value)| value).sum();
+    if total == 0 {
+        return 1_000;
+    }
+    let destroyed: u64 = attackers
+        .iter()
+        .map(|(attacker, value)| matchup(Fighter::Unit(kind), *attacker) * value)
+        .sum();
+    (destroyed / total).min(1_000)
+}
+
 /// Per mille: `kind`'s damage per second per 100 scrap against ground,
 /// 1000 at ten, within a band narrow enough that variety still gives every
 /// kind its turn. A Lancer's rail tops it; a Bombard's single slow shell
