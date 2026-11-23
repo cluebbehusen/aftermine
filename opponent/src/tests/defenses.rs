@@ -1902,3 +1902,85 @@ fn aircraft_that_hit_ground_beside_a_site_hold_it() {
     assert!(verdict(false), "premise: the Sentinels overrun the site");
     assert!(!verdict(true), "Buzzards beside it hold them");
 }
+
+/// The arena with West's Fabricator up and a Turret east of its Foundry,
+/// and East's `attackers` beyond it.
+fn turret_under(attackers: &[(UnitKind, i32, i32)]) -> Scenario {
+    let mut scenario = arena(600);
+    scenario.buildings.extend([
+        building(0, BuildingKind::Fabricator, 3, 8),
+        building(0, BuildingKind::Turret, 7, 5),
+    ]);
+    for (kind, x, y) in attackers {
+        scenario.units.push(unit(1, *kind, *x, *y));
+    }
+    scenario
+}
+
+#[test]
+fn lancers_that_outrange_the_turret_draw_an_emergency_bastion() {
+    // Three Lancers outrange the Turret guarding the Foundry: it answers
+    // none of them, so it covers nothing, and the emergency puts up a Bastion,
+    // which outranges them.
+    let lancers = [
+        (UnitKind::Lancer, 12, 4),
+        (UnitKind::Lancer, 12, 5),
+        (UnitKind::Lancer, 12, 6),
+    ];
+    let scenario = turret_under(&lancers);
+    let state = scenario.build().unwrap();
+    for difficulty in [BotDifficulty::Standard, BotDifficulty::Prime] {
+        let commands =
+            seat_with(&scenario, 0, rung(difficulty)).act(&state, &mut OwnEvents::default());
+        assert!(
+            builds(&commands)
+                .iter()
+                .any(|(kind, anchor)| *kind == BuildingKind::Bastion
+                    && crate::frame::gap(FOUNDRY, (2, 2), *anchor, (2, 2)) <= 3),
+            "{difficulty:?}: {commands:?}"
+        );
+    }
+}
+
+#[test]
+fn an_emergency_against_what_a_turret_answers_stays_a_turret() {
+    // A Sentinel near the base, with a Fabricator up and no gun yet: a
+    // Turret holds it off for less than a Bastion would.
+    let mut scenario = arena(600);
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Fabricator, 3, 8));
+    scenario.units.push(unit(1, UnitKind::Sentinel, 9, 5));
+    let state = scenario.build().unwrap();
+    let commands =
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
+    let guns: Vec<BuildingKind> = builds(&commands)
+        .into_iter()
+        .map(|(kind, _)| kind)
+        .filter(|kind| matches!(kind, BuildingKind::Turret | BuildingKind::Bastion))
+        .collect();
+    assert!(
+        !guns.is_empty() && guns.iter().all(|kind| *kind == BuildingKind::Turret),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn no_emergency_gun_goes_up_against_guns_that_outrange_every_one() {
+    // Bombards outrange both a Turret and a Bastion: no emergency gun answers
+    // them, so none goes up; defenders go at them instead.
+    let scenario = turret_under(&[
+        (UnitKind::Bombard, 15, 4),
+        (UnitKind::Bombard, 15, 6),
+        (UnitKind::Kestrel, 11, 5),
+    ]);
+    let state = scenario.build().unwrap();
+    let commands =
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
+    assert!(
+        builds(&commands)
+            .iter()
+            .all(|(kind, _)| !matches!(kind, BuildingKind::Turret | BuildingKind::Bastion)),
+        "{commands:?}"
+    );
+}

@@ -367,11 +367,18 @@ impl Guard<'_> {
         }
     }
 
-    /// Own weapons covering `point` in `domain`.
-    fn covered(&self, domain: Domain, point: (i64, i64)) -> usize {
+    /// Own weapons covering `point` in `domain` that fire back at every
+    /// attacker of `threat`.
+    fn answering(&self, domain: Domain, point: (i64, i64), threat: &Threat) -> usize {
         self.covers
             .iter()
-            .filter(|cover| cover.covers(self.map, domain, point))
+            .filter(|cover| {
+                cover.covers(self.map, domain, point)
+                    && threat
+                        .reaches
+                        .iter()
+                        .all(|(reach, _)| cover.answers(*reach))
+            })
             .count()
     }
 
@@ -547,10 +554,12 @@ pub(crate) fn investments(
 }
 
 /// Buys a defense now beside each valuable building whose approach visible
-/// attackers near it find uncovered: a Turret against ground attackers, a
-/// Flak Turret against aircraft, on a spot where the site would stand before
-/// the fire on it pulls it down. Each such building has one standing
-/// unfinished at a time.
+/// attackers near it find uncovered, a gun the attackers outrange covering
+/// nothing: against ground attackers a Turret or, once a Fabricator stands, a
+/// Bastion, whichever holds them off better per scrap, and a Flak Turret
+/// against aircraft, on a spot where the site would stand before the fire on
+/// it pulls it down. Each such building has one standing unfinished of the
+/// chosen kind at a time.
 pub(crate) fn emergency(
     observation: &ObservationData,
     map: &MapModel,
@@ -570,18 +579,20 @@ pub(crate) fn emergency(
     ) else {
         return;
     };
-    for (domain, kind) in [
-        (Domain::Ground, BuildingKind::Turret),
-        (Domain::Air, BuildingKind::FlakTurret),
+    for (domain, kinds) in [
+        (
+            Domain::Ground,
+            &[BuildingKind::Turret, BuildingKind::Bastion][..],
+        ),
+        (Domain::Air, &[BuildingKind::FlakTurret][..]),
     ] {
-        let size = kind.size();
         // An unfinished one beside its buildings already answers it.
-        let unanswered = |asset: &Asset| {
+        let unanswered = |asset: &Asset, kind: BuildingKind| {
             !observation.my_buildings.iter().any(|building| {
                 building.kind == kind
                     && !building.built
                     && asset.members.iter().any(|(anchor, footprint)| {
-                        gap(*anchor, *footprint, building.anchor, size) <= STANDOFF[1]
+                        gap(*anchor, *footprint, building.anchor, kind.size()) <= STANDOFF[1]
                     })
             })
         };
@@ -595,36 +606,54 @@ pub(crate) fn emergency(
                     && approach
                         .samples
                         .iter()
-                        .all(|point| guard.covered(domain, *point) == 0)
+                        .all(|point| guard.answering(domain, *point, &approach.threat) == 0)
             })
         };
-        let price = kind.base_stats().construction.cost;
-        for asset in guard
-            .assets
-            .iter()
-            .filter(|asset| pressed(asset) && unanswered(asset))
-        {
-            let builder = |anchor: TilePos| {
+        for asset in guard.assets.iter().filter(|asset| pressed(asset)) {
+            let builder = |kind: BuildingKind, anchor: TilePos| {
                 let centre = footprint_centre(kind, anchor);
                 workers::builder(observation, map, frame, anchor, centre, ledger)
             };
-            let Some((anchor, _)) = guard.best_where(
-                kind,
-                |other| other.anchor == asset.anchor,
-                |anchor| {
-                    !crate::missions::meeting::overruns(observation, memory, map, kind, anchor)
-                        && placement::stands(
-                            observation,
-                            map,
-                            memory,
-                            placement::Raising::fresh(kind, anchor),
-                            &[],
-                            builder(anchor).as_slice(),
-                        )
-                },
-            ) else {
+            // The kind that holds the attackers off best for its price, the
+            // cheaper on a tie.
+            let chosen = kinds
+                .iter()
+                .filter_map(|&kind| {
+                    let (anchor, worth) = guard.best_where(
+                        kind,
+                        |other| other.anchor == asset.anchor,
+                        |anchor| {
+                            !crate::missions::meeting::overruns(
+                                observation,
+                                memory,
+                                map,
+                                kind,
+                                anchor,
+                            ) && placement::stands(
+                                observation,
+                                map,
+                                memory,
+                                placement::Raising::fresh(kind, anchor),
+                                &[],
+                                builder(kind, anchor).as_slice(),
+                            )
+                        },
+                    )?;
+                    let price = u64::from(kind.base_stats().construction.cost);
+                    Some((
+                        worth * QUOTE / price,
+                        std::cmp::Reverse(price),
+                        kind,
+                        anchor,
+                    ))
+                })
+                .max_by_key(|(per_scrap, cheaper, _, _)| (*per_scrap, *cheaper));
+            let Some((_, _, kind, anchor)) = chosen else {
                 continue;
             };
+            if !unanswered(asset, kind) {
+                continue;
+            }
             let Ok(allowed) = placement::check(
                 guard.map,
                 observation,
@@ -635,10 +664,11 @@ pub(crate) fn emergency(
             ) else {
                 continue;
             };
+            let price = kind.base_stats().construction.cost;
             if ledger.spendable() < price {
                 break;
             }
-            if let Some(builder) = builder(anchor) {
+            if let Some(builder) = builder(kind, anchor) {
                 ledger.build(builder.id, kind, anchor, allowed.defer, price);
             }
         }

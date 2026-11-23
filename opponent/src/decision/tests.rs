@@ -36,3 +36,45 @@ fn one_shortfall_s_answer_frees_no_savings_while_another_has_none() {
     );
     assert_eq!(awaited(&[raid, siege]), None);
 }
+
+#[test]
+fn a_bastion_the_seat_can_build_frees_savings_against_lancers() {
+    // Lancers outrange a Turret, but not a Bastion: once a Fabricator stands,
+    // the Bastion pays back and frees the scrap kept for the saving target.
+    let answered = |fabricator: bool| {
+        let mut scenario = crate::tests::arena(400);
+        if fabricator {
+            scenario
+                .buildings
+                .push(aftermine_sim::scenario::BuildingSpec {
+                    player: 0,
+                    kind: BuildingKind::Fabricator,
+                    x: 3,
+                    y: 8,
+                });
+        }
+        let state = scenario.build().unwrap();
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        let map = MapModel::from_scenario(&scenario).unwrap();
+        let frame = HomeFrame::of(&observation, &map).unwrap();
+        // The Fabricator trains nothing here: only structures can answer.
+        let producers: Vec<_> = producers(&observation, frame, 0)
+            .into_iter()
+            .filter(|producer| producer.building.kind != BuildingKind::Fabricator)
+            .collect();
+        let ground = observation
+            .my_buildings
+            .first()
+            .and_then(|foundry| map.component(foundry.anchor));
+        let cost = u64::from(UnitKind::Lancer.stats().cost) * 3;
+        let siege = Shortfall {
+            ground,
+            gap: [cost, 0],
+            attackers: vec![(UnitKind::Lancer, cost)],
+            read: true,
+        };
+        awaited(&observation, &map, &producers, &[siege], 0, 400)
+    };
+    assert_eq!(answered(false), None, "no Bastion without a Fabricator");
+    assert_eq!(answered(true), Some(0), "a Bastion frees the savings");
+}

@@ -1544,7 +1544,11 @@ const PAYS_BACK: u64 = 500;
 const SAVE_TICKS: u64 = 300;
 
 /// The structures an emergency puts up against a short defense's attackers.
-const EMERGENCY_KINDS: [BuildingKind; 2] = [BuildingKind::Turret, BuildingKind::FlakTurret];
+const EMERGENCY_KINDS: [BuildingKind; 3] = [
+    BuildingKind::Turret,
+    BuildingKind::Bastion,
+    BuildingKind::FlakTurret,
+];
 
 /// Scrap the bank gains in [`SAVE_TICKS`] at `income` a minute.
 fn soon(income: u32) -> u64 {
@@ -1573,13 +1577,14 @@ fn best_answer(
                 .filter(move |kind| helps(*kind, at, short))
                 .map(Fighter::Unit)
         });
-    // A structure answers only where a worker could put it up.
+    // A structure answers only where a worker could put it up, and once
+    // what it needs stands.
     let builder = observation.my_units.iter().any(|unit| {
         unit.kind.stats().harvest.is_some() && map.component(unit.tile) == short.ground
     });
     let structures = structures
         .iter()
-        .filter(|_| builder)
+        .filter(|kind| builder && crate::investments::buildable(observation, **kind))
         .map(|kind| Fighter::Structure(*kind));
     units
         .chain(structures)
