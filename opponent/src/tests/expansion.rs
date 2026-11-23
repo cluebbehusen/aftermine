@@ -1171,3 +1171,70 @@ fn a_plateau_the_seat_holds_with_a_foundry_keeps_its_frames() {
     });
     assert!(wanted(&scenario), "West holds the plateau");
 }
+
+#[test]
+fn a_deep_bore_waits_while_a_known_enemy_army_outweighs_the_seat_s() {
+    // A supported Extractor and a Crucible. With no enemy army known the
+    // Deep Bore competes; three Lancers in sight outweigh an empty army and
+    // hold it back; four Sentinels hold the Lancers, and it competes again.
+    let bores = |lancers: i32, sentinels: &[(i32, i32)]| {
+        let mut scenario = bore_arena(12);
+        scenario
+            .units
+            .extend((0..lancers).map(|index| unit(1, UnitKind::Lancer, 14, 2 + index)));
+        scenario.units.extend(
+            sentinels
+                .iter()
+                .map(|(x, y)| unit(0, UnitKind::Sentinel, *x, *y)),
+        );
+        let state = scenario.build().unwrap();
+        let observation = mapped(&state, PlayerId(0));
+        let mut memory = Memory::default();
+        memory.observe_stranded(&observation, |_| false);
+        let model = map(&scenario);
+        crate::investments::candidates(&calm(&observation, &model, &memory))
+            .iter()
+            .any(|candidate| matches!(candidate.investment, Investment::Upgrade { tier: 1, .. }))
+    };
+    let four = [(4, 8), (5, 8), (4, 9), (5, 9)];
+    assert!(bores(0, &[]), "nothing known");
+    assert!(!bores(3, &[]), "three Lancers outweigh no army");
+    assert!(bores(3, &four), "four Sentinels hold three Lancers");
+}
+
+#[test]
+fn a_seat_saving_for_a_deep_bore_lets_it_go_once_a_known_army_outweighs_its_own() {
+    // West has held scrap for a Deep Bore. Three East Lancers come into
+    // sight with no West army to meet them: it stops saving for the bore and
+    // stops holding that scrap back.
+    let saved = |lancers: i32| {
+        let mut scenario = bore_arena(12);
+        // Short of the bore's price, so it is still saved for.
+        scenario.players[0].scrap = 300;
+        scenario
+            .units
+            .extend((0..lancers).map(|index| unit(1, UnitKind::Lancer, 14, 2 + index)));
+        let state = scenario.build().unwrap();
+        let deep_bore = Investment::Upgrade {
+            building: own_extractor(&state),
+            tier: 1,
+        };
+        let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+            json["saving"] = serde_json::json!({
+                "protected": 300,
+                "target": {"investment": deep_bore, "attempt": null},
+            });
+        });
+        let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let trace = trace.unwrap();
+        (
+            trace.target.map(|target| target.investment) == Some(deep_bore),
+            trace.protected,
+        )
+    };
+    let (kept, held) = saved(0);
+    assert!(kept && held > 0, "premise: with nothing known it saves on");
+    let (kept, held_after) = saved(3);
+    assert!(!kept, "the Lancers outweigh an empty army");
+    assert!(held_after < held, "{held_after} < {held}");
+}

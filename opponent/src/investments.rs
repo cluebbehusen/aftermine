@@ -242,7 +242,8 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         })
         .map(|seen| seen.value(now))
         .sum();
-    let secure = !situation.exposed && crate::decision::army(observation) >= known;
+    let holds = crate::decision::army(observation) >= known;
+    let secure = !situation.exposed && holds;
     let growth = expansion::candidates(
         observation,
         situation.map,
@@ -262,11 +263,14 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
     // harvesting is saturated. It goes on the supported Extractor nearest
     // home in the seat's frame, so mirrored seats deepen mirrored frames, and
     // is wanted before the Crucible stands, so its worth pulls the Crucible
-    // forward as the first step.
+    // forward as the first step. It waits while an enemy army the seat knows
+    // of outweighs its own: the scrap held for it is what an early push
+    // punishes.
     let frame = situation.frame;
     let bore = observation
         .my_buildings
         .iter()
+        .filter(|_| holds)
         .filter(|building| {
             building.kind == BuildingKind::Extractor
                 && building.built

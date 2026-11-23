@@ -270,12 +270,15 @@ fn every_building_and_upgrade_is_bought_somewhere() {
     let state = citadel.build().unwrap();
     offer(&citadel, &state, 3_000);
 
-    // A Deep Bore on the home frame, which the home Foundry supports.
+    // A Deep Bore on the home frame, which the home Foundry supports, once
+    // no enemy army in sight outweighs the seat's.
     let mut bore = crucible.clone();
     bore.buildings
         .push(building(0, BuildingKind::Extractor, 6, 1));
-    let state = bore.build().unwrap();
-    offer(&bore, &state, 3_000);
+    let mut quiet = bore.clone();
+    quiet.units.retain(|unit| unit.player == 0);
+    let state = quiet.build().unwrap();
+    offer(&quiet, &state, 3_000);
 
     // A Spire once a Crucible and a Deep Bore stand and a block of seen
     // enemy works is worth a warhead.
