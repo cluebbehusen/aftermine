@@ -1824,8 +1824,7 @@ fn a_front_outweighed_falls_back_onto_the_army() {
     // The two fall back onto the six rather than fight alone or turn the
     // army home, and the six come on. With all eight there it fights on; with
     // the two alone, or with only anti-air behind them, the attack turns
-    // home. Scrapheap, with orders for only the six and the two's way back,
-    // sends the six on and leaves the two fighting until they arrive.
+    // home.
     let front = [(30, 11), (30, 12)];
     let behind = [(14, 3), (15, 3), (16, 3), (14, 4), (15, 4), (16, 4)];
     let near = [(29, 10), (29, 11), (29, 12), (28, 10), (28, 11), (28, 12)];
@@ -1916,11 +1915,6 @@ fn a_front_outweighed_falls_back_onto_the_army() {
         decide_at(&behind, sentinel, BotDifficulty::Prime),
         (false, true, true),
         "the six come on"
-    );
-    assert_eq!(
-        decide_at(&behind, sentinel, BotDifficulty::Scrapheap),
-        (false, false, true),
-        "short of orders, the six come on to the two"
     );
 }
 

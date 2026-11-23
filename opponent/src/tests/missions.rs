@@ -319,20 +319,18 @@ fn a_moving_threat_is_chased_again_only_once_it_moves_away() {
 
 #[test]
 fn defense_outranks_workers_under_a_small_allowance() {
-    let mut scenario = raided(
-        &[(UnitKind::Sentinel, 5, 9), (UnitKind::Sentinel, 6, 9)],
-        &[(UnitKind::Scuttler, 9, 6)],
-    );
-    for row in [2, 8] {
-        scenario.map[row].replace_range(2..3, "s");
-    }
-    scenario.units.extend((4..=5).map(|x| harvester(0, x, 7)));
+    let mut scenario = spread_nodes(Some((UnitKind::Scuttler, 9, 12)));
+    scenario.units.extend([
+        unit(0, UnitKind::Sentinel, 2, 12),
+        unit(0, UnitKind::Sentinel, 2, 13),
+    ]);
     let state = scenario.build().unwrap();
-    let scrapheap = rung(BotDifficulty::Scrapheap);
+    // Standard gives the fewest unit orders a decision.
+    let narrow = rung(BotDifficulty::Standard);
     let (commands, trace) =
-        seat_with(&scenario, 0, scrapheap).act_traced(&state, &mut OwnEvents::default());
+        seat_with(&scenario, 0, narrow).act_traced(&state, &mut OwnEvents::default());
     let trace = trace.unwrap();
-    assert_eq!(hunts(&commands).len(), 1);
+    assert_eq!(hunts(&commands).len(), 1, "{commands:?}");
     assert_eq!(
         u32::try_from(harvests(&commands).len()).unwrap(),
         trace.allowance - 1,
@@ -2596,75 +2594,6 @@ fn a_landed_defender_under_ground_fire_stays() {
             .iter()
             .all(|mission| mission.phase != Phase::Recover),
         "it stays engaged"
-    );
-}
-
-#[test]
-fn a_defense_whose_order_home_finds_no_room_stays_engaged() {
-    // Two defenders out where raiders by the start were, the raiders gone,
-    // while raiders press two other Foundries: at Scrapheap, answering those
-    // takes every order this look, so the two stay engaged rather than
-    // recover without their order home.
-    let mut scenario = widened(arena(0), 12, 20);
-    scenario.buildings.extend([
-        building(0, BuildingKind::Foundry, 24, 2),
-        building(0, BuildingKind::Foundry, 24, 8),
-    ]);
-    scenario.units.extend([
-        unit(0, UnitKind::Sentinel, 9, 8),
-        unit(0, UnitKind::Sentinel, 10, 8),
-        unit(0, UnitKind::Sentinel, 22, 2),
-        unit(0, UnitKind::Sentinel, 22, 3),
-        unit(0, UnitKind::Sentinel, 22, 4),
-        unit(0, UnitKind::Sentinel, 22, 8),
-        unit(0, UnitKind::Sentinel, 22, 9),
-        unit(0, UnitKind::Sentinel, 22, 10),
-        unit(1, UnitKind::Sentinel, 28, 2),
-        unit(1, UnitKind::Sentinel, 28, 9),
-    ]);
-    scenario.players[0].bot_config = Some(rung(BotDifficulty::Scrapheap));
-    let state = scenario.build().unwrap();
-    let start = state
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(0) && b.anchor == TilePos::new(3, 5))
-        .unwrap()
-        .id;
-    let mut members = vec![at(&state, 9, 8), at(&state, 10, 8)];
-    members.sort_unstable();
-    let mut opponent = restored_with(
-        &seat_with(&scenario, 0, rung(BotDifficulty::Scrapheap)),
-        &scenario,
-        &state,
-        |json| {
-            json["missions"] = serde_json::json!({
-                "next": 1,
-                "list": [{
-                    "id": 0,
-                    "task": {"task": "defend", "asset": start.0, "phase": {"engage": {"focus": null}}},
-                    "since": 0,
-                    "units": members,
-                    "goal": {"x": 11, "y": 6},
-                }],
-            });
-        },
-    );
-    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
-    assert_eq!(
-        hunts(&commands).len(),
-        2,
-        "premise: both raids are answered: {commands:?}"
-    );
-    assert!(
-        runs(&commands).iter().all(|(units, _)| units != &members),
-        "{commands:?}"
-    );
-    let missions = trace.unwrap().missions;
-    assert!(
-        missions
-            .iter()
-            .any(|mission| mission.id == 0 && mission.phase == Phase::Engage),
-        "{missions:?}"
     );
 }
 

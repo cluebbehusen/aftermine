@@ -381,7 +381,7 @@ fn a_focus_is_not_reissued_while_it_holds() {
 fn mirrored_seats_focus_alike_at_every_rung() {
     // Two raids, one on each base, far enough apart on an arena drawn out in
     // the middle that each defense meets only the raiders at its own base.
-    // No workers, so Scrapheap's two orders go to the defense and its focus.
+    // No workers, so every rung's orders go to the defense and its focus.
     let mut scenario = super::missions::widened(arena(0), 12, 10);
     scenario.units.clear();
     scenario.units.extend([

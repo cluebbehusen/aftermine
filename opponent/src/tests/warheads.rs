@@ -179,11 +179,13 @@ fn a_volley_overwhelms_a_full_lattice_over_works_worth_the_interceptors_it_draws
         "one volley on one aim: {fired:?}"
     );
 
-    // The whole volley is one order, so the narrowest attention fires it.
-    let scrapheap = rung(BotDifficulty::Scrapheap);
-    assert!(crate::decision::allowance(BotDifficulty::Scrapheap) < 3);
-    advance_to(&mut state, 100, &[]);
-    assert_eq!(launches(&decide(&three, &state, scrapheap)).len(), 3);
+    // The whole volley is one order against the seat's attention.
+    let (commands, trace) = seat_with(&three, 0, rung(BotDifficulty::Standard))
+        .act_traced(&state, &mut OwnEvents::default());
+    assert_eq!(launches(&commands).len(), 3);
+    // Beside the volley, one scout is sent on.
+    assert_eq!(runs(&commands).len(), 1, "{commands:?}");
+    assert_eq!(trace.unwrap().unit_orders, 2, "{commands:?}");
 }
 
 #[test]

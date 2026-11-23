@@ -924,36 +924,58 @@ fn a_seat_without_harvesters_queues_one_behind_other_work() {
 
 #[test]
 fn the_allowance_caps_unit_orders_but_not_purchases() {
-    let mut scenario = arena(1_000);
-    for row in [2, 8] {
-        scenario.map[row].replace_range(2..3, "s");
-    }
-    scenario.units.extend((4..=5).map(|x| harvester(0, x, 7)));
+    let scenario = spread_nodes(None);
     let state = scenario.build().unwrap();
-    let observation = ObservationData::fog_honest(&state, PlayerId(0));
-    assert!(
-        [(2, 2), (7, 3), (2, 8), (7, 9)]
-            .into_iter()
-            .all(|(x, y)| observation
-                .known_scrap
-                .iter()
-                .any(|(node, _)| *node == TilePos::new(x, y))),
-        "premise: four nodes near the west Foundry"
-    );
-    let scrapheap = rung(BotDifficulty::Scrapheap);
+    // Standard gives the fewest unit orders a decision.
+    let narrow = rung(BotDifficulty::Standard);
     let (commands, trace) =
-        seat_with(&scenario, 0, scrapheap).act_traced(&state, &mut OwnEvents::default());
+        seat_with(&scenario, 0, narrow).act_traced(&state, &mut OwnEvents::default());
     let trace = trace.unwrap();
-    assert!(
-        trace.allowance < 4,
-        "premise: fewer orders than idle workers"
-    );
     assert_eq!(
         u32::try_from(harvests(&commands).len()).unwrap(),
-        trace.allowance
+        trace.allowance,
+        "{commands:?}"
     );
     assert_eq!(trains(&commands).len(), 1, "a purchase still happens");
     assert_eq!(trace.unit_orders, trace.allowance);
+}
+
+/// Adds a scrap node at each of `nodes` with one idle `player` Harvester
+/// beside it, so the seat's next decision spends an order on each.
+fn busy(scenario: &mut Scenario, player: u8, nodes: &[(i32, i32)]) {
+    for (x, y) in nodes {
+        let (column, row) = (usize::try_from(*x).unwrap(), usize::try_from(*y).unwrap());
+        scenario.map[row].replace_range(column..=column, "s");
+        scenario.units.push(harvester(player, *x, *y + 1));
+    }
+}
+
+/// The field with scrap nodes spread around West's start, each far enough
+/// from the next to be worked by an order of its own, sixteen idle West
+/// Harvesters, and East's `raider` if any.
+fn spread_nodes(raider: Option<(UnitKind, i32, i32)>) -> Scenario {
+    let mut scenario = field();
+    scenario.players[0].scrap = 1_000;
+    for (x, y) in [
+        (2, 3),
+        (2, 19),
+        (9, 3),
+        (9, 19),
+        (12, 8),
+        (12, 14),
+        (6, 1),
+        (6, 21),
+    ] {
+        let (x, y) = (usize::try_from(x).unwrap(), usize::try_from(y).unwrap());
+        scenario.map[y].replace_range(x..=x, "s");
+    }
+    scenario
+        .units
+        .extend((3..=10).flat_map(|x| [harvester(0, x, 9), harvester(0, x, 15)]));
+    if let Some((kind, x, y)) = raider {
+        scenario.units.push(unit(1, kind, x, y));
+    }
+    scenario
 }
 
 #[test]

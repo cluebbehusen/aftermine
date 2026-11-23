@@ -537,8 +537,8 @@ fn a_site_behind_rock_is_kept_from_guns_that_cannot_hit_it() {
 }
 
 #[test]
-fn every_doomed_site_is_cancelled_however_few_orders_the_rung_gives() {
-    // Scrapheap gives two unit orders a decision; cancelling moves no unit.
+fn every_doomed_site_is_cancelled_in_one_decision() {
+    // Cancelling moves no unit, so it never waits on the allowance.
     let anchors = [
         TilePos::new(10, 2),
         TilePos::new(10, 5),
