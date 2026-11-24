@@ -1577,14 +1577,18 @@ fn best_answer(
                 .filter(move |kind| helps(*kind, at, short))
                 .map(Fighter::Unit)
         });
-    // A structure answers only where a worker could put it up, and once
-    // what it needs stands.
+    // A structure answers only where a worker could put it up, once what it
+    // needs stands, and when it fires back at the attackers.
     let builder = observation.my_units.iter().any(|unit| {
         unit.kind.stats().harvest.is_some() && map.component(unit.tile) == short.ground
     });
     let structures = structures
         .iter()
-        .filter(|kind| builder && crate::investments::buildable(observation, **kind))
+        .filter(|kind| {
+            builder
+                && crate::investments::buildable(observation, **kind)
+                && defenses::returns_fire(**kind, &short.attackers)
+        })
         .map(|kind| Fighter::Structure(*kind));
     units
         .chain(structures)

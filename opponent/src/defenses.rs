@@ -666,8 +666,9 @@ pub(crate) fn emergency(
             }) else {
                 continue;
             };
+            // A later asset may have a cheaper answer the bank still buys.
             if ledger.spendable() < price {
-                break;
+                continue;
             }
             match answer {
                 Answer::Raise(building) => {
@@ -707,6 +708,20 @@ enum Answer {
 
 /// How far `kind` strikes buildings, a demolition charge's contact
 /// included; zero when it cannot.
+/// Whether a base-tier `kind` fires back at each of `attackers` it can hit,
+/// judging their reach from the side they come at, as an emergency does.
+pub(crate) fn returns_fire(kind: BuildingKind, attackers: &[(UnitKind, u64)]) -> bool {
+    Cover::of(kind, 0, TilePos::new(0, 0)).is_some_and(|cover| {
+        attackers.iter().all(|(attacker, _)| {
+            let fires = match attacker.stats().domain {
+                Domain::Ground => cover.ground,
+                Domain::Air => cover.air,
+            };
+            !fires || cover.answers(reach(*attacker))
+        })
+    })
+}
+
 pub(crate) fn reach(kind: UnitKind) -> Fx {
     let stats = kind.stats();
     let contact = stats.demolition.map(|charge| charge.contact_range);

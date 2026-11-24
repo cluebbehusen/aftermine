@@ -2011,3 +2011,49 @@ fn no_emergency_gun_goes_up_against_guns_that_outrange_every_one() {
         "{commands:?}"
     );
 }
+
+#[test]
+fn an_unaffordable_bastion_leaves_a_cheaper_emergency_elsewhere_its_turret() {
+    // Lancers by the Foundry call for a Bastion the bank cannot pay for yet;
+    // a Sentinel at a Fabricator far off calls for a Turret it can. With both
+    // producers busy, no unit answers first, and the Fabricator still gets
+    // its Turret.
+    let mut scenario = field();
+    scenario.players[0].scrap = 150;
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Fabricator, 30, 19));
+    scenario
+        .units
+        .extend([harvester(0, 5, 13), harvester(0, 6, 13)]);
+    for y in 9..=11 {
+        scenario.units.push(unit(1, UnitKind::Lancer, 11, y));
+    }
+    scenario.units.push(unit(1, UnitKind::Sentinel, 35, 20));
+    let built = scenario.build().unwrap();
+    let mut value = serde_json::to_value(&built).unwrap();
+    for entry in value["buildings"].as_array_mut().unwrap() {
+        match entry["kind"].as_str() {
+            Some("foundry") if entry["player"] == 0 => {
+                entry["queue"] = serde_json::json!(["sentinel", "sentinel"]);
+            }
+            Some("fabricator") => entry["queue"] = serde_json::json!(["lancer", "lancer"]),
+            _ => {}
+        }
+    }
+    let state: State = serde_json::from_value(value).unwrap();
+    let commands =
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
+    assert!(
+        builds(&commands).iter().any(|(kind, anchor)| {
+            *kind == BuildingKind::Turret
+                && crate::frame::gap(
+                    TilePos::new(30, 19),
+                    BuildingKind::Fabricator.size(),
+                    *anchor,
+                    (1, 1),
+                ) <= 4
+        }),
+        "{commands:?}"
+    );
+}
