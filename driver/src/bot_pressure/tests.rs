@@ -34,7 +34,7 @@ fn named_units(command: &Command) -> Vec<u64> {
 #[test]
 fn shipped_scenarios_script_only_the_attackers_units() {
     let scenarios = shipped();
-    assert_eq!(scenarios.len(), 5);
+    assert_eq!(scenarios.len(), 6);
     for pressure in &scenarios {
         pressure.scenario.build().unwrap();
         let seats = &pressure.scenario.players;
@@ -101,6 +101,27 @@ fn a_standing_foundry_passes_and_an_unstaged_threat_is_an_error() {
             .verdict(&state, defender, attacker)
             .is_err()
     );
+}
+
+#[test]
+fn raiders_must_all_fall_with_the_foundry_standing() {
+    let pressure = named("lancer harass");
+    let state = pressure.scenario.build().unwrap();
+    let (defender, attacker) = (PlayerId(pressure.defender), PlayerId(pressure.attacker));
+    let watch = Watch::new(Check::DestroysAttackers, &state, defender);
+    let (passed, detail) = watch.verdict(&state, defender, attacker).unwrap();
+    assert!(!passed, "{detail}");
+    assert_eq!(detail, "attackers still standing: 2");
+
+    let mut cleared = pressure.scenario.clone();
+    cleared
+        .units
+        .retain(|unit| unit.player != pressure.attacker);
+    let state = cleared.build().unwrap();
+    let (passed, detail) = Watch::new(Check::DestroysAttackers, &state, defender)
+        .verdict(&state, defender, attacker)
+        .unwrap();
+    assert!(passed, "{detail}");
 }
 
 #[test]
