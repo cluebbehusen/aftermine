@@ -26,42 +26,15 @@ pub const MEASURED: [UnitKind; 10] = [
     UnitKind::Condor,
 ];
 
-/// A fingerprint of every unit kind's stats that decide a fight. The chart
-/// is stale once this differs from the fingerprint it was measured with.
+/// A fingerprint of every unit kind's stats, all of them, so that no change
+/// that could decide a fight slips past: weapons and their projectiles,
+/// movement, turning, aiming and bracing alike. The chart is stale once this
+/// differs from the fingerprint it was measured with.
 #[must_use]
 pub fn fingerprint() -> u64 {
-    let stats: Vec<_> = UnitKind::ALL
+    let stats: Vec<String> = UnitKind::ALL
         .iter()
-        .map(|kind| {
-            let stats = kind.stats();
-            let weapons: Vec<_> = stats
-                .weapons
-                .iter()
-                .map(|weapon| {
-                    (
-                        weapon.damage,
-                        weapon.range,
-                        weapon.minimum_range,
-                        weapon.cooldown_ticks,
-                        (weapon.targets.ground, weapon.targets.air),
-                        weapon.splash,
-                        weapon.indirect,
-                        weapon.building_damage,
-                        weapon.projectile.is_some(),
-                    )
-                })
-                .collect();
-            let defense = stats
-                .point_defense
-                .map(|defense| (defense.charges, defense.radius, defense.recharge_ticks));
-            (
-                *kind,
-                (stats.cost, stats.max_hp, stats.speed, stats.radius),
-                stats.domain,
-                weapons,
-                defense,
-            )
-        })
+        .map(|kind| format!("{kind:?} {:?}", kind.stats()))
         .collect();
     chassis::hash::state_hash(&stats)
 }

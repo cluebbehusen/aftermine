@@ -1130,18 +1130,19 @@ fn defenders_short_of_an_escorted_gun_gather_beside_the_foundry_first() {
     // the gun one by one would die to them on the way, so a seat that
     // gathers waits beside the Foundry until it matches them and the gun,
     // then goes at the gun; Scrapheap, which defends piecemeal, goes at once.
-    let staged = |sentinels: &[(i32, i32)]| {
+    // Wardens, which trade with Lancers rather than feed them.
+    let staged = |defenders: &[(i32, i32)]| {
         let mut scenario = shelling(&[0]);
         escort(&mut scenario, &[0]);
         // Defenders closed up beside the picket rather than spread over the
         // garrison's spots, which would first send them to close up.
-        if !sentinels.is_empty() {
+        if !defenders.is_empty() {
             scenario.units.retain(|spec| {
                 spec.player != 0 || !GARRISON.contains(&turned(0, (spec.x, spec.y)))
             });
         }
-        for (x, y) in sentinels {
-            scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
+        for (x, y) in defenders {
+            scenario.units.push(unit(0, UnitKind::Warden, *x, *y));
         }
         let mut state = scenario.build().unwrap();
         open_fire(&mut state, &[0]);

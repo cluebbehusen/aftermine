@@ -185,12 +185,17 @@ impl Missions {
             // it, not only the enemies that came near the buildings: a line
             // held a few tiles behind them joins in. Going at an escorted
             // gun, they meet what stands near it too.
-            let meets = grounded
-                .filter(|_| gathering)
-                .map_or(0, |goal| meeting::opposed(observation, memory, goal))
-                .max(shelling.filter(|_| escorted).map_or(0, |threat| {
-                    meeting::opposed(observation, memory, threat.tile)
-                }));
+            let meet = |place: TilePos| -> u64 {
+                meeting::joiners(observation, memory, place)
+                    .into_iter()
+                    .map(|(kind, worth)| siege.trades.enemy(kind, worth))
+                    .sum()
+            };
+            let meets = grounded.filter(|_| gathering).map_or(0, meet).max(
+                shelling
+                    .filter(|_| escorted)
+                    .map_or(0, |threat| meet(threat.tile)),
+            );
             let pressing = siege.pressing_value(meets);
             let besides: Vec<TilePos> = siege.batteries.iter().map(|(_, beside)| *beside).collect();
             // An escort beside a battery is pressing already: it counts once.
@@ -1246,9 +1251,9 @@ struct Trades {
     /// ground attackers and against the air ones; empty when every kind
     /// counts at its price.
     own: Vec<(UnitKind, [u64; 2])>,
-    /// Per mille of its price each attacking kind is worth against the
-    /// seat's units; empty when every kind counts at its price.
-    enemy: Vec<(UnitKind, u64)>,
+    /// The seat's units, each kind with its value: what an enemy is weighed
+    /// against. None when every kind counts at its price.
+    against: Option<Vec<(UnitKind, u64)>>,
 }
 
 impl Trades {
@@ -1270,18 +1275,12 @@ impl Trades {
                 .collect()
         };
         let (ground, air) = (flying(Domain::Ground), flying(Domain::Air));
-        let mut kinds: Vec<UnitKind> = attackers.iter().map(|(kind, _)| *kind).collect();
-        kinds.sort_unstable();
-        kinds.dedup();
         Self {
             own: UnitKind::ALL
                 .iter()
                 .map(|kind| (*kind, [weight(*kind, &ground), weight(*kind, &air)]))
                 .collect(),
-            enemy: kinds
-                .into_iter()
-                .map(|kind| (kind, weight(kind, own)))
-                .collect(),
+            against: Some(own.to_vec()),
         }
     }
 
@@ -1294,13 +1293,13 @@ impl Trades {
             .map_or([1_000; 2], |(_, weights)| *weights)
     }
 
-    /// What an attacker worth `value` at its price is worth against the
-    /// seat's units.
+    /// What an enemy worth `value` at its price is worth against the seat's
+    /// units, those that cannot fire on it included: Buzzards over Lancers
+    /// destroy them freely, and that is the threat an air defense answers.
     fn enemy(&self, kind: UnitKind, value: u64) -> u64 {
-        self.enemy
-            .iter()
-            .find(|(enemy, _)| *enemy == kind)
-            .map_or(value, |(_, weight)| value * weight / 1_000)
+        self.against
+            .as_ref()
+            .map_or(value, |against| value * weight(kind, against) / 1_000)
     }
 
     /// `unit`'s [`force`] against ground and air, each weighed by what it
