@@ -150,7 +150,7 @@ impl Ledger {
         });
     }
 
-    fn upgrade(&mut self, building: BuildingId, price: u32) {
+    pub(crate) fn upgrade(&mut self, building: BuildingId, price: u32) {
         self.decision.spent += price;
         self.decision.purchases.push(Purchase::Upgrade { building });
         self.push(Command::UpgradeBuilding { building });
@@ -1545,7 +1545,11 @@ const PAYS_BACK: u64 = 500;
 const SAVE_TICKS: u64 = 300;
 
 /// The structures an emergency puts up against a short defense's attackers.
-const EMERGENCY_KINDS: [BuildingKind; 2] = [BuildingKind::Turret, BuildingKind::FlakTurret];
+const EMERGENCY_KINDS: [BuildingKind; 3] = [
+    BuildingKind::Turret,
+    BuildingKind::Bastion,
+    BuildingKind::FlakTurret,
+];
 
 /// Scrap the bank gains in [`SAVE_TICKS`] at `income` a minute.
 fn soon(income: u32) -> u64 {
@@ -1574,13 +1578,18 @@ fn best_answer(
                 .filter(move |kind| helps(*kind, at, short))
                 .map(Fighter::Unit)
         });
-    // A structure answers only where a worker could put it up.
+    // A structure answers only where a worker could put it up, once what it
+    // needs stands, and when it fires back at the attackers.
     let builder = observation.my_units.iter().any(|unit| {
         unit.kind.stats().harvest.is_some() && map.component(unit.tile) == short.ground
     });
     let structures = structures
         .iter()
-        .filter(|_| builder)
+        .filter(|kind| {
+            builder
+                && crate::investments::buildable(observation, **kind)
+                && defenses::returns_fire(**kind, &short.attackers)
+        })
         .map(|kind| Fighter::Structure(*kind));
     units
         .chain(structures)

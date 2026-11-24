@@ -255,7 +255,7 @@ fn calm<'a>(
     }
 }
 
-fn arena(scrap: u32) -> Scenario {
+pub(crate) fn arena(scrap: u32) -> Scenario {
     let seat = |name: &str| PlayerSpec {
         name: name.into(),
         team: None,

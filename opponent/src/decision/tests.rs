@@ -36,3 +36,65 @@ fn one_shortfall_s_answer_frees_no_savings_while_another_has_none() {
     );
     assert_eq!(awaited(&[raid, siege]), None);
 }
+
+/// What a short defense keeps for three `attacker`s that only structures
+/// could answer, with a Fabricator standing or not.
+fn kept_against(attacker: UnitKind, fabricator: bool) -> Option<u32> {
+    let mut scenario = crate::tests::arena(400);
+    if fabricator {
+        scenario
+            .buildings
+            .push(aftermine_sim::scenario::BuildingSpec {
+                player: 0,
+                kind: BuildingKind::Fabricator,
+                x: 3,
+                y: 8,
+            });
+    }
+    let state = scenario.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let map = MapModel::from_scenario(&scenario).unwrap();
+    let frame = HomeFrame::of(&observation, &map).unwrap();
+    // The Fabricator trains nothing here: only structures can answer.
+    let producers: Vec<_> = producers(&observation, frame, 0)
+        .into_iter()
+        .filter(|producer| producer.building.kind != BuildingKind::Fabricator)
+        .collect();
+    let ground = observation
+        .my_buildings
+        .first()
+        .and_then(|foundry| map.component(foundry.anchor));
+    let cost = u64::from(attacker.stats().cost) * 3;
+    let siege = Shortfall {
+        ground,
+        gap: [cost, 0],
+        attackers: vec![(attacker, cost)],
+        read: true,
+    };
+    awaited(&observation, &map, &producers, &[siege], 0, 400)
+}
+
+#[test]
+fn a_bastion_the_seat_can_build_frees_savings_against_lancers() {
+    // Lancers outrange a Turret, but not a Bastion: once a Fabricator stands,
+    // the Bastion pays back and frees the scrap kept for the saving target.
+    let kind = UnitKind::Lancer;
+    assert_eq!(
+        kept_against(kind, false),
+        None,
+        "no Bastion without a Fabricator"
+    );
+    assert_eq!(
+        kept_against(kind, true),
+        Some(0),
+        "a Bastion frees the savings"
+    );
+}
+
+#[test]
+fn a_bastion_frees_no_savings_against_bombards_that_outrange_it() {
+    // Bombards match a Bastion's range from its footprint's centre, so they
+    // shell it from beyond its reach: the emergency puts none up, and the
+    // scrap kept for the saving target stays kept.
+    assert_eq!(kept_against(UnitKind::Bombard, true), None);
+}
