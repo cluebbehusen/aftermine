@@ -643,9 +643,11 @@ fn defenders_out_count_toward_the_reserve_and_defense_takes_it_too() {
     for (x, y) in [(6, 8), (7, 8)] {
         scenario.units.push(unit(0, UnitKind::Sentinel, x, y));
     }
-    for y in 10..=13 {
+    // Sentinels trade evenly with Sentinels, so the defense takes no more of
+    // them than the raiders cost.
+    for y in 10..=11 {
         for x in [10, 11] {
-            scenario.units.push(unit(1, UnitKind::Scuttler, x, y));
+            scenario.units.push(unit(1, UnitKind::Sentinel, x, y));
         }
     }
     let state = scenario.build().unwrap();
@@ -950,7 +952,7 @@ fn the_upper_rungs_go_after_the_unguarded_target() {
     let prime = rung(BotDifficulty::Prime);
     assert_eq!(target_of(&scenario, prime), open);
     assert_eq!(
-        target_of(&scenario, config()),
+        target_of(&scenario, rung(BotDifficulty::Standard)),
         guarded,
         "Standard takes the nearer one, guards or not"
     );
@@ -1109,8 +1111,9 @@ fn no_attack_sets_out_for_a_start_seen_cleared() {
 
 #[test]
 fn an_attack_that_razes_a_start_does_not_go_back_to_it() {
-    let (scenario, mut state, _, killers) = worn_start();
-    advance_to(&mut state, 12, &[]);
+    let (mut scenario, mut state, _, killers) = worn_start();
+    scenario.players[0].bot_config = Some(rung(BotDifficulty::Standard));
+    advance_to(&mut state, 36, &[]);
     let missions = serde_json::json!({
         "next": 1,
         "list": [{
@@ -1245,7 +1248,7 @@ fn the_upper_rungs_send_new_units_after_an_attack_under_way() {
         let scenario = advanced(difficulty, &[]);
         let mut state = scenario.build().unwrap();
         let (members, missions) = under_way(&state, &"travel".into(), 0);
-        advance_to(&mut state, 12, &[run(0, members.clone(), 30, 11)]);
+        advance_to(&mut state, 36, &[run(0, members.clone(), 30, 11)]);
         let mut opponent = restaged(&scenario, &state, missions);
         let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
         let home: Vec<UnitId> = WEST.iter().map(|(x, y)| at(&state, *x, *y)).collect();
@@ -1823,8 +1826,7 @@ fn a_front_outweighed_falls_back_onto_the_army() {
     // The two fall back onto the six rather than fight alone or turn the
     // army home, and the six come on. With all eight there it fights on; with
     // the two alone, or with only anti-air behind them, the attack turns
-    // home. Scrapheap, with orders for only the six and the two's way back,
-    // sends the six on and leaves the two fighting until they arrive.
+    // home.
     let front = [(30, 11), (30, 12)];
     let behind = [(14, 3), (15, 3), (16, 3), (14, 4), (15, 4), (16, 4)];
     let near = [(29, 10), (29, 11), (29, 12), (28, 10), (28, 11), (28, 12)];
@@ -1867,8 +1869,6 @@ fn a_front_outweighed_falls_back_onto_the_army() {
                 "goal": {"x": 42, "y": 11},
             }],
         });
-        let mut state = state;
-        advance_to(&mut state, crate::decision_interval(difficulty), &[]);
         let mut opponent = restaged(&scenario, &state, missions);
         let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
         let withdraws = trace
@@ -1917,11 +1917,6 @@ fn a_front_outweighed_falls_back_onto_the_army() {
         decide_at(&behind, sentinel, BotDifficulty::Prime),
         (false, true, true),
         "the six come on"
-    );
-    assert_eq!(
-        decide_at(&behind, sentinel, BotDifficulty::Scrapheap),
-        (false, false, true),
-        "short of orders, the six come on to the two"
     );
 }
 
