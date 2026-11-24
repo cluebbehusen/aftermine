@@ -1901,3 +1901,209 @@ fn aircraft_that_hit_ground_beside_a_site_hold_it() {
     assert!(verdict(false), "premise: the Sentinels overrun the site");
     assert!(!verdict(true), "Buzzards beside it hold them");
 }
+
+/// The arena with West's Fabricator up and a Turret east of its Foundry,
+/// and East's `attackers` beyond it.
+fn turret_under(attackers: &[(UnitKind, i32, i32)]) -> Scenario {
+    let mut scenario = arena(600);
+    scenario.buildings.extend([
+        building(0, BuildingKind::Fabricator, 3, 8),
+        building(0, BuildingKind::Turret, 7, 5),
+    ]);
+    for (kind, x, y) in attackers {
+        scenario.units.push(unit(1, *kind, *x, *y));
+    }
+    scenario
+}
+
+#[test]
+fn lancers_that_outrange_the_turret_draw_its_upgrade() {
+    // Three Lancers outrange the Turret guarding the Foundry: it answers
+    // none of them, so it covers nothing. A Heavy Turret reaches them, and
+    // raising this one holds them off for less than a new Bastion would.
+    let lancers = [
+        (UnitKind::Lancer, 12, 4),
+        (UnitKind::Lancer, 12, 5),
+        (UnitKind::Lancer, 12, 6),
+    ];
+    let scenario = turret_under(&lancers);
+    let state = scenario.build().unwrap();
+    let turret = state
+        .buildings()
+        .iter()
+        .find(|building| building.player == PlayerId(0) && building.kind == BuildingKind::Turret)
+        .unwrap()
+        .id;
+    for difficulty in [BotDifficulty::Standard, BotDifficulty::Prime] {
+        let commands =
+            seat_with(&scenario, 0, rung(difficulty)).act(&state, &mut OwnEvents::default());
+        let raised: Vec<BuildingId> = commands_of(&commands, |command| match command {
+            Command::UpgradeBuilding { building } => Some(*building),
+            _ => None,
+        });
+        assert_eq!(raised, [turret], "{difficulty:?}: {commands:?}");
+    }
+}
+
+#[test]
+fn lancers_with_no_gun_to_raise_draw_an_emergency_bastion() {
+    // The same Lancers with no gun beside the Foundry: a Bastion outranges
+    // them, and a new Turret would not.
+    let mut scenario = arena(600);
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Fabricator, 3, 8));
+    for y in 4..=6 {
+        scenario.units.push(unit(1, UnitKind::Lancer, 12, y));
+    }
+    let state = scenario.build().unwrap();
+    let commands =
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
+    assert!(
+        builds(&commands)
+            .iter()
+            .any(|(kind, anchor)| *kind == BuildingKind::Bastion
+                && crate::frame::gap(FOUNDRY, (2, 2), *anchor, (2, 2)) <= 3),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn an_emergency_against_what_a_turret_answers_stays_a_turret() {
+    // A Sentinel near the base, with a Fabricator up and no gun yet: a
+    // Turret holds it off for less than a Bastion would.
+    let mut scenario = arena(600);
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Fabricator, 3, 8));
+    scenario.units.push(unit(1, UnitKind::Sentinel, 9, 5));
+    let state = scenario.build().unwrap();
+    let commands =
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
+    let guns: Vec<BuildingKind> = builds(&commands)
+        .into_iter()
+        .map(|(kind, _)| kind)
+        .filter(|kind| matches!(kind, BuildingKind::Turret | BuildingKind::Bastion))
+        .collect();
+    assert!(
+        !guns.is_empty() && guns.iter().all(|kind| *kind == BuildingKind::Turret),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn no_emergency_gun_goes_up_against_guns_that_outrange_every_one() {
+    // Bombards outrange both a Turret and a Bastion: no emergency gun answers
+    // them, so none goes up; defenders go at them instead.
+    let scenario = turret_under(&[
+        (UnitKind::Bombard, 15, 4),
+        (UnitKind::Bombard, 15, 6),
+        (UnitKind::Kestrel, 11, 5),
+    ]);
+    let state = scenario.build().unwrap();
+    let commands =
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
+    assert!(
+        builds(&commands)
+            .iter()
+            .all(|(kind, _)| !matches!(kind, BuildingKind::Turret | BuildingKind::Bastion)),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn an_unaffordable_bastion_leaves_a_cheaper_emergency_elsewhere_its_turret() {
+    // Lancers by the Foundry call for a Bastion the bank cannot pay for yet;
+    // a Sentinel at a Fabricator far off calls for a Turret it can. With both
+    // producers busy, no unit answers first, and the Fabricator still gets
+    // its Turret.
+    let mut scenario = field();
+    scenario.players[0].scrap = 150;
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Fabricator, 30, 19));
+    scenario
+        .units
+        .extend([harvester(0, 5, 13), harvester(0, 6, 13)]);
+    for y in 9..=11 {
+        scenario.units.push(unit(1, UnitKind::Lancer, 11, y));
+    }
+    scenario.units.push(unit(1, UnitKind::Sentinel, 35, 20));
+    let built = scenario.build().unwrap();
+    let mut value = serde_json::to_value(&built).unwrap();
+    for entry in value["buildings"].as_array_mut().unwrap() {
+        match entry["kind"].as_str() {
+            Some("foundry") if entry["player"] == 0 => {
+                entry["queue"] = serde_json::json!(["sentinel", "sentinel"]);
+            }
+            Some("fabricator") => entry["queue"] = serde_json::json!(["lancer", "lancer"]),
+            _ => {}
+        }
+    }
+    let state: State = serde_json::from_value(value).unwrap();
+    let commands =
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
+    assert!(
+        builds(&commands).iter().any(|(kind, anchor)| {
+            *kind == BuildingKind::Turret
+                && crate::frame::gap(
+                    TilePos::new(30, 19),
+                    BuildingKind::Fabricator.size(),
+                    *anchor,
+                    (1, 1),
+                ) <= 4
+        }),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn a_turret_still_firing_at_some_attackers_is_not_raised_under_them() {
+    // Lancers outrange the Turret, but the Sentinels with them do not, and
+    // the Turret is firing at those: raising it would take it down as a
+    // site in the middle of the fight.
+    let scenario = turret_under(&[
+        (UnitKind::Lancer, 12, 4),
+        (UnitKind::Lancer, 12, 5),
+        (UnitKind::Lancer, 12, 6),
+        (UnitKind::Sentinel, 10, 5),
+        (UnitKind::Sentinel, 10, 6),
+    ]);
+    let state = scenario.build().unwrap();
+    let commands =
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
+    let raised: Vec<BuildingId> = commands_of(&commands, |command| match command {
+        Command::UpgradeBuilding { building } => Some(*building),
+        _ => None,
+    });
+    assert!(raised.is_empty(), "{commands:?}");
+}
+
+#[test]
+fn a_deep_bore_refit_beside_the_foundry_holds_back_no_emergency() {
+    // An Extractor beside the Foundry is being refitted into a Deep Bore. It
+    // is no gun, so a Sentinel by the base still draws an emergency Turret.
+    let mut scenario = arena(600);
+    scenario.map[4].replace_range(8..=8, "E");
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Extractor, 8, 4));
+    scenario.units.push(unit(1, UnitKind::Sentinel, 11, 5));
+    let built = scenario.build().unwrap();
+    let mut value = serde_json::to_value(&built).unwrap();
+    for entry in value["buildings"].as_array_mut().unwrap() {
+        if entry["kind"] == "extractor" {
+            entry["tier"] = 1.into();
+            entry["phase"] = serde_json::json!({ "phase": "upgrading", "progress": 1 });
+        }
+    }
+    let state: State = serde_json::from_value(value).unwrap();
+    let commands =
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
+    assert!(
+        builds(&commands)
+            .iter()
+            .any(|(kind, _)| *kind == BuildingKind::Turret),
+        "{commands:?}"
+    );
+}
