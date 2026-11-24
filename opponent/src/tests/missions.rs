@@ -3653,3 +3653,58 @@ fn an_armed_aircraft_in_sight_comes_before_a_search() {
     );
     assert!(!searched(&state));
 }
+
+#[test]
+fn a_defender_chasing_past_an_expansion_the_start_cannot_walk_to_runs_back() {
+    // A chasm cuts West's start off from a second West Foundry. A defender
+    // that chased past that Foundry, out of reach of every West building,
+    // runs back to its post: over ground the start does not reach, the
+    // distance from home cannot tell it is past its fight.
+    let mut scenario = field();
+    for row in scenario.map.iter_mut().take(23).skip(1) {
+        row.replace_range(10..11, "~");
+    }
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Foundry, 18, 10));
+    scenario.units.extend([
+        unit(0, UnitKind::Sentinel, 17, 14),
+        unit(0, UnitKind::Sentinel, 18, 14),
+        unit(0, UnitKind::Sentinel, 19, 14),
+        unit(0, UnitKind::Sentinel, 36, 18),
+        unit(1, UnitKind::Sentinel, 24, 11),
+    ]);
+    let state = scenario.build().unwrap();
+    let remote = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry && b.anchor.x == 18)
+        .unwrap();
+    let chaser = at(&state, 36, 18);
+    let mut members = vec![
+        at(&state, 17, 14),
+        at(&state, 18, 14),
+        at(&state, 19, 14),
+        chaser,
+    ];
+    members.sort_unstable();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {"task": "defend", "asset": remote.id.0, "phase": {"engage": {"focus": null}}},
+                "since": 0,
+                "units": members,
+                "goal": {"x": 24, "y": 11},
+            }],
+        });
+    });
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    assert!(
+        runs(&commands)
+            .iter()
+            .any(|(units, _)| units.contains(&chaser)),
+        "{commands:?}"
+    );
+}

@@ -18,7 +18,7 @@ use super::{
 };
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, gap, ring};
-use crate::map::MapModel;
+use crate::map::{MapModel, UNREACHABLE};
 use crate::memory::Memory;
 use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use aftermine_sim::scenario::BotDifficulty;
@@ -708,7 +708,8 @@ fn idle_at_site(observation: &ObservationData, members: &[UnitId], pursuit: Purs
 /// Past is farther from every own building than the `siege`'s threats
 /// stand, with the member's own reach on top, and farther from home over the
 /// ground than its fight at `goal` by that reach: one still on its way out to
-/// a fight away from the buildings is not chasing. Returns those sent
+/// a fight away from the buildings is not chasing. Where the start's ground
+/// does not reach, only the reach of the buildings counts. Returns those sent
 /// running.
 fn recall(
     (observation, memory, map): (&ObservationData, &Memory, &MapModel),
@@ -719,9 +720,15 @@ fn recall(
     let (Some(post), Pursuit::Hunt | Pursuit::Quarry(_)) = (post, pursuit) else {
         return Vec::new();
     };
-    // Ground distance from the seat's start, in tenths of a tile.
-    let out = |tile: TilePos| u32::from(map.distance(observation.me, tile));
+    // Ground distance from the seat's start, in tenths of a tile. On ground
+    // the start does not reach, out of reach of every building is past.
+    let out = |tile: TilePos| map.distance(observation.me, tile);
     let fight = out(goal);
+    let beyond = |at: u16, own: i32| {
+        at == UNREACHABLE
+            || fight == UNREACHABLE
+            || u32::from(at) > u32::from(fight) + 10 * own.unsigned_abs()
+    };
     let area = siege
         .units
         .iter()
@@ -736,8 +743,7 @@ fn recall(
         .filter(|unit| !unit.kind.stats().weapons.is_empty())
         .filter(|unit| {
             let own = crate::defenses::reach(unit.kind).ceil().to_num::<i32>();
-            !defended(observation, unit.tile, area + own)
-                && out(unit.tile) > fight.saturating_add(10 * own.unsigned_abs())
+            !defended(observation, unit.tile, area + own) && beyond(out(unit.tile), own)
         })
         .filter(|unit| {
             !exposed(observation, unit) || outweighed((observation, memory), members, unit)
