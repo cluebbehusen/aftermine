@@ -85,6 +85,10 @@ fn crowded(skyhooks: &[(i32, i32)]) -> Scenario {
 
 const MORE_SKYHOOKS: [(i32, i32); 4] = [(10, 4), (10, 19), (11, 6), (11, 17)];
 
+/// Scrap nodes at West's edge of the strait, each with an idle Harvester
+/// beside it in [`busy`].
+const BUSY: [(i32, i32); 4] = [(1, 1), (1, 20), (5, 1), (5, 20)];
+
 /// `state` with every Sentinel at half health, so each counts half its value
 /// toward a lift and the stance minimum takes more carriers.
 fn halved(mut state: State) -> State {
@@ -402,12 +406,14 @@ fn a_lift_loads_every_carrier_its_need_calls_for_and_they_leave_together() {
 }
 
 #[test]
-fn a_scrapheap_seat_loads_over_several_decisions_and_lands_its_riders() {
-    let scenario = crowded(&MORE_SKYHOOKS);
+fn a_seat_short_of_orders_loads_over_several_decisions_and_lands_its_riders() {
+    // Idle Harvesters take most of the first decision's orders.
+    let mut scenario = crowded(&MORE_SKYHOOKS);
+    busy(&mut scenario, 0, &BUSY);
     let model = map(&scenario);
     let island = model.component(EAST_START);
     let mut state = halved(scenario.build().unwrap());
-    let mut opponent = seat_with(&scenario, 0, turtle(BotDifficulty::Scrapheap));
+    let mut opponent = seat_with(&scenario, 0, turtle(BotDifficulty::Standard));
     let mut loading = Vec::new();
     let landed = |state: &State| {
         state.units().iter().any(|unit| {
@@ -425,22 +431,23 @@ fn a_scrapheap_seat_loads_over_several_decisions_and_lands_its_riders() {
         }
         state.tick(&commands);
     }
-    let attention = crate::decision::allowance(BotDifficulty::Scrapheap);
+    let attention = crate::decision::allowance(BotDifficulty::Standard);
     assert!(
         loading.len() > 1
             && loading
                 .iter()
                 .all(|issued| u32::try_from(*issued).unwrap() <= attention),
-        "carriers load over several decisions, each within Scrapheap's attention: {loading:?}"
+        "carriers load over several decisions, each within the seat's attention: {loading:?}"
     );
 }
 
 #[test]
 fn a_mid_load_checkpoint_resumes_identically() {
     let mut scenario = crowded(&MORE_SKYHOOKS);
-    scenario.players[0].bot_config = Some(turtle(BotDifficulty::Scrapheap));
+    busy(&mut scenario, 0, &BUSY);
+    scenario.players[0].bot_config = Some(turtle(BotDifficulty::Standard));
     let mut state = halved(scenario.build().unwrap());
-    let mut opponent = seat_with(&scenario, 0, turtle(BotDifficulty::Scrapheap));
+    let mut opponent = seat_with(&scenario, 0, turtle(BotDifficulty::Standard));
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
     let mission = lift(&trace.unwrap().missions).expect("a lift forms");
     assert_eq!(mission.phase, Phase::Load);
@@ -845,11 +852,11 @@ fn emptied_carriers_short_of_orders_fly_home_before_the_lift_fights() {
     let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
 
     // The same units, set down on East's island with an interceptor over the
-    // strait that the flight home must go around, and two idle Harvesters at
-    // home taking two of a Scrapheap seat's three orders.
+    // strait that the flight home must go around, and idle Harvesters at
+    // home taking every one of a Standard seat's orders.
     let mut landed = strait();
     landed.players[0].bot_config = Some(BotConfig::new(
-        BotDifficulty::Scrapheap,
+        BotDifficulty::Standard,
         BotStance::Balanced,
         11,
     ));
@@ -863,11 +870,13 @@ fn emptied_carriers_short_of_orders_fly_home_before_the_lift_fights() {
         (spec.x, spec.y) = (x, y);
     }
     landed.units.push(unit(1, UnitKind::Talon, 20, 8));
-    for (x, y) in [(2, 14), (2, 15)] {
-        landed.map[y].replace_range(x..=x, "s");
+    for y in 12..=17 {
+        landed.map[y].replace_range(2..=2, "s");
+        let row = i32::try_from(y).unwrap();
+        landed
+            .units
+            .extend([harvester(0, 5, row), harvester(0, 6, row)]);
     }
-    landed.units.push(harvester(0, 4, 14));
-    landed.units.push(harvester(0, 4, 15));
     let mut state = landed.build().unwrap();
     let interceptor = [(at(&state, 20, 8), UnitKind::Talon, TilePos::new(20, 8))];
     let restored = Opponent::restore(&checkpoint, &landed, &state, map(&landed)).unwrap();
@@ -875,7 +884,11 @@ fn emptied_carriers_short_of_orders_fly_home_before_the_lift_fights() {
     let carriers: Vec<UnitId> = skyhooks(&state, 0).iter().map(|unit| unit.id).collect();
 
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
-    assert_eq!(harvests(&commands).len(), 2, "premise: {commands:?}");
+    assert_eq!(
+        u32::try_from(harvests(&commands).len()).unwrap(),
+        crate::decision::allowance(BotDifficulty::Standard),
+        "premise: {commands:?}"
+    );
     assert!(
         runs(&commands)
             .iter()
@@ -1526,12 +1539,12 @@ fn lifts(mut opponent: Opponent, state: &State) -> bool {
 #[test]
 fn a_lift_waits_for_a_recent_look_at_its_target_except_at_the_lowest_rung() {
     let mut state = strait().build().unwrap();
-    advance_to(&mut state, 1_200, &[]);
+    advance_to(&mut state, 1_800, &[]);
     let after = |difficulty, looked| {
         let (_, opponent) = recalled(rung(difficulty), &state, looked, serde_json::json!([]));
         lifts(opponent, &state)
     };
-    assert!(after(BotDifficulty::Standard, 1_200), "a fresh look");
+    assert!(after(BotDifficulty::Standard, 1_800), "a fresh look");
     assert!(
         !after(BotDifficulty::Standard, 0),
         "the look has gone stale"
@@ -1622,9 +1635,9 @@ fn the_upper_rungs_time_a_lift_to_bombers_clearing_its_target() {
     bombed.units.push(unit(0, UnitKind::Condor, 12, 2));
     let mut state = bombed.build().unwrap();
     let condor = at(&state, 12, 2);
-    advance_to(&mut state, 12, &[run(0, vec![condor], 30, 4)]);
+    advance_to(&mut state, 36, &[run(0, vec![condor], 30, 4)]);
     let mut alone = plain.build().unwrap();
-    advance_to(&mut alone, 12, &[]);
+    advance_to(&mut alone, 36, &[]);
     // Six Sentinels on East's island that West's eight alone do not
     // outweigh by any rung's margin.
     let island = remembered((0..6).map(|index| {
@@ -2255,21 +2268,37 @@ fn shoals() -> Scenario {
 
 #[test]
 fn mirrored_seats_walk_counterpart_islands_first_when_orders_run_out() {
-    let scenario = shoals();
-    let mut state = scenario.build().unwrap();
-    advance_to(&mut state, 24, &[]);
-    let scrapheap = rung(BotDifficulty::Scrapheap);
+    // Each seat's idle Harvesters take most of its orders, mirrored.
+    let mut scenario = shoals();
+    for (x, y) in [(1, 1), (6, 1), (1, 20), (6, 20)] {
+        for (player, (node, workers)) in [
+            (0, ((x, y), [(x, y + 1), (x + 1, y + 1)])),
+            (1, ((47 - x, 23 - y), [(47 - x, 22 - y), (46 - x, 22 - y)])),
+        ] {
+            let (column, row) = (
+                usize::try_from(node.0).unwrap(),
+                usize::try_from(node.1).unwrap(),
+            );
+            scenario.map[row].replace_range(column..=column, "s");
+            for (wx, wy) in workers {
+                scenario.units.push(harvester(player, wx, wy));
+            }
+        }
+    }
+    let state = scenario.build().unwrap();
+    let narrow = rung(BotDifficulty::Standard);
     let (west, trace) =
-        seat_with(&scenario, 0, scrapheap).act_traced(&state, &mut OwnEvents::default());
+        seat_with(&scenario, 0, narrow).act_traced(&state, &mut OwnEvents::default());
     let walking = west
         .iter()
         .filter(|command| matches!(command.command, Command::Attack { .. }))
         .count();
     assert_eq!(
-        u32::try_from(walking).unwrap(),
+        u32::try_from(walking + harvests(&west).len()).unwrap(),
         trace.unwrap().allowance,
-        "premise: the orders run out before the third island: {west:?}"
+        "premise: the orders run out: {west:?}"
     );
-    let east = seat_with(&scenario, 1, scrapheap).act(&state, &mut OwnEvents::default());
+    assert!(walking < 3, "premise: before the third island: {west:?}");
+    let east = seat_with(&scenario, 1, narrow).act(&state, &mut OwnEvents::default());
     assert_eq!(mirror(&state, west), east);
 }

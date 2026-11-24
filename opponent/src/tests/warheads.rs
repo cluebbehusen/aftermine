@@ -139,15 +139,17 @@ fn a_strike_takes_the_uncovered_block_over_one_under_interceptors() {
 fn a_strike_holds_until_it_can_get_past_the_known_interceptors() {
     let lattice = [(BuildingKind::Lattice, 36, 9)];
     let one = strikes(&[(6, 14)], &BLOCK, &lattice, &[(31, 5)]);
-    let state = staged(&one, 1);
+    let mut state = staged(&one, 1);
+    advance_to(&mut state, 36, &[]);
     assert!(
-        launches(&decide(&one, &state, config())).is_empty(),
+        launches(&decide(&one, &state, rung(BotDifficulty::Standard))).is_empty(),
         "one warhead would be stopped"
     );
 
     let two = strikes(&[(6, 14), (6, 17)], &BLOCK, &lattice, &[(31, 5)]);
-    let state = staged(&two, 1);
-    let fired = launches(&decide(&two, &state, config()));
+    let mut state = staged(&two, 1);
+    advance_to(&mut state, 36, &[]);
+    let fired = launches(&decide(&two, &state, rung(BotDifficulty::Standard)));
     assert_eq!(fired.len(), 2, "{fired:?}");
     assert!(fired.iter().all(|(_, target)| on(&BLOCK, *target)));
     assert_eq!(fired[0].1, fired[1].1, "one volley on one aim");
@@ -158,15 +160,17 @@ fn a_volley_overwhelms_a_full_lattice_over_works_worth_the_interceptors_it_draws
     let lattice = [(BuildingKind::Lattice, 36, 9)];
     let spires = [(6, 14), (6, 17), (9, 14)];
     let two = strikes(&spires[..2], &BLOCK, &lattice, &[(31, 5)]);
-    let state = staged(&two, 2);
+    let mut state = staged(&two, 2);
+    advance_to(&mut state, 36, &[]);
     assert!(
-        launches(&decide(&two, &state, config())).is_empty(),
+        launches(&decide(&two, &state, rung(BotDifficulty::Standard))).is_empty(),
         "two warheads would both be stopped"
     );
 
     let three = strikes(&spires, &BLOCK, &lattice, &[(31, 5)]);
     let mut state = staged(&three, 2);
-    let fired = launches(&decide(&three, &state, config()));
+    advance_to(&mut state, 36, &[]);
+    let fired = launches(&decide(&three, &state, rung(BotDifficulty::Standard)));
     assert_eq!(fired.len(), 3, "{fired:?}");
     assert!(
         fired
@@ -175,11 +179,13 @@ fn a_volley_overwhelms_a_full_lattice_over_works_worth_the_interceptors_it_draws
         "one volley on one aim: {fired:?}"
     );
 
-    // The whole volley is one order, so the narrowest attention fires it.
-    let scrapheap = rung(BotDifficulty::Scrapheap);
-    assert!(crate::decision::allowance(BotDifficulty::Scrapheap) < 3);
-    advance_to(&mut state, 24, &[]);
-    assert_eq!(launches(&decide(&three, &state, scrapheap)).len(), 3);
+    // The whole volley is one order against the seat's attention.
+    let (commands, trace) = seat_with(&three, 0, rung(BotDifficulty::Standard))
+        .act_traced(&state, &mut OwnEvents::default());
+    assert_eq!(launches(&commands).len(), 3);
+    // Beside the volley, one scout is sent on.
+    assert_eq!(runs(&commands).len(), 1, "{commands:?}");
+    assert_eq!(trace.unwrap().unit_orders, 2, "{commands:?}");
 }
 
 #[test]
