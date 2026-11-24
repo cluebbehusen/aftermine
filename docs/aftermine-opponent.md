@@ -104,7 +104,8 @@ actions affect the running total and mission state.
   supports stands; lower rungs wait for a Crucible. Either way it competes
   whether or not harvesting is saturated; Reclaimers wait until it is and the
   scrap around the start has begun to run down. Growth outranks tech by what it
-  pays back, never by a rule that holds tech down.
+  pays back, never by a rule that holds tech down. A Deep Bore waits while an
+  enemy army the seat knows of outweighs its own.
 - A site with scrap is taken once the seat's own Foundry, an ally's building or
   an enemy's Foundry stands near its scrap. No other enemy building takes it;
   enemy guns that reach the site count against it as danger instead.

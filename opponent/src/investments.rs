@@ -244,7 +244,8 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         })
         .map(|seen| seen.value(now))
         .sum();
-    let secure = !situation.exposed && crate::decision::army(observation) >= known;
+    let holds = crate::decision::army(observation) >= known;
+    let secure = !situation.exposed && holds;
     let growth = expansion::candidates(
         observation,
         situation.map,
@@ -266,7 +267,9 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
     // seat that plans for one wants it before the Crucible stands, so its
     // worth pulls the Crucible forward as the first step; one that doesn't
     // waits for a Crucible. Either refits only its economy's share of the
-    // Extractors its Foundries support.
+    // Extractors its Foundries support. It waits while an enemy army the seat
+    // knows of outweighs its own: the scrap held for it is what an early push
+    // punishes.
     let frame = situation.frame;
     let extractors = || {
         observation
@@ -292,7 +295,7 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
     let ready = situation.plans_bores || built(observation, BuildingKind::Crucible);
     let bore = shallow
         .into_iter()
-        .filter(|_| room && ready)
+        .filter(|_| room && ready && holds)
         .min_by_key(|building| {
             let centre = footprint_centre(BuildingKind::Extractor, building.anchor);
             frame.rank(frame.home, centre)
