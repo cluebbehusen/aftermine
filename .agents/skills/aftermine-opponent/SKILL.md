@@ -279,10 +279,10 @@ first held a Deep Bore, refitting or standing, and how many seat-legs ever did.
 staged scenarios in `driver/evaluation/pressure/`; `--replay-dir` saves each run
 for `replay-summary`. A scripted attacker seat issues tick-stamped commands for
 its preset units while the bot defends. Its Foundry stands in a walled corner:
-for early rush, air switch and siege the corner opens at its far end, so the
-defender's ground reaches it only by a long route and the defender is not cut
-off from its enemy; for lift drop it is an island no ground unit reaches, since
-the drop must come by air.
+for early rush, air switch, siege and lancer harass the corner opens at its far
+end, so the defender's ground reaches it only by a long route and the defender
+is not cut off from its enemy; for lift drop it is an island no ground unit
+reaches, since the drop must come by air.
 
 Each scenario runs at every difficulty with personality seeds 0 to 2, as
 authored and reflected left to right; `--difficulties`, `--seeds` and
@@ -306,6 +306,8 @@ failing run; `--json` gives every run.
   unless the Skyhook falls before setting anyone down.
 - **Breach:** a Maw walks on the base from open ground; by the deadline it must
   be destroyed with the Foundry still standing.
+- **Lancer harass:** two Lancers patrol one of the base's two harvest lines; by
+  the deadline both must be destroyed with the Foundry still standing.
 
 Every check but air switch's also needs a starting Foundry to stand: one the
 defender held built at tick zero. A Foundry placed later, finished or not, does
