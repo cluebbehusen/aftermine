@@ -139,6 +139,8 @@ pub(crate) struct Situation<'a> {
     pub(crate) margin: u64,
     /// Per mille of its full economy the seat builds.
     pub(crate) economy: u64,
+    /// Whether the seat saves for a Deep Bore before a Crucible stands.
+    pub(crate) plans_bores: bool,
     /// The known anti-air around the next lift's target, at its value.
     pub(crate) lift_flak: u64,
     /// What of its army the seat's personality would have strike from the
@@ -261,22 +263,39 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
     );
     // A Deep Bore pays back like an Extractor, so it competes whether or not
     // harvesting is saturated. It goes on the supported Extractor nearest
-    // home in the seat's frame, so mirrored seats deepen mirrored frames, and
-    // is wanted before the Crucible stands, so its worth pulls the Crucible
-    // forward as the first step. It waits while an enemy army the seat knows
-    // of outweighs its own: the scrap held for it is what an early push
+    // home in the seat's frame, so mirrored seats deepen mirrored frames. A
+    // seat that plans for one wants it before the Crucible stands, so its
+    // worth pulls the Crucible forward as the first step; one that doesn't
+    // waits for a Crucible. Either refits only its economy's share of the
+    // Extractors its Foundries support. It waits while an enemy army the seat
+    // knows of outweighs its own: the scrap held for it is what an early push
     // punishes.
     let frame = situation.frame;
-    let bore = observation
-        .my_buildings
-        .iter()
-        .filter(|_| holds)
+    let extractors = || {
+        observation
+            .my_buildings
+            .iter()
+            .filter(|building| building.kind == BuildingKind::Extractor)
+    };
+    let shallow: Vec<_> = extractors()
         .filter(|building| {
-            building.kind == BuildingKind::Extractor
-                && building.built
+            building.built
                 && building.tier == 0
                 && expansion::supported(observation, building.anchor)
         })
+        .collect();
+    let deep = extractors()
+        .filter(|building| building.tier > 0 && expansion::supported(observation, building.anchor))
+        .count();
+    let share = u64::try_from(deep + shallow.len())
+        .unwrap_or(u64::MAX)
+        .saturating_mul(situation.economy)
+        .div_ceil(1_000);
+    let room = u64::try_from(deep).unwrap_or(u64::MAX) < share.max(1);
+    let ready = situation.plans_bores || built(observation, BuildingKind::Crucible);
+    let bore = shallow
+        .into_iter()
+        .filter(|_| room && ready && holds)
         .min_by_key(|building| {
             let centre = footprint_centre(BuildingKind::Extractor, building.anchor);
             frame.rank(frame.home, centre)

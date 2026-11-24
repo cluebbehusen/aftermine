@@ -552,6 +552,7 @@ pub(crate) fn decide(
         waiting,
         margin: crate::missions::margin(profile.difficulty),
         economy: crate::economy(profile.difficulty),
+        plans_bores: crate::plans_deep_bores(profile.difficulty),
         lift_flak: persistent.missions.lift_flak(
             observation,
             map,
@@ -1577,14 +1578,18 @@ fn best_answer(
                 .filter(move |kind| helps(*kind, at, short))
                 .map(Fighter::Unit)
         });
-    // A structure answers only where a worker could put it up, and once
-    // what it needs stands.
+    // A structure answers only where a worker could put it up, once what it
+    // needs stands, and when it fires back at the attackers.
     let builder = observation.my_units.iter().any(|unit| {
         unit.kind.stats().harvest.is_some() && map.component(unit.tile) == short.ground
     });
     let structures = structures
         .iter()
-        .filter(|kind| builder && crate::investments::buildable(observation, **kind))
+        .filter(|kind| {
+            builder
+                && crate::investments::buildable(observation, **kind)
+                && defenses::returns_fire(**kind, &short.attackers)
+        })
         .map(|kind| Fighter::Structure(*kind));
     units
         .chain(structures)
@@ -1840,10 +1845,12 @@ const RAID_INCOME: u32 = 900;
 /// What a needed lift adds to the Airworks' investment score.
 const LIFT_PULL: u32 = 600;
 
-/// Unit orders one decision may issue: a difficulty limit on attention.
+/// Unit orders one decision may issue: a difficulty limit on attention. With
+/// each rung's decision interval this is about 100 orders a minute for
+/// Scrapheap, 200 for Standard, 800 for Veteran and 2,000 for Prime.
 pub(crate) fn allowance(difficulty: BotDifficulty) -> u32 {
     match difficulty {
-        BotDifficulty::Scrapheap => 2,
+        BotDifficulty::Scrapheap => 8,
         BotDifficulty::Standard => 6,
         BotDifficulty::Veteran => 8,
         BotDifficulty::Prime => 10,

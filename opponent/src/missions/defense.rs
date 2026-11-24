@@ -338,6 +338,7 @@ impl Missions {
                 (observation, memory),
                 ledger,
                 (members, siege, post, pursuit),
+                goal,
             );
             sent.retain(|id| !away.contains(id));
             if sent.is_empty() {
@@ -705,15 +706,20 @@ fn idle_at_site(observation: &ObservationData, members: &[UnitId], pursuit: Purs
 /// stand past what it defends back to the `post`: hunting, a defender chases
 /// whatever it fights until that dies or leaves sight, out across the map.
 /// Past is farther from every own building than the `siege`'s threats
-/// stand, with the member's own reach on top. Returns those sent running.
+/// stand, with the member's own reach on top, and farther from its `post`
+/// than its fight at `goal` by that reach: one still on its way to a fight
+/// away from the buildings, whichever way it lies, is not chasing. Returns
+/// those sent running.
 fn recall(
     (observation, memory): (&ObservationData, &Memory),
     ledger: &mut Ledger,
     (members, siege, post, pursuit): (&[UnitId], &Siege<'_>, Option<TilePos>, Pursuit),
+    goal: TilePos,
 ) -> Vec<UnitId> {
     let (Some(post), Pursuit::Hunt | Pursuit::Quarry(_)) = (post, pursuit) else {
         return Vec::new();
     };
+    let fight = goal.chebyshev(post);
     let area = siege
         .units
         .iter()
@@ -728,7 +734,7 @@ fn recall(
         .filter(|unit| !unit.kind.stats().weapons.is_empty())
         .filter(|unit| {
             let own = crate::defenses::reach(unit.kind).ceil().to_num::<i32>();
-            !defended(observation, unit.tile, area + own)
+            !defended(observation, unit.tile, area + own) && unit.tile.chebyshev(post) > fight + own
         })
         .filter(|unit| {
             !exposed(observation, unit) || outweighed((observation, memory), members, unit)

@@ -600,7 +600,9 @@ fn a_settlement_counts_no_carrier_seats_for_a_unit_healing_at_a_bay() {
 
 #[test]
 fn low_attention_can_deliver_a_crew_across_several_decisions() {
-    let scenario = island();
+    let mut scenario = island();
+    // The seat's army would otherwise win before one builder finishes.
+    scenario.mode = ScenarioMode::Sandbox;
     let mut state = scenario.build().unwrap();
     let mut bot = seat_with(
         &scenario,

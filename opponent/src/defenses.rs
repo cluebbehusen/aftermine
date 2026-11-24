@@ -620,11 +620,38 @@ pub(crate) fn emergency(
                     gap(*anchor, *footprint, building.anchor, building.kind.size()) <= STANDOFF[1]
                 })
             };
-            // A gun beside the building still being raised already answers it.
-            if observation.my_buildings.iter().any(|building| {
-                beside(building)
-                    && ((building.tier > 0 && !building.built) || raised.contains(&building.id))
-            }) {
+            // A gun beside the building still being raised already answers
+            // it, where it fires back at the attackers: a site on its new
+            // tier, or one raised this decision from the tier it stands at.
+            let raising = |building: &BuildingObs| {
+                let tier = if raised.contains(&building.id) {
+                    building.tier + 1
+                } else if building.tier > 0 && !building.built {
+                    building.tier
+                } else {
+                    return false;
+                };
+                let Some(approach) = asset.approach(domain) else {
+                    return false;
+                };
+                Cover::of(building.kind, tier, building.anchor).is_some_and(|cover| {
+                    let fires = match domain {
+                        Domain::Ground => cover.ground,
+                        Domain::Air => cover.air,
+                    };
+                    fires
+                        && approach
+                            .threat
+                            .reaches
+                            .iter()
+                            .all(|(reach, _)| cover.answers(*reach))
+                })
+            };
+            if observation
+                .my_buildings
+                .iter()
+                .any(|building| beside(building) && raising(building))
+            {
                 continue;
             }
             // A new gun of each kind, or a tier more for a gun beside the
@@ -666,8 +693,9 @@ pub(crate) fn emergency(
             }) else {
                 continue;
             };
+            // A later asset may have a cheaper answer the bank still buys.
             if ledger.spendable() < price {
-                break;
+                continue;
             }
             match answer {
                 Answer::Raise(building) => {
@@ -707,6 +735,20 @@ enum Answer {
 
 /// How far `kind` strikes buildings, a demolition charge's contact
 /// included; zero when it cannot.
+/// Whether a base-tier `kind` fires back at each of `attackers` it can hit,
+/// judging their reach from the side they come at, as an emergency does.
+pub(crate) fn returns_fire(kind: BuildingKind, attackers: &[(UnitKind, u64)]) -> bool {
+    Cover::of(kind, 0, TilePos::new(0, 0)).is_some_and(|cover| {
+        attackers.iter().all(|(attacker, _)| {
+            let fires = match attacker.stats().domain {
+                Domain::Ground => cover.ground,
+                Domain::Air => cover.air,
+            };
+            !fires || cover.answers(reach(*attacker))
+        })
+    })
+}
+
 pub(crate) fn reach(kind: UnitKind) -> Fx {
     let stats = kind.stats();
     let contact = stats.demolition.map(|charge| charge.contact_range);

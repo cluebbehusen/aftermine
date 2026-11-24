@@ -506,3 +506,74 @@ fn a_ground_defender_bombed_by_aircraft_it_cannot_hit_is_outweighed() {
         scuttler
     ));
 }
+
+#[test]
+fn a_defender_nearer_its_post_than_its_fight_is_not_recalled() {
+    // A post far east, a fight well to its west and a defender between them,
+    // out of reach of every West building: it is on its way in, though
+    // farther from West's start than the fight.
+    let (observation, ids) = viewed(&[
+        (0, UnitKind::Sentinel, 17, 7),
+        (1, UnitKind::Scuttler, 12, 6),
+    ]);
+    let inward = ids[0];
+    let scuttler = observation
+        .enemy_units
+        .iter()
+        .find(|unit| unit.id == ids[1])
+        .unwrap();
+    let siege = Siege {
+        units: vec![scuttler],
+        ..Siege::default()
+    };
+    let mut ledger = Ledger::new(PlayerId(0), 0, 10);
+    let recalled = recall(
+        (&observation, &Memory::default()),
+        &mut ledger,
+        (&[inward], &siege, Some(TilePos::new(19, 8)), Pursuit::Hunt),
+        TilePos::new(12, 8),
+    );
+    assert_eq!(recalled, []);
+}
+
+#[test]
+fn a_defense_whose_order_home_finds_no_room_stays_engaged() {
+    // A defense stood down to run home. With no order left this look it keeps
+    // its last order and stays engaged as it was, to stand down again later;
+    // with one left it goes home.
+    let home = |allowance: u32| {
+        let mut missions: Missions = serde_json::from_value(serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {"task": "defend", "asset": 0, "phase": "recover"},
+                "since": 50,
+                "units": [1, 2],
+                "goal": {"x": 11, "y": 6},
+            }],
+            "waiting": null,
+        }))
+        .unwrap();
+        let mut ledger = Ledger::new(PlayerId(0), 0, allowance);
+        missions.send_home(vec![(0, TilePos::new(5, 6), None, 10)], &mut ledger);
+        missions.list.remove(0)
+    };
+    let stayed = home(0);
+    assert!(matches!(
+        stayed.task,
+        Task::Defend {
+            phase: DefendPhase::Engage { focus: None },
+            ..
+        }
+    ));
+    assert_eq!((stayed.since, stayed.goal), (10, TilePos::new(11, 6)));
+    let gone = home(1);
+    assert!(matches!(
+        gone.task,
+        Task::Defend {
+            phase: DefendPhase::Recover,
+            ..
+        }
+    ));
+    assert_eq!(gone.goal, TilePos::new(5, 6));
+}

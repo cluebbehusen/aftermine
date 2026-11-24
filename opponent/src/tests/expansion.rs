@@ -563,6 +563,7 @@ fn a_deep_bore_wanted_before_its_tech_stands_builds_that_tech_first() {
         .buildings
         .retain(|building| building.kind != BuildingKind::Crucible);
     for difficulty in BotDifficulty::ALL {
+        let plans = crate::plans_deep_bores(difficulty);
         let mut state = scenario.build().unwrap();
         let extractor = own_extractor(&state);
         let deep_bore = Investment::Upgrade {
@@ -575,9 +576,22 @@ fn a_deep_bore_wanted_before_its_tech_stands_builds_that_tech_first() {
         let mut pulled = None;
         while state.current_tick() < 12_000 && pulled.is_none() {
             let (commands, trace) = opponent.act_traced(&state, &mut events);
-            let fabricator = state.buildings().iter().any(|building| {
-                building.player == PlayerId(0) && building.kind == BuildingKind::Fabricator
-            });
+            let own = |kind| {
+                state
+                    .buildings()
+                    .iter()
+                    .filter(move |building| building.player == PlayerId(0) && building.kind == kind)
+            };
+            let fabricator = own(BuildingKind::Fabricator).next().is_some();
+            assert!(
+                plans
+                    || own(BuildingKind::Crucible).any(aftermine_sim::Building::built)
+                    || !trace.as_ref().is_some_and(|trace| trace
+                        .target
+                        .is_some_and(|target| target.investment == deep_bore)),
+                "{difficulty:?} saves toward a Deep Bore before a Crucible stands, tick {}",
+                state.current_tick()
+            );
             assert!(
                 fabricator
                     || !trace.as_ref().is_some_and(|trace| trace.target.is_some_and(
@@ -602,11 +616,15 @@ fn a_deep_bore_wanted_before_its_tech_stands_builds_that_tech_first() {
             let report = state.tick(&commands);
             events.record(PlayerId(0), &report.events);
         }
-        assert_eq!(
-            pulled,
-            Some(Some(deep_bore)),
-            "{difficulty:?} builds its Crucible toward the Deep Bore"
-        );
+        if plans {
+            assert_eq!(
+                pulled,
+                Some(Some(deep_bore)),
+                "{difficulty:?} builds its Crucible toward the Deep Bore"
+            );
+        } else {
+            assert_ne!(pulled, Some(Some(deep_bore)), "{difficulty:?}");
+        }
     }
 }
 
@@ -660,6 +678,7 @@ fn a_lower_rung_wants_the_same_growth_in_the_same_order_but_less() {
         crate::investments::candidates(&crate::investments::Situation {
             depletion: 500,
             economy: crate::economy(difficulty),
+            plans_bores: crate::plans_deep_bores(difficulty),
             ..calm(&observation, &model, &memory)
         })
         .into_iter()
@@ -767,7 +786,7 @@ fn frames_and_deep_bores_rank_by_what_they_pay_back() {
             .any(|(frame, _)| *frame == TilePos::new(32, 5)),
         "and one at East's door is East's to hold: {scores:?}"
     );
-    let bore = |crucible: bool| {
+    let bore = |crucible: bool, plans_bores: bool| {
         let mut scenario = lane(&[(6, 4), (14, 7)]);
         scenario
             .buildings
@@ -783,6 +802,7 @@ fn frames_and_deep_bores_rank_by_what_they_pay_back() {
         let memory = Memory::default();
         let candidates = crate::investments::candidates(&crate::investments::Situation {
             depletion: 500,
+            plans_bores,
             ..calm(&observation, &model, &memory)
         });
         let score = |wanted: fn(&Investment) -> bool| {
@@ -790,15 +810,18 @@ fn frames_and_deep_bores_rank_by_what_they_pay_back() {
                 .iter()
                 .find(|candidate| wanted(&candidate.investment))
                 .map(|candidate| candidate.score)
-                .expect("the investment is a candidate")
         };
         (
-            score(|investment| *investment == Investment::Extractor(TilePos::new(14, 7))),
+            score(|investment| *investment == Investment::Extractor(TilePos::new(14, 7)))
+                .expect("the frame is a candidate"),
             score(|investment| matches!(investment, Investment::Upgrade { tier: 1, .. })),
         )
     };
-    let (frame, deep_bore) = bore(true);
-    let (_, early) = bore(false);
+    let (frame, deep_bore) = bore(true, true);
+    let deep_bore = deep_bore.expect("the Deep Bore is a candidate");
+    let early = bore(false, true)
+        .1
+        .expect("an early Deep Bore is a candidate");
     assert!(
         frame > deep_bore,
         "an Extractor returns more for its price than a Deep Bore"
@@ -806,6 +829,69 @@ fn frames_and_deep_bores_rank_by_what_they_pay_back() {
     assert!(
         deep_bore > early,
         "a Crucible still to buy is part of the first Deep Bore's price"
+    );
+    assert!(
+        bore(false, false).1.is_none(),
+        "a seat that does not plan for a Deep Bore waits for a Crucible"
+    );
+}
+
+#[test]
+fn a_seat_refits_its_economy_s_share_of_its_extractors() {
+    // Two Extractors West's Foundry supports and a Crucible: a seat that
+    // builds half its economy deepens one of them, the full economy both.
+    // Deep Bores out of every Foundry's support count toward neither.
+    let wanted = |deepened: bool, orphans: bool, difficulty: BotDifficulty| {
+        let mut scenario = lane(&[(6, 3), (6, 9), (24, 3), (24, 9)]);
+        let mut buildings = vec![
+            (BuildingKind::Extractor, 6, 3),
+            (BuildingKind::Extractor, 6, 9),
+            (BuildingKind::Crucible, 9, 5),
+        ];
+        if orphans {
+            buildings.extend([
+                (BuildingKind::Extractor, 24, 3),
+                (BuildingKind::Extractor, 24, 9),
+            ]);
+        }
+        for (kind, x, y) in buildings {
+            scenario.buildings.push(building(0, kind, x, y));
+        }
+        let mut value = serde_json::to_value(scenario.build().unwrap()).unwrap();
+        for entry in value["buildings"].as_array_mut().unwrap() {
+            let anchor = (entry["anchor"]["x"].clone(), entry["anchor"]["y"].clone());
+            let refitted =
+                (deepened && anchor == (6.into(), 3.into())) || entry["anchor"]["x"] == 24;
+            if entry["kind"] == "extractor" && refitted {
+                entry["tier"] = 1.into();
+            }
+        }
+        let state: State = serde_json::from_value(value).unwrap();
+        let observation = mapped(&state, PlayerId(0));
+        let model = map(&scenario);
+        let memory = Memory::default();
+        crate::investments::candidates(&crate::investments::Situation {
+            economy: crate::economy(difficulty),
+            ..calm(&observation, &model, &memory)
+        })
+        .iter()
+        .any(|candidate| matches!(candidate.investment, Investment::Upgrade { tier: 1, .. }))
+    };
+    assert!(
+        wanted(false, false, BotDifficulty::Scrapheap),
+        "the first of two"
+    );
+    assert!(
+        !wanted(true, false, BotDifficulty::Scrapheap),
+        "half of two is one"
+    );
+    assert!(
+        wanted(true, false, BotDifficulty::Prime),
+        "Prime deepens both"
+    );
+    assert!(
+        wanted(false, true, BotDifficulty::Scrapheap),
+        "Deep Bores no Foundry supports leave the supported two their share"
     );
 }
 

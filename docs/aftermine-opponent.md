@@ -98,13 +98,14 @@ actions affect the running total and mission state.
   clear shot at it within a ground unit's own reach; ground an own or allied
   Foundry holds is home. An expansion Foundry also scores what its support would
   pay back to the seat's stranded remote Extractors, and one bought for that
-  waits until the army holds the known enemy. A Crucible still to buy, and the
-  Fabricator it needs, count toward the first Deep Bore's price. A Deep Bore
-  competes as soon as an Extractor the seat's Foundry supports stands, whether
-  or not harvesting is saturated; Reclaimers wait until it is and the scrap
-  around the start has begun to run down. Growth outranks tech by what it pays
-  back, never by a rule that holds tech down. A Deep Bore waits while an enemy
-  army the seat knows of outweighs its own.
+  waits until the army holds the known enemy. At Veteran and Prime, a Crucible
+  still to buy, and the Fabricator it needs, count toward the first Deep Bore's
+  price, and a Deep Bore competes as soon as an Extractor the seat's Foundry
+  supports stands; lower rungs wait for a Crucible. Either way it competes
+  whether or not harvesting is saturated; Reclaimers wait until it is and the
+  scrap around the start has begun to run down. Growth outranks tech by what it
+  pays back, never by a rule that holds tech down. A Deep Bore waits while an
+  enemy army the seat knows of outweighs its own.
 - A site with scrap is taken once the seat's own Foundry, an ally's building or
   an enemy's Foundry stands near its scrap. No other enemy building takes it;
   enemy guns that reach the site count against it as danger instead.
@@ -112,10 +113,11 @@ actions affect the running total and mission state.
   frames, so teammates do not crowd one expansion, or once the seat's own
   Foundries support every frame no other seat holds. An enemy's Foundry never
   takes it.
-- The top investment is funded through its next purchasable step. The Deep Bore
-  upgrade is wanted before the Crucible it needs stands, so its worth funds the
-  Fabricator the Crucible needs and then the Crucible as those steps. The bot
-  keeps one optional saving target with its price, reason and cancel conditions.
+- The top investment is funded through its next purchasable step. At Veteran and
+  Prime the Deep Bore upgrade is wanted before the Crucible it needs stands, so
+  its worth funds the Fabricator the Crucible needs and then the Crucible as
+  those steps. The bot keeps one optional saving target with its price, reason
+  and cancel conditions.
 - Income is not observed directly. The bot estimates it from the change in bank
   since the previous decision plus its own spending in between.
 - While saving, a share of income is protected for the target, capped by the
@@ -270,7 +272,7 @@ Each behavior is proven by a staged scenario test.
 | Ground-severed enemy                                       | Splash bombers and empty Rocs clear the anti-air around the lift's target; then a lift of the whole free army, after a recent look, lands out of reach of known fire                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Local opportunity                                          | Attack when the free army beats the known army it would meet, above a stance-bounded minimum                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Best target out of the army's reach                        | Attack the best known target the free army beats at the full margin, and keep it while the best stays out of reach                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| Losing a fight                                             | Withdraw when the whole army is outweighed, with a threshold shaped by personality; when only the units in the fight are, they fall back onto the rest of the army and the attack goes on. A defender drawn past what it defends runs back once outweighed there                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Losing a fight                                             | Withdraw when the whole army is outweighed, with a threshold shaped by personality; when only the units in the fight are, they fall back onto the rest of the army and the attack goes on. A defender drawn past what it defends and its fight runs back unless under fire and not outweighed there                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Army cleared what it met short of a target it knows        | Go on to that target while the fight's time lasts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Attack's target seen gone                                  | Move on to the next target at once                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Fight still making progress                                | Fight on; an attack or lift ends its fight once three minutes pass without the enemy losing building health or armed units around it, a strike once two minutes do, and a clearance once one minute does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
@@ -329,16 +331,17 @@ kind.
   which is its reaction time; how many unit orders one decision may give, which
   is its attention; how much strength an attack must bring over the known
   defense; and how fully it builds its economy: lower rungs staff their scrap
-  nodes more thinly and want each kind of growth less, though never so little
-  that they stop growing. The lowest rung also misjudges the enemy's strength by
-  a deterministic draw from its seed. Veteran and Prime read what a threat at
-  home is and train what beats it; Standard and Scrapheap read only how much of
-  it there is and answer with their cheapest helpful unit. Memory fades at the
-  same rate on every rung. Difficulty also sets how well a seat carries out its
-  repertoire: lower rungs attack and defend piecemeal, pick targets worse, walk
-  into known defenses as a column or gather short of them only briefly, count
-  only the defenses around a target, let a defense call back an army on its way,
-  focus fire on the nearest enemy or by a rough read of its wounds, leave
-  reinforcements at home, and lift without a fresh look or without counting
-  bomber cover. Every rung keeps every capability. Lower rungs make
-  understandable mistakes, and higher rungs beat lower ones.
+  nodes more thinly, refit fewer of their Extractors into Deep Bores and want
+  each kind of growth less, though never so little that they stop growing. The
+  lowest rung also misjudges the enemy's strength by a deterministic draw from
+  its seed. Veteran and Prime read what a threat at home is and train what beats
+  it; Standard and Scrapheap read only how much of it there is and answer with
+  their cheapest helpful unit. Memory fades at the same rate on every rung.
+  Difficulty also sets how well a seat carries out its repertoire: lower rungs
+  attack and defend piecemeal, pick targets worse, walk into known defenses as a
+  column or gather short of them only briefly, count only the defenses around a
+  target, let a defense call back an army on its way, focus fire on the nearest
+  enemy or by a rough read of its wounds, leave reinforcements at home, and lift
+  without a fresh look or without counting bomber cover. Every rung keeps every
+  capability. Lower rungs make understandable mistakes, and higher rungs beat
+  lower ones.

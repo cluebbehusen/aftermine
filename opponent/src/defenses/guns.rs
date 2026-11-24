@@ -34,9 +34,9 @@ impl Guard<'_> {
     /// What raising the built gun `building` a tier adds against `asset`'s
     /// approach in `domain`, worth what a site there would be, and the
     /// raise's price: only for a gun whose next tier the seat can build and
-    /// fires back at attackers there the gun today cannot. Those attackers
-    /// already outrange it, so it loses little while it is down for the
-    /// raise, and an emergency raises it under fire.
+    /// fires back at attackers there, when every one of them outranges the
+    /// gun today. A raise takes it down as a site until it stands again, so
+    /// one still firing back at any of them stays up.
     pub(super) fn raise_worth(
         &self,
         building: &BuildingObs,
@@ -53,12 +53,9 @@ impl Guard<'_> {
         }
         let next = Cover::of(building.kind, building.tier + 1, building.anchor)?;
         let approach = asset.approach(domain)?;
-        let reaches = |reach: &Fx| !cover.answers(*reach) && next.answers(*reach);
-        if !approach
-            .threat
-            .reaches
-            .iter()
-            .any(|(reach, _)| reaches(reach))
+        let reaches = &approach.threat.reaches;
+        if reaches.iter().any(|(reach, _)| cover.answers(*reach))
+            || !reaches.iter().any(|(reach, _)| next.answers(*reach))
         {
             return None;
         }

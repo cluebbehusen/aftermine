@@ -537,8 +537,8 @@ fn a_site_behind_rock_is_kept_from_guns_that_cannot_hit_it() {
 }
 
 #[test]
-fn every_doomed_site_is_cancelled_however_few_orders_the_rung_gives() {
-    // Scrapheap gives two unit orders a decision; cancelling moves no unit.
+fn every_doomed_site_is_cancelled_in_one_decision() {
+    // Cancelling moves no unit, so it never waits on the allowance.
     let anchors = [
         TilePos::new(10, 2),
         TilePos::new(10, 5),
@@ -560,7 +560,7 @@ fn every_doomed_site_is_cancelled_however_few_orders_the_rung_gives() {
             player: PlayerId(0),
             command: Command::Build {
                 units: vec![builder],
-                kind: BuildingKind::Turret,
+                kind: BuildingKind::Fabricator,
                 anchor: *anchor,
                 queue: false,
                 defer: false,
@@ -568,12 +568,17 @@ fn every_doomed_site_is_cancelled_however_few_orders_the_rung_gives() {
         })
         .collect();
     state.tick(&orders);
-    let next = state.current_tick().next_multiple_of(24);
-    advance_to(&mut state, next, &[]);
+    // Fabricator sites stand up to the Lancers until Scrapheap's next
+    // decision.
+    advance_to(
+        &mut state,
+        crate::decision_interval(BotDifficulty::Scrapheap),
+        &[],
+    );
     let sites: Vec<BuildingId> = state
         .buildings()
         .iter()
-        .filter(|building| building.kind == BuildingKind::Turret && !building.built())
+        .filter(|building| building.kind == BuildingKind::Fabricator && !building.built())
         .map(|building| building.id)
         .collect();
     assert_eq!(sites.len(), 3, "premise");
@@ -1544,6 +1549,7 @@ fn a_seat_saving_for_tech_turns_to_a_free_extractor_frame_at_every_rung() {
     ] {
         let candidates = investments::candidates(&Situation {
             economy: crate::economy(difficulty),
+            plans_bores: crate::plans_deep_bores(difficulty),
             ..calm(&observation, &model, &memory)
         });
         let mut saving = Saving::default();

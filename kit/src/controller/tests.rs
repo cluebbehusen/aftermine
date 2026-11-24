@@ -131,7 +131,7 @@ fn seats_hear_only_their_own_failures_at_their_next_decision() {
     assert_eq!(before[1]["events"], serde_json::json!([]));
 
     let mut traces = Vec::new();
-    while state.current_tick() <= 12 {
+    while state.current_tick() <= 36 {
         let mut commands = Vec::new();
         for seat in &mut seats {
             let (issued, trace) = seat.act_traced(&state);
@@ -144,7 +144,7 @@ fn seats_hear_only_their_own_failures_at_their_next_decision() {
     let [trace] = traces.as_slice() else {
         panic!("one decision of seat zero: {traces:?}");
     };
-    assert_eq!(trace.tick, 12);
+    assert_eq!(trace.tick, 36);
     assert_eq!(serde_json::to_value(&trace.events).unwrap(), rejected);
     assert_eq!(saved(&seats)[0]["events"], serde_json::json!([]));
 }
