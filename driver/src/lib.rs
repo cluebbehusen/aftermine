@@ -13,6 +13,7 @@ pub mod client;
 pub mod device;
 pub mod digest;
 pub mod evaluation;
+pub mod fight_lab;
 pub mod fights;
 pub mod home_replays;
 pub mod ladder_diff;

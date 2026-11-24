@@ -288,6 +288,28 @@ enum Cmd {
         #[arg(long)]
         replay_dir: Option<PathBuf>,
     },
+    /// Stage armies on open ground and report what each destroyed of the
+    /// other's value per value it lost: every pair of kinds at even prices,
+    /// then mixed armies such as artillery behind a front line. Each fight
+    /// plays from both seats and sums both.
+    FightLab {
+        /// Kinds the matrix covers; every combat kind but the cradle
+        /// machines when omitted.
+        #[arg(long, value_delimiter = ',', value_parser = parse_unit_kind)]
+        kinds: Option<Vec<aftermine_sim::stats::UnitKind>>,
+        /// Scrap a side spends on each matrix fight.
+        #[arg(long, value_delimiter = ',', default_value = "1400,2800")]
+        budgets: Vec<u32>,
+        /// Skip the mixed-army fights.
+        #[arg(long)]
+        no_mixed: bool,
+        /// Fights to play at once.
+        #[arg(long, default_value = "4")]
+        jobs: std::num::NonZeroUsize,
+        /// Print the lab as JSON.
+        #[arg(long)]
+        json: bool,
+    },
     /// Time bot decisions on a fixed workload: average and p99 wall time per
     /// decision and total CPU, per seat and pooled, beside the fog-honest
     /// observation build. Seats decide
@@ -715,6 +737,12 @@ fn default_candidate() -> String {
 }
 
 /// A seed range written `from..to`, the last excluded.
+/// A unit kind by its lowercase name, such as `lancer`.
+fn parse_unit_kind(text: &str) -> Result<aftermine_sim::stats::UnitKind, String> {
+    serde_json::from_value(serde_json::Value::String(text.trim().to_owned()))
+        .map_err(|_| format!("{text:?} is not a unit kind"))
+}
+
 fn parse_seed_range(text: &str) -> Result<std::ops::Range<u64>, String> {
     let (from, to) = text
         .split_once("..")
@@ -1046,6 +1074,25 @@ fn main() -> Result<()> {
                 replay_dir.as_deref(),
             )?;
             emit(json, &outcomes, |outcomes| bot_pressure::report(outcomes))?;
+        }
+        Cmd::FightLab {
+            kinds,
+            budgets,
+            no_mixed,
+            jobs,
+            json,
+        } => {
+            use aftermine_driver::fight_lab;
+            let kinds = kinds.unwrap_or_else(|| fight_lab::COMBAT.to_vec());
+            let lab = fight_lab::Lab {
+                matrix: fight_lab::matrix(&kinds, &budgets, jobs)?,
+                mixed: if no_mixed {
+                    Vec::new()
+                } else {
+                    fight_lab::mixed(&fight_lab::presets(), jobs)?
+                },
+            };
+            emit(json, &lab, fight_lab::report)?;
         }
         Cmd::TickScan {
             replay,
