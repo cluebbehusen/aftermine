@@ -108,3 +108,43 @@ fn the_report_shows_each_budget_and_the_mixed_fights() {
     assert!(report.contains("Lancers v Wardens"), "{report}");
     assert!(report.contains("1.5"), "{report}");
 }
+
+#[test]
+fn a_unit_already_attacking_keeps_its_attack() {
+    let mut state = field(&even(UnitKind::Lancer, 440), &even(UnitKind::Warden, 440))
+        .unwrap()
+        .build()
+        .unwrap();
+    let attacking = |state: &State| -> Vec<aftermine_sim::UnitId> {
+        state
+            .units()
+            .iter()
+            .filter(|unit| matches!(unit.order, aftermine_sim::Order::Attack { .. }))
+            .map(|unit| unit.id)
+            .collect()
+    };
+    while attacking(&state).is_empty() {
+        assert!(
+            state.current_tick() < TICK_LIMIT,
+            "premise: the armies engage"
+        );
+        let orders = orders(&state);
+        state.tick(&orders);
+    }
+    let hunting: Vec<aftermine_sim::UnitId> = orders(&state)
+        .into_iter()
+        .flat_map(|order| match order.command {
+            Command::Hunt { units, .. } => units,
+            _ => Vec::new(),
+        })
+        .collect();
+    assert!(
+        attacking(&state).iter().all(|unit| !hunting.contains(unit)),
+        "an attack under way goes on"
+    );
+    assert_eq!(
+        hunting.len() + attacking(&state).len(),
+        state.units().len(),
+        "every other unit hunts"
+    );
+}

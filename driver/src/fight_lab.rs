@@ -415,7 +415,9 @@ fn hurts(state: &State, attacker: u8, target: u8) -> bool {
         })
 }
 
-/// Each side hunts toward the other's middle unit.
+/// Each side's units not already attacking hunt toward the other's middle
+/// unit. A fresh order would replace an attack under way, dropping a braced
+/// gun's aim or an aircraft's run, so those keep at it.
 fn orders(state: &State) -> Vec<PlayerCommand> {
     let units = state.units();
     [0_u8, 1]
@@ -424,6 +426,7 @@ fn orders(state: &State) -> Vec<PlayerCommand> {
             let own: Vec<_> = units
                 .iter()
                 .filter(|unit| unit.player == PlayerId(player))
+                .filter(|unit| !matches!(unit.order, aftermine_sim::Order::Attack { .. }))
                 .map(|unit| unit.id)
                 .collect();
             let foes: Vec<_> = units
