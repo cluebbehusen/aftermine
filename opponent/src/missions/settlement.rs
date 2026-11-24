@@ -307,7 +307,9 @@ impl<'a> Settlement<'a> {
             )
         });
         let mut have = strength(self.observation, missions.members(target));
-        fill(units, need, &mut have, usize::MAX)
+        fill(units, need, &mut have, usize::MAX, |unit| {
+            force(unit.kind, unit.hp)
+        })
     }
 
     /// What the selected `investment`'s escort still lacks against ground

@@ -168,7 +168,9 @@ impl Missions {
                 .map(|u| value(u))
                 .sum();
             let mut have = [0_u64; 2];
-            let mut kept = fill(pool, need, &mut have, UNIT_CAP);
+            let mut kept = fill(pool, need, &mut have, UNIT_CAP, |unit| {
+                force(unit.kind, unit.hp)
+            });
             for (producer, queue) in observation.my_buildings.iter().zip(&observation.my_queues) {
                 if map.component(producer.anchor) == ground
                     && gap(

@@ -14,8 +14,9 @@ use super::attack::{building_value, concentrates, defense, defense_around};
 use super::reserve::LOCAL_REACH;
 use super::{
     AttackPhase, DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, against_machines,
-    fill, hits, hunt, insert, meeting, mine, reached, run, value, worth,
+    fill, force, hits, hunt, insert, meeting, mine, reached, run, value, worth,
 };
+use crate::composition::traded;
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, gap, ring};
 use crate::map::MapModel;
@@ -75,6 +76,9 @@ impl Missions {
     /// defense that is only recovering lends its units, as does an attack
     /// regrouping at home, or travelling out of contact at a seat of
     /// `difficulty` that calls such an army back.
+    /// At a `difficulty` that reads threats, the seat's units count against
+    /// the ground attackers in sight at what they trade against them, never
+    /// above their price.
     /// Returns each of the seat's own Foundries whose defense falls short of
     /// its attackers, home-nearest first.
     ///
@@ -96,7 +100,12 @@ impl Missions {
         let now = observation.tick;
         let lendable = self.available(observation, Some(difficulty));
         let mut groups = threats(observation, map, frame, (memory, searched));
-        self.weigh((observation, map, memory, ledger), &lendable, &mut groups);
+        self.weigh(
+            (observation, map, memory, ledger),
+            &lendable,
+            &mut groups,
+            difficulty,
+        );
         groups.retain(|(_, siege, _)| siege.presses());
         let returning = self.stand_down((observation, memory), (map, frame), &groups, ledger);
         self.list.retain(|mission| {
@@ -197,12 +206,12 @@ impl Missions {
                 |mission| matches!(mission.task, Task::Defend { asset, .. } if asset == foundry.id),
             );
             let members = index.map_or(&[][..], |index| &self.list[index].units);
+            let trades = &siege.trades;
             let mut have = [Domain::Ground, Domain::Air].map(|domain| {
                 members
                     .iter()
                     .filter_map(|id| mine(observation, *id))
-                    .filter(|unit| hits(unit, domain))
-                    .map(value)
+                    .map(|unit| trades.force(unit)[usize::from(domain == Domain::Air)])
                     .sum::<u64>()
             });
             let room = UNIT_CAP - members.len();
@@ -215,7 +224,7 @@ impl Missions {
                     unit.id,
                 )
             });
-            let mut recruits = fill(candidates, need, &mut have, room);
+            let mut recruits = fill(candidates, need, &mut have, room, |unit| trades.force(unit));
             let gap = siege.gap(pressing, have);
             if *own && gap != [0, 0] {
                 shortfalls.push(siege.shortfall(component, gap, difficulty));
@@ -245,9 +254,9 @@ impl Missions {
             // toward going out: those still on their way would reach it
             // after it began.
             let fight = shelling.map_or(goal, |threat| threat.tile);
-            let front = front(observation, members, post, fight);
+            let front = front(observation, members, (post, fight), trades);
             let gathered = post.map_or(have[0], |post| {
-                together(observation, members.iter().chain(&recruits), [post, fight])
+                trades.together(observation, members.iter().chain(&recruits), [post, fight])
             });
             let sent = members.iter().chain(&recruits);
             let (goal, pursuit, gun) = match grounded
@@ -466,8 +475,9 @@ impl Missions {
         returning
     }
 
-    /// Notes on each siege in `groups` what its Foundry's defense holds and
-    /// could take from `lendable` against ground, not units out on missions
+    /// Notes on each siege in `groups` what the seat's units trade against
+    /// its attackers at `difficulty` and what its Foundry's defense holds and
+    /// could take from `lendable` against them, not units out on missions
     /// that will not lend them, and leaves to production the batteries that
     /// force cannot beat.
     fn weigh(
@@ -475,8 +485,10 @@ impl Missions {
         (observation, map, memory, ledger): (&ObservationData, &MapModel, &Memory, &Ledger),
         lendable: &[UnitId],
         groups: &mut [(&BuildingObs, Siege<'_>, bool)],
+        difficulty: BotDifficulty,
     ) {
         for (foundry, siege, _) in groups {
+            siege.trades = Trades::of(siege, difficulty);
             let component = map.component(foundry.anchor);
             let defenders = self
                 .list
@@ -489,7 +501,7 @@ impl Missions {
             let mut pool: Vec<UnitId> = lendable.iter().copied().chain(defenders).collect();
             pool.sort_unstable();
             pool.dedup();
-            let force: u64 = pool
+            let pool: Vec<&UnitObs> = pool
                 .into_iter()
                 .filter(|id| !ledger.stuck(*id))
                 .filter_map(|id| mine(observation, id))
@@ -497,9 +509,10 @@ impl Missions {
                 .filter(|unit| {
                     unit.kind.stats().domain == Domain::Air || map.component(unit.tile) == component
                 })
-                .map(value)
-                .sum();
-            siege.held = force;
+                .collect();
+            // Batteries are guns, not the units the trades read.
+            let force: u64 = pool.iter().map(|unit| value(unit)).sum();
+            siege.held = pool.iter().map(|unit| siege.trades.ground(unit)).sum();
             siege.leave_unbeaten(observation, memory, force);
         }
     }
@@ -1051,7 +1064,8 @@ fn out_at(
                 ..
             }
         ) && !ring(foundry.anchor, foundry.kind.size()).any(|tile| tile == mission.goal)
-            && together(observation, mission.units.iter(), [mission.goal, goal]) > 0
+            && Trades::default().together(observation, mission.units.iter(), [mission.goal, goal])
+                > 0
     })
 }
 
@@ -1105,14 +1119,14 @@ fn close_up<'a>(
 
 /// The defenders among `members` out away from the waiting `post` or on
 /// their way, with what those near the post, at the `fight` or on the way
-/// between are worth against ground; the rest stand idle at the post as its
+/// between are worth against the ground attackers by `trades`; the rest stand idle at the post as its
 /// reserve. Without a post all are out. One farther from the fight than the
 /// post is, such as a defender off chasing a fleeing enemy, is in neither.
 fn front(
     observation: &ObservationData,
     members: &[UnitId],
-    post: Option<TilePos>,
-    fight: TilePos,
+    (post, fight): (Option<TilePos>, TilePos),
+    trades: &Trades,
 ) -> (Vec<UnitId>, u64) {
     let out: Vec<&UnitObs> = members
         .iter()
@@ -1126,7 +1140,7 @@ fn front(
     let value = out
         .iter()
         .filter(|unit| hits(unit, Domain::Ground) && near(unit))
-        .map(|unit| value(unit))
+        .map(|unit| trades.ground(unit))
         .sum();
     (out.iter().map(|unit| unit.id).collect(), value)
 }
@@ -1155,26 +1169,6 @@ const RESERVE_TILES: i32 = 3;
 /// there: a model of "together", since one farther off arrives after the
 /// fight began. Not a count of units.
 pub(super) const GATHER_TILES: i32 = 6;
-
-/// What `units` that can hit ground are worth where a defense would fight:
-/// those within the gather distance of its waiting `post` or of its `goal`.
-fn together<'a>(
-    observation: &ObservationData,
-    units: impl Iterator<Item = &'a UnitId>,
-    [post, goal]: [TilePos; 2],
-) -> u64 {
-    let mut ids: Vec<UnitId> = units.copied().collect();
-    ids.sort_unstable();
-    ids.dedup();
-    ids.into_iter()
-        .filter_map(|id| mine(observation, id))
-        .filter(|unit| hits(unit, Domain::Ground))
-        .filter(|unit| {
-            unit.tile.chebyshev(post) <= GATHER_TILES || unit.tile.chebyshev(goal) <= GATHER_TILES
-        })
-        .map(value)
-        .sum()
-}
 
 /// Whether a threat at `goal`, grouped to `foundry`, is one the seat never
 /// gives up: at home, or at its last Foundry.
@@ -1207,6 +1201,78 @@ pub(super) fn home_post(
     waiting_post(map, frame, home, toward)
 }
 
+/// What the seat's units trade against the armed ground enemies in sight of
+/// one Foundry, at the rungs that read threats: each counts at the attacker
+/// value it would destroy per scrap of its price, by [`traded`]. A unit cheaper than the attackers but
+/// trading poorly against them would only feed them.
+#[derive(Default)]
+struct Trades {
+    /// Per mille of its price each kind brings; empty when every kind
+    /// counts in full.
+    shares: Vec<(UnitKind, u64)>,
+}
+
+impl Trades {
+    fn of(siege: &Siege<'_>, difficulty: BotDifficulty) -> Self {
+        let attackers: Vec<(UnitKind, u64)> = siege
+            .units
+            .iter()
+            .filter(|threat| threat.body_domain() == Domain::Ground)
+            .map(|threat| (threat.kind, value(threat)))
+            .collect();
+        if !crate::reads_threats(difficulty) || attackers.is_empty() {
+            return Self::default();
+        }
+        let shares = UnitKind::ALL
+            .iter()
+            .map(|kind| (*kind, traded(*kind, &attackers)))
+            .collect();
+        Self { shares }
+    }
+
+    /// `unit`'s [`force`] against ground and air, on the ground cut to what
+    /// it trades against the attackers.
+    fn force(&self, unit: &UnitObs) -> [u64; 2] {
+        let [ground, air] = force(unit.kind, unit.hp);
+        [ground.min(self.ground(unit)), air]
+    }
+
+    /// What `units` that can hit ground are worth against the ground attackers
+    /// where a defense would fight: those within the gather distance
+    /// of its waiting `post` or of its `goal`.
+    fn together<'a>(
+        &self,
+        observation: &ObservationData,
+        units: impl Iterator<Item = &'a UnitId>,
+        [post, goal]: [TilePos; 2],
+    ) -> u64 {
+        let mut ids: Vec<UnitId> = units.copied().collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids.into_iter()
+            .filter_map(|id| mine(observation, id))
+            .filter(|unit| hits(unit, Domain::Ground))
+            .filter(|unit| {
+                unit.tile.chebyshev(post) <= GATHER_TILES
+                    || unit.tile.chebyshev(goal) <= GATHER_TILES
+            })
+            .map(|unit| self.ground(unit))
+            .sum()
+    }
+
+    /// `unit`'s strength against the ground attackers: its [`value`], cut to
+    /// what it trades against them.
+    fn ground(&self, unit: &UnitObs) -> u64 {
+        let value = value(unit);
+        self.shares
+            .iter()
+            .find(|(kind, _)| *kind == unit.kind)
+            .map_or(value, |(_, share)| {
+                value.min(worth(unit.kind, unit.hp) * share / 1_000)
+            })
+    }
+}
+
 /// What threatens a Foundry: enemies in sight and shelling enemy buildings,
 /// or, with neither, a gun out of sight.
 #[derive(Default)]
@@ -1233,8 +1299,11 @@ struct Siege<'a> {
     /// Those remembered enemies, by id.
     recalled: Vec<UnitId>,
     /// What the units the Foundry's defense holds or could take on its
-    /// ground are worth against ground: the most it could bring.
+    /// ground are worth against the ground attackers by `trades`: the most
+    /// it could bring.
     held: u64,
+    /// What the seat's units trade against the ground attackers in sight.
+    trades: Trades,
     /// Whether something armed threatens the Foundry that the lists above
     /// leave out: a gun the seat cannot beat yet, left to production, or a
     /// gun out of sight shelling it while threats in sight hold its entry.

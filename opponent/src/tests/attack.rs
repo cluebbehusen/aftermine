@@ -643,9 +643,11 @@ fn defenders_out_count_toward_the_reserve_and_defense_takes_it_too() {
     for (x, y) in [(6, 8), (7, 8)] {
         scenario.units.push(unit(0, UnitKind::Sentinel, x, y));
     }
-    for y in 10..=13 {
+    // Sentinels trade evenly with Sentinels, so the defense takes no more of
+    // them than the raiders cost.
+    for y in 10..=11 {
         for x in [10, 11] {
-            scenario.units.push(unit(1, UnitKind::Scuttler, x, y));
+            scenario.units.push(unit(1, UnitKind::Sentinel, x, y));
         }
     }
     let state = scenario.build().unwrap();

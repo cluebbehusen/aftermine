@@ -987,12 +987,13 @@ fn insert(ids: &mut Vec<UnitId>, id: UnitId) {
 
 /// Takes `units` in order while one could still add to a domain, ground then
 /// air, where `have` falls short of `need`, at most `room` of them, adding
-/// to `have` the [`force`] each brings.
+/// to `have` the `force` each brings against ground and air.
 fn fill<'a>(
     units: impl IntoIterator<Item = &'a UnitObs>,
     need: [u64; 2],
     have: &mut [u64; 2],
     room: usize,
+    force: impl Fn(&UnitObs) -> [u64; 2],
 ) -> Vec<UnitId> {
     let mut taken = Vec::new();
     for unit in units {
@@ -1004,7 +1005,7 @@ fn fill<'a>(
             .enumerate()
             .any(|(index, domain)| have[index] < need[index] && hits(unit, domain))
         {
-            let added = force(unit.kind, unit.hp);
+            let added = force(unit);
             *have = [have[0] + added[0], have[1] + added[1]];
             taken.push(unit.id);
         }

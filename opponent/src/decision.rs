@@ -815,7 +815,7 @@ pub(crate) fn decide(
         map,
         &producers,
         guard_gaps,
-        true,
+        (true, false),
         income,
         &mut needs,
         &mut ledger,
@@ -830,7 +830,7 @@ pub(crate) fn decide(
             map,
             &producers,
             shortfalls,
-            true,
+            (true, true),
             income,
             &mut needs,
             &mut ledger,
@@ -1641,7 +1641,10 @@ fn awaited(
 /// that would not pay back half its price against the attackers is never
 /// bought, and one worth less than half the best answer the bank reaches
 /// soon, a unit or an emergency structure this decision put up, waits for
-/// it: units that die before they pay only feed the attackers.
+/// it: units that die before they pay only feed the attackers. With
+/// `traded`, a unit queued makes up a ground shortfall at what it trades
+/// against the attackers, as a defense counts its own units; a guard counts
+/// its own at price, and so does what is queued for it.
 #[expect(
     clippy::too_many_arguments,
     reason = "a defense's answer reads the seat's producers, income and ledger"
@@ -1651,7 +1654,7 @@ fn arm(
     map: &MapModel,
     producers: &[Producer<'_>],
     mut shortfalls: Vec<Shortfall>,
-    urgent: bool,
+    (urgent, traded): (bool, bool),
     income: u32,
     needs: &mut Needs,
     ledger: &mut Ledger,
@@ -1661,10 +1664,22 @@ fn arm(
     }
     let cover = |shortfalls: &mut [Shortfall], kind: UnitKind, at: Option<u32>| {
         if let Some(short) = shortfalls.iter_mut().find(|short| helps(kind, at, short)) {
+            let cost = u64::from(kind.stats().cost);
+            let ground = if traded {
+                let grounded: Vec<(UnitKind, u64)> = short
+                    .attackers
+                    .iter()
+                    .copied()
+                    .filter(|(attacker, _)| attacker.stats().domain == Domain::Ground)
+                    .collect();
+                cost * composition::traded(kind, &grounded) / 1_000
+            } else {
+                cost
+            };
+            let made = [ground, cost];
             for (index, domain) in [Domain::Ground, Domain::Air].into_iter().enumerate() {
                 if hits(kind, domain) {
-                    short.gap[index] =
-                        short.gap[index].saturating_sub(u64::from(kind.stats().cost));
+                    short.gap[index] = short.gap[index].saturating_sub(made[index]);
                 }
             }
         }
