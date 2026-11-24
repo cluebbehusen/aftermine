@@ -93,14 +93,16 @@ it holds a spot starts a chase the same way. Any new order ends the hold.
 
 ## Workers in danger
 
-A Harvester or Excavator carrying scrap whose every route to a Foundry crosses \
-    known danger stands where it is and keeps its load rather than walk into fire. \
-    Known danger is: enemy units in sight, within their reach and {mobile} tiles more; \
-    enemy defenses you know of, within their reach and {fixed} more; radar contacts, \
-    within {radar} tiles; and places your team lost a unit or structure, or had one other than a Foundry hit, in the last \
-    {incident}, within {near} tiles. It looks for a safe route every {retry} and goes on \
-    by itself once one opens. While it waits, the advance reports DangerHold once \
-every {report}.
+A Harvester or Excavator routes around known danger when it can, and never \
+    stops working for it. Carrying scrap with no safe way to a Foundry, it goes the \
+    way it has and looks for a safe route again every {retry}. When danger reaches a \
+    source its zone chose and no safe one is left in the zone, it moves to the \
+    nearest safe source within {escape} tiles, crossing danger to reach it if it must, \
+    and works from there; with none, it keeps at its source. Known danger is: enemy \
+    units in sight, within their reach and {mobile} tiles more; enemy defenses you \
+    know of, within their reach and {fixed} more; radar contacts, within {radar} \
+    tiles; and places your team lost a unit or structure, or had one other than a \
+    Foundry hit, in the last {incident}, within {near} tiles.
 
 ## Construction
 
@@ -133,8 +135,7 @@ tick on its own.
         near = stats::HARVEST_INCIDENT_DANGER_RADIUS,
         retry =
             tick_time_label(u32::try_from(stats::HARVEST_DANGER_RETRY_TICKS).unwrap_or(u32::MAX)),
-        report =
-            tick_time_label(u32::try_from(stats::DANGER_HOLD_REPORT_PERIOD).unwrap_or(u32::MAX)),
+        escape = stats::HARVEST_ESCAPE_RADIUS,
     )
 }
 

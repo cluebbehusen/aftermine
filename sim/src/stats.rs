@@ -2986,6 +2986,12 @@ pub const PATH_EXPANSION_CAP: u32 = 20_000;
 /// into another patch.
 pub const HARVEST_ZONE_RADIUS: i32 = 7;
 
+/// Chebyshev radius around a Harvester that danger drove from its work
+/// zone in which it looks for a safe source before working on regardless:
+/// it bounds the search, and twelve reaches across the harvest lines around
+/// a shipped base.
+pub const HARVEST_ESCAPE_RADIUS: i32 = 12;
+
 /// Chassis overhang into the empty margin of a work target's tile footprint.
 pub const WORK_FOOTPRINT_OVERHANG: Fx = Fx::lit("0.42");
 
@@ -3116,10 +3122,10 @@ pub const GROUND_BRAKE_TICKS: u8 = 3;
 /// replan; short enough that shoving a parked worker never lasts a second.
 pub const STALL_REPLAN_TICKS: u8 = 12;
 
-/// Ticks a Harvester held by danger waits before searching again: one on its
-/// ordered route after a failed search for a safe detour keeps walking that
-/// route, and one holding cargo with no safe way to a drop-off keeps standing.
-/// Either reacts at once when the hold begins; only the repeat waits.
+/// Ticks a Harvester walks a route through known danger before searching
+/// for a safe one again: one on its ordered route after a failed search for
+/// a safe detour, and one with no safe way to a drop-off. Either searches at
+/// once when danger first blocks it; only the repeat waits.
 pub const HARVEST_DANGER_RETRY_TICKS: u64 = 16;
 
 /// Existing routes re-check only this near segment each tick. A Harvester
@@ -3142,7 +3148,7 @@ pub const HARVEST_DANGER_REACT_ZONE: usize = 3;
 /// threats never wait.
 pub const HARVEST_REPLAN_PERIOD: u64 = 4;
 
-/// Ticks between repeated `DangerHold` reports for one waiting worker.
+/// Ticks between repeated `DangerHold` reports for one waiting scout.
 pub const DANGER_HOLD_REPORT_PERIOD: u64 = 100;
 
 /// Ticks of caution one Scout leg may spend holding, retreating or detouring

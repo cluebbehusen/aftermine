@@ -198,8 +198,8 @@ controlled seat. They never reach a controller.
 
 - **Repeated orders:** one unit stalls with the same reason 5 times within 1,200
   ticks. The episode ends after a full window without that stall. Danger holds
-  are exempt: a harvest line waiting out danger re-reports every 100 ticks by
-  design. They still count in the row's stall evidence.
+  are exempt: a scout waiting out danger re-reports every 100 ticks by design.
+  They still count in the row's stall evidence.
 - **Abandoned sites:** a paid, visible, unbuilt base-tier site makes no
   construction progress for 1,200 ticks.
 - **Starved production:** every built producer of the seat stays idle for 1,200

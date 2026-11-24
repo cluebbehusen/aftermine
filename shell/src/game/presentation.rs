@@ -571,11 +571,9 @@ impl Presentation {
         }
     }
 
-    /// Lets the player's next stalled order speak. A worker's hold is not
-    /// tied to any order, so it keeps its own quiet.
+    /// Lets the player's next stalled order speak.
     pub(crate) fn order_given(&mut self) {
-        self.stall_reports
-            .retain(|(reason, _)| *reason == aftermine_sim::StallReason::DangerHold);
+        self.stall_reports.clear();
     }
 
     /// Raises an under-attack alert, rate-limited per 8-tile region so a
