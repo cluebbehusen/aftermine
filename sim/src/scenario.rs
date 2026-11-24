@@ -221,7 +221,7 @@ impl BotConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum BotDifficulty {
-    /// Slow and distractible, while retaining a competent economy.
+    /// Slow and distractible, with a thin economy.
     Scrapheap,
     /// The default opponent.
     #[default]
