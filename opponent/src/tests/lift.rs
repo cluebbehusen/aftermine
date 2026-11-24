@@ -1275,7 +1275,7 @@ fn a_short_defense_buys_its_army_before_a_carrier() {
 }
 
 #[test]
-fn a_severed_seat_without_an_airworks_trains_line_units_against_enemies_on_its_ground() {
+fn a_severed_seat_without_an_airworks_trains_an_army_against_enemies_on_its_ground() {
     let staged = |east: &[(i32, i32)]| {
         let mut scenario = strait();
         scenario.units.clear();
@@ -1290,19 +1290,14 @@ fn a_severed_seat_without_an_airworks_trains_line_units_against_enemies_on_its_g
         }
         scenario
     };
-    let line = |state: &State, commands: &[PlayerCommand]| {
-        army(state, commands)
-            .iter()
-            .filter(|(_, kind)| {
-                crate::composition::role(*kind) == Some(crate::composition::Role::Line)
-            })
-            .count()
-    };
+    // What beats the invaders is whatever trades best against them, not a
+    // particular role.
+    let armed = |state: &State, commands: &[PlayerCommand]| army(state, commands).len();
 
     let alone = staged(&[]);
     let state = alone.build().unwrap();
     let commands = seat(&alone, 0).act(&state, &mut OwnEvents::default());
-    assert_eq!(line(&state, &commands), 0, "premise: nothing to fight");
+    assert_eq!(armed(&state, &commands), 0, "premise: nothing to fight");
 
     let across: Vec<(i32, i32)> = (9..=13).map(|y| (30, y)).collect();
     let far = staged(&across);
@@ -1314,9 +1309,9 @@ fn a_severed_seat_without_an_airworks_trains_line_units_against_enemies_on_its_g
     let mut opponent = remembering(&seat(&far, 0), &far, &state, &remembered);
     let commands = opponent.act(&state, &mut OwnEvents::default());
     assert_eq!(
-        line(&state, &commands),
+        armed(&state, &commands),
         0,
-        "an army across the strait is no reason for line units"
+        "an army across the strait is no reason for an army"
     );
 
     let landed: Vec<(i32, i32)> = (9..=13).map(|y| (6, y)).collect();
@@ -1324,7 +1319,7 @@ fn a_severed_seat_without_an_airworks_trains_line_units_against_enemies_on_its_g
     let state = invaded.build().unwrap();
     let commands = seat(&invaded, 0).act(&state, &mut OwnEvents::default());
     assert!(
-        line(&state, &commands) > 0,
+        armed(&state, &commands) > 0,
         "invaders on its own ground are: {commands:?}"
     );
 }

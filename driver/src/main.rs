@@ -309,6 +309,14 @@ enum Cmd {
         /// Print the lab as JSON.
         #[arg(long)]
         json: bool,
+        /// Measure the bot's counter chart and write it in place of the
+        /// checked-in one, from the repository root.
+        #[arg(long, conflicts_with = "check")]
+        write: bool,
+        /// Measure the bot's counter chart and fail unless the checked-in
+        /// one matches it.
+        #[arg(long)]
+        check: bool,
     },
     /// Time bot decisions on a fixed workload: average and p99 wall time per
     /// decision and total CPU, per seat and pooled, beside the fog-honest
@@ -1081,8 +1089,22 @@ fn main() -> Result<()> {
             no_mixed,
             jobs,
             json,
+            write,
+            check,
         } => {
             use aftermine_driver::fight_lab;
+            if write || check {
+                let trades = fight_lab::chart(jobs)?;
+                if check {
+                    fight_lab::check(&trades)?;
+                    println!("the counter chart is current");
+                } else {
+                    std::fs::write(fight_lab::CHART, fight_lab::chart_source(&trades))
+                        .with_context(|| format!("writing {}", fight_lab::CHART))?;
+                    println!("wrote {}", fight_lab::CHART);
+                }
+                return Ok(());
+            }
             let kinds = kinds.unwrap_or_else(|| fight_lab::COMBAT.to_vec());
             let lab = fight_lab::Lab {
                 matrix: fight_lab::matrix(&kinds, &budgets, jobs)?,

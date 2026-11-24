@@ -5,6 +5,7 @@
 mod breach;
 mod checkpoint;
 mod composition;
+mod counters;
 mod crush;
 mod decision;
 mod defenses;
@@ -27,6 +28,7 @@ mod workers;
 
 pub use checkpoint::Checkpoint;
 pub use composition::{Factors, Reach, Role};
+pub use counters::{MEASURED, chart, fingerprint};
 pub use events::{OwnEvent, OwnEvents};
 pub use investments::{Investment, Step};
 pub use map::MapModel;

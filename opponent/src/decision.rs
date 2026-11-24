@@ -1530,7 +1530,15 @@ pub(crate) fn answer(fighter: Fighter, short: &Shortfall) -> u64 {
     }
     pressing
         .iter()
-        .map(|(attacker, value)| composition::matchup(fighter, *attacker) * value)
+        .map(|(attacker, value)| {
+            // Units trade as the counter chart measured them; structures,
+            // which it does not measure, by the duel estimate.
+            let trades = match fighter {
+                Fighter::Unit(kind) => crate::counters::pair(kind, *attacker),
+                Fighter::Structure(_) => composition::matchup(fighter, *attacker),
+            };
+            trades * value
+        })
         .sum::<u64>()
         / total
 }
@@ -1539,6 +1547,12 @@ pub(crate) fn answer(fighter: Fighter, short: &Shortfall) -> u64 {
 /// defense to buy it: one that dies having paid back less than half its price
 /// only feeds the attackers.
 const PAYS_BACK: u64 = 500;
+
+/// Per mille of the best answer the bank reaches soon a unit must be worth
+/// for a short defense to buy it now rather than wait for that answer: one
+/// that only half pays back where a counter is coming feeds the attackers in
+/// the meantime.
+const SETTLES: u64 = 750;
 
 /// Ticks of income a short defense waits for a better answer than its bank
 /// buys now.
@@ -1639,12 +1653,12 @@ fn awaited(
 /// train the unit that best answers a Foundry still short among those the
 /// bank buys, until what this decision queued makes up each shortfall. A unit
 /// that would not pay back half its price against the attackers is never
-/// bought, and one worth less than half the best answer the bank reaches
-/// soon, a unit or an emergency structure this decision put up, waits for
-/// it: units that die before they pay only feed the attackers. With
-/// `traded`, a unit queued makes up a ground shortfall at what it trades
-/// against the attackers, as a defense counts its own units; a guard counts
-/// its own at price, and so does what is queued for it.
+/// bought, and one worth less than [`SETTLES`] of the best answer the bank
+/// reaches soon, a unit or an emergency structure this decision put up,
+/// waits for it: units that die before they pay only feed the attackers. With
+/// `traded`, a unit queued makes up a shortfall at what it trades against
+/// the attackers, as a defense counts its own units; a guard counts its own
+/// at price, and so does what is queued for it.
 #[expect(
     clippy::too_many_arguments,
     reason = "a defense's answer reads the seat's producers, income and ledger"
@@ -1665,18 +1679,18 @@ fn arm(
     let cover = |shortfalls: &mut [Shortfall], kind: UnitKind, at: Option<u32>| {
         if let Some(short) = shortfalls.iter_mut().find(|short| helps(kind, at, short)) {
             let cost = u64::from(kind.stats().cost);
-            let ground = if traded {
-                let grounded: Vec<(UnitKind, u64)> = short
+            let made = [Domain::Ground, Domain::Air].map(|domain| {
+                if !traded {
+                    return cost;
+                }
+                let there: Vec<(UnitKind, u64)> = short
                     .attackers
                     .iter()
                     .copied()
-                    .filter(|(attacker, _)| attacker.stats().domain == Domain::Ground)
+                    .filter(|(attacker, _)| attacker.stats().domain == domain)
                     .collect();
-                cost * composition::traded(kind, &grounded) / 1_000
-            } else {
-                cost
-            };
-            let made = [ground, cost];
+                cost * crate::counters::weight(kind, &there) / 1_000
+            });
             for (index, domain) in [Domain::Ground, Domain::Air].into_iter().enumerate() {
                 if hits(kind, domain) {
                     short.gap[index] = short.gap[index].saturating_sub(made[index]);
@@ -1745,7 +1759,7 @@ fn arm(
                     kind.stats().cost <= budget
                         && helps(*kind, at, short)
                         && (short.attackers.is_empty() || worth(*kind) >= PAYS_BACK)
-                        && 2 * worth(*kind) >= best
+                        && worth(*kind) * 1_000 >= best * SETTLES
                 })
                 .max_by_key(|kind| (worth(*kind), kind.stats().cost))
         });
