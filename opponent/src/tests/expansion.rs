@@ -1205,8 +1205,8 @@ fn a_deep_bore_waits_while_a_known_enemy_army_outweighs_the_seat_s() {
 #[test]
 fn a_seat_saving_for_a_deep_bore_lets_it_go_once_a_known_army_outweighs_its_own() {
     // West has held scrap for a Deep Bore. Three East Lancers come into
-    // sight with no West army to meet them: it stops saving for the bore and
-    // stops holding that scrap back.
+    // sight with no West army to meet them: it stops saving for the bore,
+    // stops holding that scrap back, and spends it on meeting them.
     let saved = |lancers: i32| {
         let mut scenario = bore_arena(12);
         // Short of the bore's price, so it is still saved for.
@@ -1225,16 +1225,19 @@ fn a_seat_saving_for_a_deep_bore_lets_it_go_once_a_known_army_outweighs_its_own(
                 "target": {"investment": deep_bore, "attempt": null},
             });
         });
-        let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
         let trace = trace.unwrap();
+        let spent = !trains(&commands).is_empty() || !builds(&commands).is_empty();
         (
             trace.target.map(|target| target.investment) == Some(deep_bore),
             trace.protected,
+            spent,
         )
     };
-    let (kept, held) = saved(0);
+    let (kept, held, _) = saved(0);
     assert!(kept && held > 0, "premise: with nothing known it saves on");
-    let (kept, held_after) = saved(3);
+    let (kept, held_after, spent) = saved(3);
     assert!(!kept, "the Lancers outweigh an empty army");
     assert!(held_after < held, "{held_after} < {held}");
+    assert!(spent, "the scrap let go buys an answer");
 }
