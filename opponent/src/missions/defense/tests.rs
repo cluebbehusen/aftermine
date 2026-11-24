@@ -506,3 +506,32 @@ fn a_ground_defender_bombed_by_aircraft_it_cannot_hit_is_outweighed() {
         scuttler
     ));
 }
+
+#[test]
+fn a_defender_nearer_its_post_than_its_fight_is_not_recalled() {
+    // A post far east, a fight well to its west and a defender between them,
+    // out of reach of every West building: it is on its way in, though
+    // farther from West's start than the fight.
+    let (observation, ids) = viewed(&[
+        (0, UnitKind::Sentinel, 17, 7),
+        (1, UnitKind::Scuttler, 12, 6),
+    ]);
+    let inward = ids[0];
+    let scuttler = observation
+        .enemy_units
+        .iter()
+        .find(|unit| unit.id == ids[1])
+        .unwrap();
+    let siege = Siege {
+        units: vec![scuttler],
+        ..Siege::default()
+    };
+    let mut ledger = Ledger::new(PlayerId(0), 0, 10);
+    let recalled = recall(
+        (&observation, &Memory::default()),
+        &mut ledger,
+        (&[inward], &siege, Some(TilePos::new(19, 8)), Pursuit::Hunt),
+        TilePos::new(12, 8),
+    );
+    assert_eq!(recalled, []);
+}
