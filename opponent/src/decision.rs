@@ -1548,12 +1548,6 @@ pub(crate) fn answer(fighter: Fighter, short: &Shortfall) -> u64 {
 /// only feeds the attackers.
 const PAYS_BACK: u64 = 500;
 
-/// Per mille of the best answer the bank reaches soon a unit must be worth
-/// for a short defense to buy it now rather than wait for that answer: one
-/// that only half pays back where a counter is coming feeds the attackers in
-/// the meantime.
-const SETTLES: u64 = 750;
-
 /// Ticks of income a short defense waits for a better answer than its bank
 /// buys now.
 const SAVE_TICKS: u64 = 300;
@@ -1653,9 +1647,9 @@ fn awaited(
 /// train the unit that best answers a Foundry still short among those the
 /// bank buys, until what this decision queued makes up each shortfall. A unit
 /// that would not pay back half its price against the attackers is never
-/// bought, and one worth less than [`SETTLES`] of the best answer the bank
-/// reaches soon, a unit or an emergency structure this decision put up,
-/// waits for it: units that die before they pay only feed the attackers. With
+/// bought, and one worth less than half the best answer the bank reaches
+/// soon, a unit or an emergency structure this decision put up, waits for
+/// it: units that die before they pay only feed the attackers. With
 /// `traded`, a unit queued makes up a shortfall at what it trades against
 /// the attackers, as a defense counts its own units; a guard counts its own
 /// at price, and so does what is queued for it.
@@ -1759,7 +1753,7 @@ fn arm(
                     kind.stats().cost <= budget
                         && helps(*kind, at, short)
                         && (short.attackers.is_empty() || worth(*kind) >= PAYS_BACK)
-                        && worth(*kind) * 1_000 >= best * SETTLES
+                        && 2 * worth(*kind) >= best
                 })
                 .max_by_key(|kind| (worth(*kind), kind.stats().cost))
         });
