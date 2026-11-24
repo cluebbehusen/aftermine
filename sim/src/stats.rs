@@ -1184,7 +1184,7 @@ const LANCER: UnitStats = UnitStats {
     domain: Domain::Ground,
     weapons: &[WeaponStats {
         // Rewards the first tech rung: it one-shots Sentinels and light
-        // machines, while siege and air remain effective counters.
+        // machines, while the Warden, siege and air remain effective counters.
         damage: 60,
         range: Fx::lit("5.5"), // beyond aggro: it only uses this on orders
         minimum_range: Fx::ZERO,
@@ -1406,8 +1406,8 @@ const TALON: UnitStats = UnitStats {
 
 const WARDEN: UnitStats = UnitStats {
     contact_reach: None,
-    // The line brawler can trade into massed rails without replacing
-    // the Lancer's role as the more efficient dedicated counter.
+    // The line brawler is the counter to massed rails: it closes through
+    // their volleys and kills a Lancer with each shot.
     max_hp: 340,
     speed: Fx::lit("0.09"),
     radius: Fx::lit("0.45"),
@@ -1415,9 +1415,9 @@ const WARDEN: UnitStats = UnitStats {
     train_ticks: 400,
     domain: Domain::Ground,
     weapons: &[WeaponStats {
-        // One shot kills a Scuttler and two a Bombard, which is what lets
-        // the middle tank hold against swarms.
-        damage: 40,
+        // One shot kills a Scuttler or a Lancer and two a Bombard, which is
+        // what lets the middle tank hold against swarms and rails.
+        damage: 50,
         range: Fx::lit("3"),
         minimum_range: Fx::ZERO,
         cooldown_ticks: 31,
@@ -1626,10 +1626,10 @@ const BREAKER: UnitStats = UnitStats {
 
 const PILEDRIVER: UnitStats = UnitStats {
     contact_reach: None,
-    // A Breaker takes four slugs; light machines waste most of one, so a
-    // swarm outlasts it. Its own hp stays well under two slugs, so it never
-    // counts as the heavy machine it hunts.
-    max_hp: 240,
+    // A Breaker takes four slugs but kills it with two shells; light
+    // machines waste most of a slug, so a swarm outlasts it. Its own hp stays
+    // well under two slugs, so it never counts as the heavy machine it hunts.
+    max_hp: 220,
     speed: Fx::lit("0.06"), // 1.2 tiles/s
     radius: Fx::lit("0.5"),
     cost: 400,
