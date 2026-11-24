@@ -83,6 +83,8 @@ pub enum Check {
     ClearsLanding,
     /// Every attacker Maw is destroyed.
     StopsBreach,
+    /// Every attacker unit is destroyed.
+    DestroysAttackers,
 }
 
 impl Check {
@@ -94,6 +96,7 @@ impl Check {
             Check::SilencesArtillery => "silences_artillery",
             Check::ClearsLanding => "clears_landing",
             Check::StopsBreach => "stops_breach",
+            Check::DestroysAttackers => "destroys_attackers",
         }
     }
 }
@@ -474,7 +477,10 @@ impl Watch {
     fn observe(&mut self, state: &State, defender: PlayerId, attacker: PlayerId) {
         let now = state.current_tick();
         match self.check {
-            Check::KeepsFoundry | Check::SilencesArtillery | Check::StopsBreach => {}
+            Check::KeepsFoundry
+            | Check::SilencesArtillery
+            | Check::StopsBreach
+            | Check::DestroysAttackers => {}
             Check::AnswersAir { .. } => {
                 if self.first_air_sighting.is_none() {
                     let seen = state.units().iter().any(|unit| {
@@ -600,6 +606,23 @@ impl Watch {
                         "every Maw destroyed".into()
                     } else {
                         format!("{breachers} Maw still standing")
+                    },
+                )
+            }
+            Check::DestroysAttackers => {
+                let standing = state
+                    .units()
+                    .iter()
+                    .filter(|unit| unit.player == attacker && unit.hp > 0)
+                    .count();
+                (
+                    has_foundry && standing == 0,
+                    if !has_foundry {
+                        "the starting Foundry fell".into()
+                    } else if standing == 0 {
+                        "every attacker destroyed".into()
+                    } else {
+                        format!("attackers still standing: {standing}")
                     },
                 )
             }
