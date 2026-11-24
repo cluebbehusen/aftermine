@@ -98,12 +98,13 @@ actions affect the running total and mission state.
   clear shot at it within a ground unit's own reach; ground an own or allied
   Foundry holds is home. An expansion Foundry also scores what its support would
   pay back to the seat's stranded remote Extractors, and one bought for that
-  waits until the army holds the known enemy. A Crucible still to buy, and the
-  Fabricator it needs, count toward the first Deep Bore's price. A Deep Bore
-  competes as soon as an Extractor the seat's Foundry supports stands, whether
-  or not harvesting is saturated; Reclaimers wait until it is and the scrap
-  around the start has begun to run down. Growth outranks tech by what it pays
-  back, never by a rule that holds tech down.
+  waits until the army holds the known enemy. At Veteran and Prime, a Crucible
+  still to buy, and the Fabricator it needs, count toward the first Deep Bore's
+  price, and a Deep Bore competes as soon as an Extractor the seat's Foundry
+  supports stands; lower rungs wait for a Crucible. Either way it competes
+  whether or not harvesting is saturated; Reclaimers wait until it is and the
+  scrap around the start has begun to run down. Growth outranks tech by what it
+  pays back, never by a rule that holds tech down.
 - A site with scrap is taken once the seat's own Foundry, an ally's building or
   an enemy's Foundry stands near its scrap. No other enemy building takes it;
   enemy guns that reach the site count against it as danger instead.
@@ -111,10 +112,11 @@ actions affect the running total and mission state.
   frames, so teammates do not crowd one expansion, or once the seat's own
   Foundries support every frame no other seat holds. An enemy's Foundry never
   takes it.
-- The top investment is funded through its next purchasable step. The Deep Bore
-  upgrade is wanted before the Crucible it needs stands, so its worth funds the
-  Fabricator the Crucible needs and then the Crucible as those steps. The bot
-  keeps one optional saving target with its price, reason and cancel conditions.
+- The top investment is funded through its next purchasable step. At Veteran and
+  Prime the Deep Bore upgrade is wanted before the Crucible it needs stands, so
+  its worth funds the Fabricator the Crucible needs and then the Crucible as
+  those steps. The bot keeps one optional saving target with its price, reason
+  and cancel conditions.
 - Income is not observed directly. The bot estimates it from the change in bank
   since the previous decision plus its own spending in between.
 - While saving, a share of income is protected for the target, capped by the
@@ -328,16 +330,17 @@ kind.
   which is its reaction time; how many unit orders one decision may give, which
   is its attention; how much strength an attack must bring over the known
   defense; and how fully it builds its economy: lower rungs staff their scrap
-  nodes more thinly and want each kind of growth less, though never so little
-  that they stop growing. The lowest rung also misjudges the enemy's strength by
-  a deterministic draw from its seed. Veteran and Prime read what a threat at
-  home is and train what beats it; Standard and Scrapheap read only how much of
-  it there is and answer with their cheapest helpful unit. Memory fades at the
-  same rate on every rung. Difficulty also sets how well a seat carries out its
-  repertoire: lower rungs attack and defend piecemeal, pick targets worse, walk
-  into known defenses as a column or gather short of them only briefly, count
-  only the defenses around a target, let a defense call back an army on its way,
-  focus fire on the nearest enemy or by a rough read of its wounds, leave
-  reinforcements at home, and lift without a fresh look or without counting
-  bomber cover. Every rung keeps every capability. Lower rungs make
-  understandable mistakes, and higher rungs beat lower ones.
+  nodes more thinly, refit fewer of their Extractors into Deep Bores and want
+  each kind of growth less, though never so little that they stop growing. The
+  lowest rung also misjudges the enemy's strength by a deterministic draw from
+  its seed. Veteran and Prime read what a threat at home is and train what beats
+  it; Standard and Scrapheap read only how much of it there is and answer with
+  their cheapest helpful unit. Memory fades at the same rate on every rung.
+  Difficulty also sets how well a seat carries out its repertoire: lower rungs
+  attack and defend piecemeal, pick targets worse, walk into known defenses as a
+  column or gather short of them only briefly, count only the defenses around a
+  target, let a defense call back an army on its way, focus fire on the nearest
+  enemy or by a rough read of its wounds, leave reinforcements at home, and lift
+  without a fresh look or without counting bomber cover. Every rung keeps every
+  capability. Lower rungs make understandable mistakes, and higher rungs beat
+  lower ones.

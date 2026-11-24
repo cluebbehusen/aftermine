@@ -6,7 +6,7 @@ fn pause_save_bulk_advance_and_replacement_keep_the_settled_boundary() {
         return; // A single-core host intentionally has no background executor.
     }
     let mut game = Game::with_viewport(Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
-    game.advance_ticks(120);
+    game.advance_ticks(144);
     game.issue(Command::Train {
         building: BuildingId(0),
         kind: UnitKind::Harvester,

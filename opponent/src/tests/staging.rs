@@ -179,7 +179,7 @@ fn an_attack_launched_on_a_long_wait_goes_in_at_the_margin_it_launched_on() {
     );
 }
 
-/// The guarded field at tick 408 with an attack on East's Foundry `phase`
+/// The guarded field at tick 432 with an attack on East's Foundry `phase`
 /// since `since`: Sentinels at `there` beside `STAGE`, and the rest of the
 /// army's eight at home, on their way since the decision before when
 /// `coming`. Four more Sentinels stand free at home.
@@ -234,13 +234,13 @@ fn staging_with(
         .chain(home.iter().copied())
         .collect();
     members.sort_unstable();
-    advance_to(&mut state, 396, &[]);
+    advance_to(&mut state, 420, &[]);
     let orders = if coming {
         vec![run(0, home, STAGE.0, STAGE.1)]
     } else {
         Vec::new()
     };
-    advance_to(&mut state, 408, &orders);
+    advance_to(&mut state, 432, &orders);
     let opponent = restaged(&scenario, &state, staged_attack(phase, since, &members));
     (state, opponent, members)
 }
@@ -294,7 +294,7 @@ fn goes_in(commands: &[PlayerCommand], members: &[UnitId]) -> bool {
 #[test]
 fn a_staging_army_waits_while_the_rest_are_on_their_way() {
     // Half the army has arrived; the rest is still on its way.
-    let (state, mut opponent, members) = staging("stage", 408, &THERE[..4], true);
+    let (state, mut opponent, members) = staging("stage", 432, &THERE[..4], true);
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
     assert!(!goes_in(&commands, &members), "{commands:?}");
     assert_eq!(
@@ -303,7 +303,7 @@ fn a_staging_army_waits_while_the_rest_are_on_their_way() {
     );
 
     // The rest stand still at home: nothing is worth waiting for.
-    let (state, mut opponent, members) = staging("stage", 408, &THERE[..4], false);
+    let (state, mut opponent, members) = staging("stage", 432, &THERE[..4], false);
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
     assert!(goes_in(&commands, &members), "{commands:?}");
     assert_eq!(
@@ -320,7 +320,7 @@ fn a_staging_army_waits_for_a_breacher_on_its_way() {
         let mut scenario = guarded(BotDifficulty::Standard, &LINE, (28, 11));
         scenario.units.push(unit(0, UnitKind::Maw, 8, 16));
         let (state, mut opponent, members) =
-            staging_with(scenario, "stage", 408, &THERE, coming, &[(8, 16)]);
+            staging_with(scenario, "stage", 432, &THERE, coming, &[(8, 16)]);
         let (commands, _) = opponent.act_traced(&state, &mut OwnEvents::default());
         assert_eq!(
             goes_in(&commands, &members),
@@ -336,7 +336,7 @@ fn a_breacher_leads_the_army_in() {
     // Maw goes in alone, and the rest stay.
     let mut scenario = guarded(BotDifficulty::Standard, &LINE, (28, 11));
     scenario.units.push(unit(0, UnitKind::Maw, 18, 14));
-    let (state, mut opponent, _) = staging_with(scenario, "stage", 408, &THERE, false, &[(18, 14)]);
+    let (state, mut opponent, _) = staging_with(scenario, "stage", 432, &THERE, false, &[(18, 14)]);
     let maw = maw_of(&state).id;
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
     let [(units, goal)] = &hunts(&commands)[..] else {
@@ -353,7 +353,7 @@ fn a_breacher_leads_the_army_in() {
     let mut scenario = guarded(BotDifficulty::Standard, &LINE, (28, 11));
     scenario.units.push(unit(0, UnitKind::Maw, 24, 18));
     let (state, mut opponent, members) =
-        staging_with(scenario, "stage", 408, &THERE, false, &[(24, 18)]);
+        staging_with(scenario, "stage", 432, &THERE, false, &[(24, 18)]);
     assert_eq!(maw_of(&state).tile(), TilePos::new(24, 18), "premise");
     let (commands, _) = opponent.act_traced(&state, &mut OwnEvents::default());
     assert!(goes_in(&commands, &members), "{commands:?}");
@@ -365,7 +365,7 @@ fn a_breacher_leads_the_army_in() {
     scenario.units.push(unit(0, UnitKind::Kestrel, 42, 9));
     scenario.units.push(unit(1, UnitKind::Maw, 44, 6));
     scenario.units.push(unit(1, UnitKind::Maw, 44, 16));
-    let (state, mut opponent, _) = staging_with(scenario, "stage", 408, &THERE, false, &[(24, 18)]);
+    let (state, mut opponent, _) = staging_with(scenario, "stage", 432, &THERE, false, &[(24, 18)]);
     let maw = maw_of(&state).id;
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
     assert_eq!(
@@ -388,7 +388,7 @@ fn a_breacher_that_cannot_move_on_holds_no_one_up() {
     let mut scenario = guarded(BotDifficulty::Standard, &LINE, (28, 11));
     scenario.units.push(unit(0, UnitKind::Maw, 18, 14));
     let (state, mut opponent, members) =
-        staging_with(scenario, "stage", 408, &THERE, false, &[(18, 14)]);
+        staging_with(scenario, "stage", 432, &THERE, false, &[(18, 14)]);
     let maw = maw_of(&state);
     let mut events = OwnEvents::default();
     events.record(
@@ -409,7 +409,7 @@ fn a_breacher_that_cannot_move_on_holds_no_one_up() {
 fn a_staging_army_takes_none_of_the_units_freed_at_home() {
     let scenario = guarded(BotDifficulty::Veteran, &LINE, (28, 11));
     for (phase, joins) in [("stage", false), ("travel", true)] {
-        let (state, mut opponent, _) = staging_on(scenario.clone(), phase, 408, &THERE[..4], true);
+        let (state, mut opponent, _) = staging_on(scenario.clone(), phase, 432, &THERE[..4], true);
         let free: Vec<UnitId> = WEST[4..].iter().map(|(x, y)| at(&state, *x, *y)).collect();
         let (commands, _) = opponent.act_traced(&state, &mut OwnEvents::default());
         let sent = hunts(&commands)
@@ -432,7 +432,7 @@ fn an_army_shelled_where_it_gathers_falls_back_out_of_reach() {
     scenario
         .units
         .push(unit(1, UnitKind::Kestrel, spotter.x, spotter.y));
-    let (mut state, _, members) = staging_on(scenario.clone(), "stage", 408, &THERE[..4], true);
+    let (mut state, _, members) = staging_on(scenario.clone(), "stage", 432, &THERE[..4], true);
     let of = |kind: UnitKind| {
         let unit = state
             .units()
@@ -465,11 +465,12 @@ fn an_army_shelled_where_it_gathers_falls_back_out_of_reach() {
         }),
     ]);
     let impacts = |state: &State| ObservationData::fog_honest(state, PlayerId(0)).incoming_shells;
-    while state.current_tick() % 12 != 0 || impacts(&state).is_empty() {
+    let interval = crate::decision_interval(BotDifficulty::Standard);
+    while !state.current_tick().is_multiple_of(interval) || impacts(&state).is_empty() {
         assert!(state.current_tick() < 1_000, "premise: the Avalanche fires");
         state.tick(&[]);
     }
-    let mut opponent = restaged(&scenario, &state, staged_attack("stage", 408, &members));
+    let mut opponent = restaged(&scenario, &state, staged_attack("stage", 432, &members));
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
     let mission = attack(&trace.unwrap().missions).unwrap();
     assert_eq!(mission.phase, Phase::Travel, "it heads for a new spot");

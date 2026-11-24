@@ -30,27 +30,27 @@ fn untimed(workload: Workload, ticks: u64) -> (String, String) {
 
 #[test]
 fn timed_runs_report_every_seat_and_match_an_untimed_run() {
-    let report: Value = serde_json::from_str(&bot_cost(&["duel", "--ticks", "48", "--json"]))
+    let report: Value = serde_json::from_str(&bot_cost(&["duel", "--ticks", "144", "--json"]))
         .expect("--json prints one JSON document");
 
     assert_eq!(report["workload"], "duel");
-    assert_eq!(report["final_tick"], 48);
+    assert_eq!(report["final_tick"], 144);
     let seats = report["seats"].as_array().unwrap();
     assert_eq!(seats.len(), 2);
     for (index, seat) in seats.iter().enumerate() {
         assert_eq!(seat["player"], index);
         assert_eq!(
             seat["decision"]["count"], 4,
-            "decisions at ticks 0, 12, 24 and 36 only"
+            "decisions at ticks 0, 36, 72 and 108 only"
         );
         assert_eq!(seat["observation"]["count"], 4);
         assert!(seat["decision"]["total_ns"].as_u64().unwrap() > 0);
     }
     assert_eq!(report["all"]["seats"], 2);
     assert_eq!(report["all"]["decision"]["count"], 8);
-    assert_eq!(report["simulation"]["count"], 48);
+    assert_eq!(report["simulation"]["count"], 144);
 
-    let (commands, world) = untimed(Workload::Duel, 48);
+    let (commands, world) = untimed(Workload::Duel, 144);
     assert_eq!(report["command_hash"], commands.as_str());
     assert_eq!(report["final_hash"], world.as_str());
 }

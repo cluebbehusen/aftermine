@@ -47,7 +47,7 @@ fn snapshots_save_while_running_and_ready() {
     let executor = BotExecutor::new(2);
     let mut state = Arc::new(scenario.build().unwrap());
     let mut bots = seat_controllers(&scenario).unwrap();
-    for _ in 0..120 {
+    for _ in 0..144 {
         let commands = executor.commands(&state, &mut bots);
         Arc::get_mut(&mut state).unwrap().tick(&commands);
     }
@@ -155,9 +155,9 @@ fn own_events_are_consumed_only_when_a_decision_is_installed() {
     let executor = BotExecutor::new(2);
     let mut state = Arc::new(scenario.build().unwrap());
     let mut bots = seat_controllers(&scenario).unwrap();
-    while state.current_tick() < 12 {
+    while state.current_tick() < 36 {
         let mut commands = serial_commands(&state, &mut bots);
-        if state.current_tick() == 11 {
+        if state.current_tick() == 35 {
             commands.push(stop(0));
         }
         let report = Arc::get_mut(&mut state).unwrap().tick(&commands);
@@ -179,7 +179,7 @@ fn own_events_are_consumed_only_when_a_decision_is_installed() {
 
     let (_, trace) = bots.clone()[0].act_traced(&state);
     let Some(trace) = trace else {
-        panic!("the opponent seat decides at tick 12");
+        panic!("the opponent seat decides at tick 36");
     };
     assert_eq!(serde_json::to_value(trace.events).unwrap(), rejected);
     let mut serial = bots.clone();

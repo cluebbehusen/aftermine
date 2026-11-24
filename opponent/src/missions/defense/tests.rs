@@ -535,3 +535,45 @@ fn a_defender_nearer_its_post_than_its_fight_is_not_recalled() {
     );
     assert_eq!(recalled, []);
 }
+
+#[test]
+fn a_defense_whose_order_home_finds_no_room_stays_engaged() {
+    // A defense stood down to run home. With no order left this look it keeps
+    // its last order and stays engaged as it was, to stand down again later;
+    // with one left it goes home.
+    let home = |allowance: u32| {
+        let mut missions: Missions = serde_json::from_value(serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {"task": "defend", "asset": 0, "phase": "recover"},
+                "since": 50,
+                "units": [1, 2],
+                "goal": {"x": 11, "y": 6},
+            }],
+            "waiting": null,
+        }))
+        .unwrap();
+        let mut ledger = Ledger::new(PlayerId(0), 0, allowance);
+        missions.send_home(vec![(0, TilePos::new(5, 6), None, 10)], &mut ledger);
+        missions.list.remove(0)
+    };
+    let stayed = home(0);
+    assert!(matches!(
+        stayed.task,
+        Task::Defend {
+            phase: DefendPhase::Engage { focus: None },
+            ..
+        }
+    ));
+    assert_eq!((stayed.since, stayed.goal), (10, TilePos::new(11, 6)));
+    let gone = home(1);
+    assert!(matches!(
+        gone.task,
+        Task::Defend {
+            phase: DefendPhase::Recover,
+            ..
+        }
+    ));
+    assert_eq!(gone.goal, TilePos::new(5, 6));
+}

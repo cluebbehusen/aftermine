@@ -269,14 +269,14 @@ fn a_maw_leaves_with_an_army_that_turns_home() {
         .flat_map(|x| (7..13).map(move |y| (UnitKind::Sentinel, x + i32::from(y % 2 == 0), y)))
         .collect();
     for (east, ends, phase) in [
-        (&east[..], 12, Phase::Withdraw),
+        (&east[..], 36, Phase::Withdraw),
         (&[][..], 3_600, Phase::Recover),
     ] {
         let mut scenario = super::attack::advanced(BotDifficulty::Standard, east);
         scenario.units.push(unit(0, UnitKind::Maw, 21, 15));
         let mut state = scenario.build().unwrap();
         let maw = at(&state, 21, 15);
-        advance_to(&mut state, ends - 12, &[]);
+        advance_to(&mut state, ends - 36, &[]);
         let fighting = serde_json::json!({"engage": {"focus": null, "progressed": 0}});
         let (mut members, mut missions) = super::attack::under_way(&state, &fighting, 0);
         members.push(maw);
