@@ -2057,3 +2057,54 @@ fn an_unaffordable_bastion_leaves_a_cheaper_emergency_elsewhere_its_turret() {
         "{commands:?}"
     );
 }
+
+#[test]
+fn a_turret_still_firing_at_some_attackers_is_not_raised_under_them() {
+    // Lancers outrange the Turret, but the Sentinels with them do not, and
+    // the Turret is firing at those: raising it would take it down as a
+    // site in the middle of the fight.
+    let scenario = turret_under(&[
+        (UnitKind::Lancer, 12, 4),
+        (UnitKind::Lancer, 12, 5),
+        (UnitKind::Lancer, 12, 6),
+        (UnitKind::Sentinel, 10, 5),
+        (UnitKind::Sentinel, 10, 6),
+    ]);
+    let state = scenario.build().unwrap();
+    let commands =
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
+    let raised: Vec<BuildingId> = commands_of(&commands, |command| match command {
+        Command::UpgradeBuilding { building } => Some(*building),
+        _ => None,
+    });
+    assert!(raised.is_empty(), "{commands:?}");
+}
+
+#[test]
+fn a_deep_bore_refit_beside_the_foundry_holds_back_no_emergency() {
+    // An Extractor beside the Foundry is being refitted into a Deep Bore. It
+    // is no gun, so a Sentinel by the base still draws an emergency Turret.
+    let mut scenario = arena(600);
+    scenario.map[4].replace_range(8..=8, "E");
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Extractor, 8, 4));
+    scenario.units.push(unit(1, UnitKind::Sentinel, 11, 5));
+    let built = scenario.build().unwrap();
+    let mut value = serde_json::to_value(&built).unwrap();
+    for entry in value["buildings"].as_array_mut().unwrap() {
+        if entry["kind"] == "extractor" {
+            entry["tier"] = 1.into();
+            entry["phase"] = serde_json::json!({ "phase": "upgrading", "progress": 1 });
+        }
+    }
+    let state: State = serde_json::from_value(value).unwrap();
+    let commands =
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
+    assert!(
+        builds(&commands)
+            .iter()
+            .any(|(kind, _)| *kind == BuildingKind::Turret),
+        "{commands:?}"
+    );
+}
