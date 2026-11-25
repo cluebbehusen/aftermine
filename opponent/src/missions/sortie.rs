@@ -4,11 +4,12 @@
 //! anti-air around them outweighs them.
 
 use super::air;
-use super::attack::{FIT, healthy, striking};
+use super::attack::{FIT, healthy, striking_mix};
 use super::clear::{self, Sweep};
 use super::fight::Fight;
 use super::strike::{self, Raid};
 use super::{Mission, Missions, Objective, StrikePhase, Task, mine, run, standing};
+use crate::counters::{Piece, weigh};
 use crate::decision::Ledger;
 use crate::gunship::gunship;
 use aftermine_sim::observation::{ObservationData, UnitObs};
@@ -49,13 +50,15 @@ impl<'a> Sortie<'_, 'a> {
         }
     }
 
-    /// Whether the known anti-air reaching `members` outweighs `strength`.
-    fn outweighed(self, members: &[&UnitObs], strength: u64) -> bool {
+    /// Whether the known anti-air reaching `members` outweighs `own`, each
+    /// side weighed by what it trades against the other.
+    fn outweighed(self, members: &[&UnitObs], own: &[(Piece, u64)]) -> bool {
         let (hazards, retreat) = match self {
             Self::Strike(raid) => (raid.air, raid.retreat),
             Self::Clear(sweep) => (sweep.air, sweep.retreat),
         };
-        air::opposition(hazards, members) * 1_000 > strength * retreat
+        let enemy = air::opposition(hazards, members);
+        weigh(&enemy, own) * 1_000 > weigh(own, &enemy) * retreat
     }
 
     fn rally(self, aim: Aim) -> Option<TilePos> {
@@ -66,11 +69,11 @@ impl<'a> Sortie<'_, 'a> {
         }
     }
 
-    /// Whether a gathered sortie of `strength` still goes at `aim`.
-    fn sets_out(self, aim: Aim, strength: u64) -> bool {
+    /// Whether a gathered sortie of `own` still goes at `aim`.
+    fn sets_out(self, aim: Aim, own: &[(Piece, u64)]) -> bool {
         match (self, aim) {
-            (Self::Strike(raid), Aim::Building(target)) => raid.sets_out(target, strength),
-            (Self::Clear(sweep), Aim::Tile(tile)) => sweep.sets_out(tile, strength),
+            (Self::Strike(raid), Aim::Building(target)) => raid.sets_out(target, own),
+            (Self::Clear(sweep), Aim::Tile(tile)) => sweep.sets_out(tile, own),
             _ => unreachable!("a sortie's aim"),
         }
     }
@@ -93,16 +96,16 @@ impl<'a> Sortie<'_, 'a> {
         }
     }
 
-    /// The next aim `strength` can take after `aim`, its fight at `goal`. A
+    /// The next aim `own` can take after `aim`, its fight at `goal`. A
     /// `staying` sortie may take the same aim again.
-    fn next(self, strength: u64, aim: Aim, goal: TilePos, staying: bool) -> Option<Aim> {
+    fn next(self, own: &[(Piece, u64)], aim: Aim, goal: TilePos, staying: bool) -> Option<Aim> {
         match (self, aim) {
             (Self::Strike(raid), Aim::Building(target)) => {
-                raid.best(strength, Some(target)).map(Aim::Building)
+                raid.best(own, Some(target)).map(Aim::Building)
             }
-            (Self::Clear(sweep), Aim::Tile(_)) => sweep
-                .best(strength, (!staying).then_some(goal))
-                .map(Aim::Tile),
+            (Self::Clear(sweep), Aim::Tile(_)) => {
+                sweep.best(own, (!staying).then_some(goal)).map(Aim::Tile)
+            }
             _ => unreachable!("a sortie's aim"),
         }
     }
@@ -156,7 +159,7 @@ impl Missions {
             .filter_map(|id| mine(sortie.observation(), *id))
             .collect();
         let all_idle = members.iter().all(|unit| unit.idle);
-        let strength: u64 = members.iter().map(|unit| striking(unit)).sum();
+        let own = striking_mix(members.iter().copied());
         let age = now - mission.since;
         let Some(rally) = sortie.rally(aim) else {
             // A strike keeps its target; a clearance with nowhere to come
@@ -201,7 +204,7 @@ impl Missions {
                 if !all_idle && age < sortie.ticks(phase) {
                     return None;
                 }
-                if !sortie.sets_out(aim, strength) {
+                if !sortie.sets_out(aim, &own) {
                     self.list.remove(index);
                     return None;
                 }
@@ -220,13 +223,13 @@ impl Missions {
                     return None;
                 }
                 let late = age >= sortie.ticks(phase) && !staying;
-                if all_idle || late || sortie.outweighed(&members, strength) {
+                if all_idle || late || sortie.outweighed(&members, &own) {
                     return withdraw(self, ledger).then_some(lost).flatten();
                 }
                 None
             }
             StrikePhase::Engage { .. } => {
-                if sortie.outweighed(&members, strength) {
+                if sortie.outweighed(&members, &own) {
                     return withdraw(self, ledger).then_some(lost).flatten();
                 }
                 let Some(fight) = self.list[index].task.fight_mut() else {
@@ -244,7 +247,7 @@ impl Missions {
                 if sortie.stands(aim) {
                     return withdraw(self, ledger).then_some(lost).flatten();
                 }
-                match sortie.next(strength, aim, goal, staying) {
+                match sortie.next(&own, aim, goal, staying) {
                     Some(next) => {
                         if let Some(to) = sortie.send(units.clone(), goal, next, ledger) {
                             self.list[index].set_sortie(next, StrikePhase::Travel, now, to);

@@ -2,10 +2,11 @@
 //! estimate of enemy strength a defense, a local guard and a raid read to go
 //! out, wait or give the place up.
 
-use super::attack::{building_value, guards};
+use super::attack::{Force, guards, gun, priced};
 use super::defense::at_home;
 use super::reserve::LOCAL_REACH;
 use super::{against_machines, reached, value};
+use crate::counters::Piece;
 use crate::frame::{HomeFrame, doubled, gap};
 use crate::map::{MapModel, NEIGHBOURS, UNREACHABLE};
 use crate::memory::Memory;
@@ -69,10 +70,18 @@ fn foes(observation: &ObservationData, memory: &Memory) -> Vec<Foe> {
 
 /// What the `foes` that would join a fight at `place` are worth.
 fn joining(foes: &[Foe], place: TilePos) -> u64 {
+    joining_force(foes, place)
+        .iter()
+        .map(|(_, worth)| worth)
+        .sum()
+}
+
+/// The `foes` that could join a fight at `place`, as the chart weighs them.
+fn joining_force(foes: &[Foe], place: TilePos) -> Force {
     foes.iter()
         .filter(|foe| foe.tile.chebyshev(place) <= foe.reach)
-        .map(|foe| foe.worth)
-        .sum()
+        .map(|foe| (Piece::Unit(foe.kind), foe.worth))
+        .collect()
 }
 
 /// What the known armed enemy ground units that could join a fight at
@@ -123,24 +132,28 @@ pub(super) fn on_the_way(
     memory: &Memory,
     (map, frame): (&MapModel, HomeFrame),
     goal: TilePos,
-) -> u64 {
+) -> Force {
     let me = observation.me;
     let foes = foes(observation, memory);
     let mut tile = goal;
-    let mut most = 0;
+    let mut most = Vec::new();
     for step in 0.. {
         let here = map.distance(me, tile);
         if here == UNREACHABLE || at_home(observation, map, tile) {
             break;
         }
         if step > 0 && step % STRIDE == 0 {
-            let guns: u64 = observation
-                .enemy_buildings
-                .iter()
-                .filter(|building| guards(building, tile))
-                .map(building_value)
-                .sum();
-            most = most.max(joining(&foes, tile) + guns);
+            let mut met = joining_force(&foes, tile);
+            met.extend(
+                observation
+                    .enemy_buildings
+                    .iter()
+                    .filter(|building| guards(building, tile))
+                    .map(gun),
+            );
+            if priced(&met) > priced(&most) {
+                most = met;
+            }
         }
         // Each step is nearer the start, so the walk ends.
         let Some(next) = NEIGHBOURS

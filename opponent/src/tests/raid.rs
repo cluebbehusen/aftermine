@@ -434,7 +434,9 @@ fn scuttlers_leave_a_line_under_known_guns_however_many_wait() {
 #[test]
 fn a_turret_out_of_reach_of_the_line_leaves_it_to_raiders() {
     let mut scenario = outpost(UnitKind::Scuttler, BuildingKind::Foundry);
-    for y in 5..=9 {
+    // Scuttlers trade at half their price against a Turret, so a squad
+    // brings many times its price to raid past one.
+    for y in 2..=12 {
         scenario.units.push(unit(0, UnitKind::Scuttler, 17, y));
     }
     scenario.units.push(unit(0, UnitKind::Kestrel, 25, 8));

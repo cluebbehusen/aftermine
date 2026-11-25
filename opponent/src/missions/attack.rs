@@ -1917,7 +1917,7 @@ impl<'a> Plan<'a> {
 }
 
 /// A force as the counter chart weighs it: each piece with its value.
-type Force = Vec<(Piece, u64)>;
+pub(super) type Force = Vec<(Piece, u64)>;
 
 /// The armed enemies the seat knows of around an attack's members, before
 /// any breacher answers them, each as the chart weighs it.
@@ -1949,19 +1949,21 @@ pub(super) fn defense(observation: &ObservationData, memory: &Memory, tile: Tile
     defense_around(observation, memory, &[tile], &[])
 }
 
-/// The known army an attack on `tiles` would meet: every armed enemy the seat
-/// remembers that hits ground, on the first tile's ground or in the air, by
-/// confidence, with the known enemy buildings guarding any of `tiles`, each
-/// counted once. An army that beats only a target's own guard meets the rest
-/// on its way in or at the target, and turns back.
+/// The known army an attack on `tiles` would meet, as the chart weighs it:
+/// every armed enemy the seat remembers that hits ground, on the first
+/// tile's ground or in the air, by confidence, with the known enemy
+/// buildings guarding any of `tiles`, each counted once. An army that beats
+/// only a target's own guard meets the rest on its way in or at the target,
+/// and turns back.
 pub(super) fn opposed(
     observation: &ObservationData,
     map: &MapModel,
     memory: &Memory,
     tiles: &[TilePos],
-) -> u64 {
-    let (units, buildings) = opposed_mixes(observation, map, memory, tiles);
-    priced(&units) + priced(&buildings)
+) -> Force {
+    let (mut units, buildings) = opposed_mixes(observation, map, memory, tiles);
+    units.extend(buildings);
+    units
 }
 
 /// [`opposed`] in its two parts, each as the chart weighs it: the armed
@@ -2021,7 +2023,7 @@ pub(super) fn defense_around(
 }
 
 /// [`defense_around`] as the chart weighs it.
-fn defense_mix(
+pub(super) fn defense_mix(
     observation: &ObservationData,
     memory: &Memory,
     tiles: &[TilePos],
@@ -2118,7 +2120,7 @@ pub(super) fn contact(observation: &ObservationData, members: &[&UnitObs]) -> bo
 
 /// A known building as the chart weighs it: its kind at its rung, by its
 /// value.
-fn gun(building: &BuildingObs) -> (Piece, u64) {
+pub(super) fn gun(building: &BuildingObs) -> (Piece, u64) {
     (
         Piece::Gun(building.kind, building.tier),
         building_value(building),
@@ -2154,18 +2156,35 @@ fn strength_bounds(
 }
 
 /// What `side` comes to at its price.
-fn priced(side: &[(Piece, u64)]) -> u64 {
+pub(super) fn priced(side: &[(Piece, u64)]) -> u64 {
     side.iter().map(|(_, value)| value).sum()
 }
 
 /// `units`' striking strength, each as its kind at what it adds against a
 /// building.
-fn striking_mix<'u>(units: impl IntoIterator<Item = &'u UnitObs>) -> Vec<(Piece, u64)> {
+pub(super) fn striking_mix<'u>(units: impl IntoIterator<Item = &'u UnitObs>) -> Force {
+    force_of(units, striking)
+}
+
+/// `units` as the chart weighs them, each as its kind at its `worth`.
+pub(super) fn force_of<'u>(
+    units: impl IntoIterator<Item = &'u UnitObs>,
+    worth: impl Fn(&UnitObs) -> u64,
+) -> Force {
     units
         .into_iter()
-        .map(|unit| (Piece::Unit(unit.kind), striking(unit)))
+        .map(|unit| (Piece::Unit(unit.kind), worth(unit)))
         .filter(|(_, value)| *value > 0)
         .collect()
+}
+
+/// What `units` add against `enemy`: each one's `worth` weighed by what its
+/// kind trades against them.
+pub(super) fn worth_against<'e>(
+    enemy: &'e [(Piece, u64)],
+    worth: impl Fn(&UnitObs) -> u64 + 'e,
+) -> impl Fn(&UnitObs) -> u64 + 'e {
+    move |unit: &UnitObs| worth(unit) * weight(Piece::Unit(unit.kind), enemy) / 1_000
 }
 
 /// A known building's price with every upgrade it reached, discounted by its

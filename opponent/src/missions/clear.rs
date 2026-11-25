@@ -12,10 +12,14 @@
 
 use super::Scratch;
 use super::air::{self, Hazard, Legs};
-use super::attack::{FIT, healthy, margin, minimum, outweighed, recruit, striking};
+use super::attack::{
+    FIT, Force, healthy, margin, minimum, outweighed, priced, recruit_by, striking, striking_mix,
+    worth_against,
+};
 use super::sortie::Sortie;
 use super::{MISSION_CAP, Mission, Missions, StrikePhase, Task, UNIT_CAP, mine, run};
 use crate::composition::{self, Role};
+use crate::counters::{Piece, weigh};
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled, footprint_centre};
 use crate::gunship::gunship;
@@ -127,17 +131,18 @@ impl Missions {
             return false;
         };
         sweep.held = self.aims(observation, None, true);
-        let strength: u64 = self
-            .available(observation, None)
-            .into_iter()
-            .filter_map(|id| mine(observation, id))
-            .filter(|unit| clearing_gunship(unit))
-            .map(striking)
-            .sum();
-        strength > 0
-            && sweep.cover().is_some_and(|cover| cover > 0)
-            && strength >= sweep.guard()
-            && sweep.best(strength, None).is_some()
+        let own = striking_mix(
+            self.available(observation, None)
+                .into_iter()
+                .filter_map(|id| mine(observation, id))
+                .filter(|unit| clearing_gunship(unit)),
+        );
+        let Some(cover) = sweep.cover().filter(|cover| priced(cover) > 0) else {
+            return false;
+        };
+        !own.is_empty()
+            && weigh(&own, &cover) >= sweep.guard(&own)
+            && sweep.best(&own, None).is_some()
     }
 
     /// Own gunships no lift should count on carrying its riders: those out
@@ -174,7 +179,7 @@ impl Missions {
         scratch: &Scratch,
     ) -> u64 {
         self.lift_sweep(observation, map, profile, memory, scratch)
-            .map_or(0, |sweep| sweep.guard())
+            .map_or(0, |sweep| sweep.guard_priced())
     }
 
     /// The known anti-air around the building a lift goes after, or the next
@@ -190,7 +195,7 @@ impl Missions {
     ) -> u64 {
         self.lift_sweep(observation, map, profile, memory, scratch)
             .and_then(|sweep| sweep.cover())
-            .unwrap_or(0)
+            .map_or(0, |cover| priced(&cover))
     }
 
     /// What a decision knows about the anti-air around the next lift's
@@ -239,21 +244,21 @@ impl Missions {
         }
     }
 
-    /// Strength of the bombers out clearing the anti-air around `target`:
-    /// cover a lift there can count on while they hold the defenders'
-    /// attention.
-    pub(super) fn cover(&self, observation: &ObservationData, target: TilePos) -> u64 {
-        self.list
-            .iter()
-            .filter(|mission| match mission.task {
-                Task::Clear { aim, .. } => aim.chebyshev(target) <= FOCUS_TILES,
-                _ => false,
-            })
-            .filter(|mission| mission.holds(observation))
-            .flat_map(|mission| mission.units.iter())
-            .filter_map(|id| mine(observation, *id))
-            .map(striking)
-            .sum()
+    /// The bombers out clearing the anti-air around `target`, by their
+    /// strength: cover a lift there can count on while they hold the
+    /// defenders' attention.
+    pub(super) fn cover(&self, observation: &ObservationData, target: TilePos) -> Force {
+        striking_mix(
+            self.list
+                .iter()
+                .filter(|mission| match mission.task {
+                    Task::Clear { aim, .. } => aim.chebyshev(target) <= FOCUS_TILES,
+                    _ => false,
+                })
+                .filter(|mission| mission.holds(observation))
+                .flat_map(|mission| mission.units.iter())
+                .filter_map(|id| mine(observation, *id)),
+        )
     }
 
     /// Where every clearance but `except` is aimed, of those flown by
@@ -316,17 +321,25 @@ impl Missions {
         if self.list.len() >= MISSION_CAP {
             return false;
         }
-        let strength: u64 = fit.iter().map(|unit| striking(unit)).sum();
-        if strength < sweep.minimum || strength < sweep.guard() {
+        let own = striking_mix(fit.iter().copied());
+        let cover = sweep.cover().unwrap_or_default();
+        if priced(&own) < sweep.minimum || weigh(&own, &cover) < sweep.guard(&own) {
             return false;
         }
-        let Some(aim) = sweep.best(strength, None) else {
+        let Some(aim) = sweep.best(&own, None) else {
             return false;
         };
         let Some(rally) = air::pad(observation, sweep.map, sweep.frame, doubled(aim)) else {
             return false;
         };
-        let recruits = recruit(sweep.frame, fit, rally, sweep.guard(), UNIT_CAP);
+        let recruits = recruit_by(
+            sweep.frame,
+            fit,
+            rally,
+            sweep.guard(&own),
+            UNIT_CAP,
+            worth_against(&cover, striking),
+        );
         if recruits.is_empty() || !ledger.order(run(recruits.clone(), rally)) {
             return false;
         }
@@ -405,12 +418,12 @@ impl Sweep<'_> {
             .or(self.owner)
     }
 
-    /// Where `strength` goes next around the lift's target: the remembered
+    /// Where `own` goes next around the lift's target: the remembered
     /// enemy anti-air units or known anti-air buildings there on ground the
     /// seat cannot walk to that it outweighs most easily, and once none is
     /// left, the target itself. Never near `skip` or an aim another
     /// clearance holds.
-    pub(super) fn best(&self, strength: u64, skip: Option<TilePos>) -> Option<TilePos> {
+    pub(super) fn best(&self, own: &[(Piece, u64)], skip: Option<TilePos>) -> Option<TilePos> {
         let focus = self.focus?;
         let near = |a: TilePos, b: TilePos| a.chebyshev(b) <= HELD_TILES;
         let anti_air: Vec<TilePos> = self
@@ -437,25 +450,35 @@ impl Sweep<'_> {
         aims.into_iter()
             .filter(|tile| skip.is_none_or(|skip| !near(*tile, skip)))
             .filter(|tile| !self.held.iter().any(|aim| near(*tile, *aim)))
-            .map(|tile| (self.need(tile), tile))
-            .filter(|(need, _)| *need <= strength)
+            .filter_map(|tile| {
+                let cover = air::cover(self.air, doubled(tile));
+                let need = self.need(&cover, own);
+                (weigh(own, &cover) >= need).then_some((need, tile))
+            })
             .min_by_key(|(need, tile)| (*need, self.frame.rank(self.frame.home, doubled(*tile))))
             .map(|(_, tile)| tile)
     }
 
     /// Strength a clearance needs to go at all: the known anti-air reaching
     /// over the lift's target or any anti-air unit or building around it,
-    /// each counted once, times the margin, so the bombers go in together
-    /// rather than one at a time.
-    fn guard(&self) -> u64 {
+    /// each counted once and weighed by what it trades against `own`, times
+    /// the margin, so the bombers go in together rather than one at a time.
+    fn guard(&self, own: &[(Piece, u64)]) -> u64 {
         self.cover().map_or(u64::MAX, |cover| {
-            (cover * self.margin / 1_000).max(self.minimum)
+            (weigh(&cover, own) * self.margin / 1_000).max(self.minimum)
+        })
+    }
+
+    /// [`guard`](Self::guard) at its price, for the bombers to train.
+    fn guard_priced(&self) -> u64 {
+        self.cover().map_or(u64::MAX, |cover| {
+            (priced(&cover) * self.margin / 1_000).max(self.minimum)
         })
     }
 
     /// The known anti-air covering the lift's target, the anti-air units
-    /// around it, or its flak, at its value.
-    fn cover(&self) -> Option<u64> {
+    /// around it, or its flak, each by its value.
+    fn cover(&self) -> Option<Force> {
         let focus = self.focus?;
         let points: Vec<(i64, i64)> = self
             .memory
@@ -471,19 +494,20 @@ impl Sweep<'_> {
             .chain(std::iter::once(focus))
             .map(doubled)
             .collect();
-        let cover: u64 = self
-            .air
-            .iter()
-            .filter(|hazard| points.iter().any(|point| hazard.covers(*point)))
-            .map(|hazard| hazard.value)
-            .sum();
-        Some(cover)
+        Some(
+            self.air
+                .iter()
+                .filter(|hazard| points.iter().any(|point| hazard.covers(*point)))
+                .map(Hazard::force)
+                .collect(),
+        )
     }
 
-    /// Strength a sweep at `aim` needs: the known anti-air reaching over it
-    /// times the margin, and never under the stance minimum.
-    fn need(&self, aim: TilePos) -> u64 {
-        (air::cover(self.air, doubled(aim)) * self.margin / 1_000).max(self.minimum)
+    /// Strength a sweep needs against `cover`, the known anti-air reaching
+    /// over its aim: each weighed by what it trades against `own`, times the
+    /// margin, and never under the stance minimum.
+    fn need(&self, cover: &[(Piece, u64)], own: &[(Piece, u64)]) -> u64 {
+        (weigh(cover, own) * self.margin / 1_000).max(self.minimum)
     }
 
     /// Where a clearance at `aim` gathers and comes back to.
@@ -491,9 +515,10 @@ impl Sweep<'_> {
         air::pad(self.observation, self.map, self.frame, doubled(aim))
     }
 
-    /// Whether a gathered clearance of `strength` still goes at `aim`.
-    pub(super) fn sets_out(&self, aim: TilePos, strength: u64) -> bool {
-        strength >= self.need(aim)
+    /// Whether a gathered clearance of `own` still goes at `aim`.
+    pub(super) fn sets_out(&self, aim: TilePos, own: &[(Piece, u64)]) -> bool {
+        let cover = air::cover(self.air, doubled(aim));
+        weigh(own, &cover) >= self.need(&cover, own)
     }
 
     /// Sends `units` from `from` to `aim`, around the known anti-air that
