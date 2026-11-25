@@ -96,7 +96,7 @@ fn the_report_shows_each_budget_and_the_mixed_fights() {
         },
         guns: GunMatrix {
             kinds: vec![UnitKind::Lancer],
-            guns: vec![BuildingKind::Turret],
+            guns: vec![(BuildingKind::Turret, 0)],
             budgets: vec![1_400],
             trades: vec![vec![vec![Trade {
                 killed: 50,
@@ -123,7 +123,7 @@ fn the_report_shows_each_budget_and_the_mixed_fights() {
         report.contains("attacking the column structure"),
         "{report}"
     );
-    assert!(report.contains(" Turre"), "{report}");
+    assert!(report.contains(" Turr0"), "{report}");
     assert!(report.contains("2.5"), "{report}");
 }
 
@@ -237,7 +237,7 @@ fn a_unit_already_attacking_keeps_its_attack() {
 fn aircraft_destroy_guns_that_cannot_fire_on_them() {
     let trade = siege(
         &even(UnitKind::Buzzard, 600),
-        &even_guns(BuildingKind::Turret, 600),
+        &even_guns(BuildingKind::Turret, 0, 600),
     )
     .unwrap();
     assert!(trade.killed > 0 && trade.lost == 0, "{trade:?}");
@@ -247,7 +247,7 @@ fn aircraft_destroy_guns_that_cannot_fire_on_them() {
 fn lancers_outrange_turrets() {
     let trade = siege(
         &even(UnitKind::Lancer, 600),
-        &even_guns(BuildingKind::Turret, 600),
+        &even_guns(BuildingKind::Turret, 0, 600),
     )
     .unwrap();
     assert!(trade.killed > 2 * trade.lost, "{trade:?}");
@@ -257,7 +257,7 @@ fn lancers_outrange_turrets() {
 fn a_siege_reads_the_same_from_either_seat() {
     let (wardens, turrets) = (
         even(UnitKind::Warden, 420),
-        even_guns(BuildingKind::Turret, 420),
+        even_guns(BuildingKind::Turret, 0, 420),
     );
     let one = play(Side::army(&wardens), Side::guns(&turrets)).unwrap();
     let other = play(Side::guns(&turrets), Side::army(&wardens)).unwrap();
@@ -272,17 +272,39 @@ fn a_siege_reads_the_same_from_either_seat() {
 
 #[test]
 fn a_block_too_big_for_the_field_is_refused() {
-    let error = siege(&even(UnitKind::Lancer, 440), &[(BuildingKind::Bastion, 60)]).unwrap_err();
+    let error = siege(
+        &even(UnitKind::Lancer, 440),
+        &[(BuildingKind::Bastion, 0, 60)],
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("does not fit"), "{error}");
 }
 
 #[test]
 fn guns_are_worth_what_was_paid_by_their_health_left() {
-    let turrets = even_guns(BuildingKind::Turret, 300);
+    let turrets = even_guns(BuildingKind::Turret, 0, 300);
     let state = field(Side::army(&[]), Side::guns(&turrets))
         .unwrap()
         .build()
         .unwrap();
     assert_eq!(worth(&state, 1), 300);
     assert_eq!(worth(&state, 0), 0);
+}
+
+#[test]
+fn a_higher_rung_stands_at_its_own_health_and_fights_as_itself() {
+    let bulwarks = even_guns(BuildingKind::Turret, 2, 1_100);
+    let state = stage(Side::army(&[]), Side::guns(&bulwarks)).unwrap();
+    assert!(state.buildings().iter().all(|building| {
+        building.tier == 2 && building.hp == BuildingKind::Turret.tier_stats(2).max_hp
+    }));
+    assert_eq!(worth(&state, 1), 1_100, "two Bulwarks, each 550 paid");
+    // A Bulwark's reach of 7.5 outranges the Lancers that outrange a Turret.
+    let lancers = even(UnitKind::Lancer, 1_100);
+    let turret = siege(&lancers, &even_guns(BuildingKind::Turret, 0, 1_100)).unwrap();
+    let bulwark = siege(&lancers, &bulwarks).unwrap();
+    assert!(
+        bulwark.killed * turret.lost < turret.killed * bulwark.lost.max(1),
+        "{turret:?} {bulwark:?}"
+    );
 }

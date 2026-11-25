@@ -150,8 +150,10 @@ actions affect the running total and mission state.
   that each meet the enemy alone. Other missions may run several of a kind at
   once on distinct targets, each sized to its own target's need.
 - A mission's need decides when it starts and whether it goes on: the known
-  force it would meet, by a margin. A raid also counts the strongest known force
-  on its way to the target, and a raider drawn far past its target runs home.
+  force it would meet, by a margin. An attack weighs that force and its own by
+  what each kind, and each gun at its rung, trades against the other side, as
+  measured in the simulation. A raid also counts the strongest known force on
+  its way to the target, and a raider drawn far past its target runs home.
   Attacks and lifts then take every suitable free unit, and other missions take
   only the force they need. A mission keeps its force while its purpose holds,
   and releases it when the purpose disappears or recovery finishes. At a safe

@@ -1,4 +1,4 @@
-use super::attack::{WEST, armed, attack, phases, restaged};
+use super::attack::{WEST, armed_as, attack, phases, restaged};
 use super::*;
 
 /// East Turrets across the field's middle, on the way from West's home to
@@ -8,10 +8,25 @@ const LINE: [(i32, i32); 2] = [(30, 10), (30, 12)];
 /// Where an attack on East's Foundry stops short of `LINE`.
 const STAGE: (i32, i32) = (21, 11);
 
+/// What West's army is: Wardens, which trade with Turrets rather than feed
+/// them as Sentinels would, so the army can meet the guns it stages short
+/// of.
+const ARMY: UnitKind = UnitKind::Warden;
+
 /// West's army at home, East's Turrets at `turrets`, and a West Kestrel that
 /// has seen them, West deciding at `difficulty`.
 fn guarded(difficulty: BotDifficulty, turrets: &[(i32, i32)], kestrel: (i32, i32)) -> Scenario {
-    let mut scenario = armed(8, &[]);
+    guarded_as(ARMY, difficulty, turrets, kestrel)
+}
+
+/// [`guarded`] with West's army of `kind`.
+fn guarded_as(
+    kind: UnitKind,
+    difficulty: BotDifficulty,
+    turrets: &[(i32, i32)],
+    kestrel: (i32, i32),
+) -> Scenario {
+    let mut scenario = armed_as(kind, 8, &[]);
     scenario
         .units
         .push(unit(0, UnitKind::Kestrel, kestrel.0, kestrel.1));
@@ -104,13 +119,14 @@ fn the_lowest_rung_walks_straight_in() {
 
 #[test]
 fn known_defenses_on_the_way_count_toward_an_attack_s_need() {
-    // Four Turrets worth more than half the army that does not count them:
-    // across the way, or off it beside the field's edge.
+    // Four Turrets, which beat Sentinels, outweigh more than half an army of
+    // them that does not count them: across the way, or off it beside the
+    // field's edge.
     let across: Vec<(i32, i32)> = (9..13).map(|y| (24, y)).collect();
     let aside: Vec<(i32, i32)> = (21..25).map(|x| (x, 2)).collect();
     let launches = |difficulty, turrets: &[(i32, i32)], kestrel| {
         // A second Kestrel shows East's Foundry, the target worth going for.
-        let mut scenario = guarded(difficulty, turrets, kestrel);
+        let mut scenario = guarded_as(UnitKind::Sentinel, difficulty, turrets, kestrel);
         scenario.units.push(unit(0, UnitKind::Kestrel, 42, 9));
         let state = scenario.build().unwrap();
         let config = scenario.players[0].bot_config.unwrap();
@@ -131,13 +147,13 @@ fn known_defenses_on_the_way_count_toward_an_attack_s_need() {
 
 #[test]
 fn an_attack_launched_on_a_long_wait_goes_in_at_the_margin_it_launched_on() {
-    // East's Sentinels by its Foundry, which a second Kestrel watches from
-    // out of their reach, and the Turrets on the way ask more than West's
-    // army at the full margin, but not at the margin a long wait has earned.
+    // East's army by its Foundry, which a second Kestrel watches from out of
+    // its reach, and the Turrets on the way ask more than West's army at the
+    // full margin, but not at the margin a long wait has earned.
     let mut scenario = guarded(BotDifficulty::Standard, &LINE, (28, 11));
     scenario.units.push(unit(0, UnitKind::Kestrel, 41, 4));
     for y in 10..15 {
-        scenario.units.push(unit(1, UnitKind::Sentinel, 41, y));
+        scenario.units.push(unit(1, ARMY, 41, y));
     }
     let mut state = scenario.build().unwrap();
     advance_to(&mut state, 9_600, &[]);
@@ -220,7 +236,7 @@ fn staging_with(
     extra: &[(i32, i32)],
 ) -> (State, Opponent, Vec<UnitId>) {
     for (x, y) in there {
-        scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
+        scenario.units.push(unit(0, ARMY, *x, *y));
     }
     let mut state = scenario.build().unwrap();
     let home: Vec<UnitId> = WEST[..8 - there.len()]
@@ -496,9 +512,13 @@ fn mirrored_seats_stage_at_mirrored_spots() {
     // home before the armies gather.
     let flip = |(x, y): (i32, i32)| (47 - x, 23 - y);
     let mut scenario = guarded(BotDifficulty::Standard, &LINE, (27, 11));
-    for spot in GARRISON.into_iter().chain(WEST) {
+    for spot in GARRISON {
         let (x, y) = flip(spot);
         scenario.units.push(unit(1, UnitKind::Sentinel, x, y));
+    }
+    for spot in WEST {
+        let (x, y) = flip(spot);
+        scenario.units.push(unit(1, ARMY, x, y));
     }
     let (x, y) = flip((27, 11));
     scenario.units.push(unit(1, UnitKind::Kestrel, x, y));
@@ -540,4 +560,23 @@ fn mirrored_seats_stage_at_mirrored_spots() {
         }
         state.tick(&commands);
     }
+}
+
+#[test]
+fn an_army_the_guns_on_the_way_outfight_stays_home_while_one_that_outranges_them_goes() {
+    // Two Turrets on the way: Sentinels, which destroy a third of their
+    // value of Turrets before they fall, would only feed them, while Lancers
+    // outrange them.
+    let launches = |kind| {
+        // A second Kestrel shows East's Foundry, the target worth going for.
+        let mut scenario = guarded_as(kind, BotDifficulty::Standard, &LINE, (28, 11));
+        scenario.units.push(unit(0, UnitKind::Kestrel, 42, 9));
+        let state = scenario.build().unwrap();
+        let config = scenario.players[0].bot_config.unwrap();
+        let (_, trace) =
+            seat_with(&scenario, 0, config).act_traced(&state, &mut OwnEvents::default());
+        attack(&trace.unwrap().missions).is_some()
+    };
+    assert!(!launches(UnitKind::Sentinel));
+    assert!(launches(UnitKind::Lancer));
 }

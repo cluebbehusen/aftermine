@@ -17,6 +17,7 @@ use super::{
     value,
 };
 use crate::composition::{self, Role};
+use crate::counters::{Piece, weigh, weight};
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled, footprint_centre, gap, ring};
 use crate::map::{MapModel, UNREACHABLE};
@@ -368,18 +369,31 @@ impl Missions {
         };
         let component = plan.map.component(target.approach);
         let breachers = plan.breachers(component, UNIT_CAP);
-        let need =
-            fallback.unwrap_or_else(|| plan.need(target, breaching(plan.observation, &breachers)));
         let fit: Vec<&UnitObs> = fit
             .iter()
             .copied()
             .filter(|unit| reaches(plan.map, unit, component))
             .collect();
-        if fit.iter().map(|unit| striking(unit)).sum::<u64>() < need {
+        let own = striking_mix(fit.iter().copied());
+        let (needed, strength) = plan.weighed_need(
+            target,
+            breaching(plan.observation, &breachers),
+            plan.margin,
+            &own,
+        );
+        let need = fallback.unwrap_or(needed);
+        if strength < need {
             return false;
         }
         let taken = if concentrated { u64::MAX } else { need };
-        let mut recruits = recruit(plan.frame, &fit, rally, taken, UNIT_CAP);
+        let mut recruits = recruit_by(
+            plan.frame,
+            &fit,
+            rally,
+            taken,
+            UNIT_CAP,
+            plan.worth_against(target),
+        );
         if recruits.is_empty() {
             return false;
         }
@@ -399,14 +413,24 @@ impl Missions {
                 phase: AttackPhase::Gather,
             }
             .kind(),
-            defense: defense(plan.observation, plan.memory, target.approach),
+            defense: {
+                let sent =
+                    striking_mix(recruits.iter().filter_map(|id| mine(plan.observation, *id)));
+                weigh(
+                    &defense_mix(plan.observation, plan.memory, &[target.approach], &[]),
+                    &sent,
+                )
+            },
             margin: plan.margin,
             need,
-            sent: recruits
-                .iter()
-                .filter_map(|id| mine(plan.observation, *id))
-                .map(striking)
-                .sum(),
+            sent: plan
+                .weighed_need(
+                    target,
+                    0,
+                    plan.margin,
+                    &striking_mix(recruits.iter().filter_map(|id| mine(plan.observation, *id))),
+                )
+                .1,
             units: recruits.clone(),
         });
         self.list.push(Mission {
@@ -523,20 +547,24 @@ impl Missions {
                     .copied()
                     .filter(|unit| reaches(plan.map, unit, component))
                     .collect();
-                let striking_strength: u64 = members.iter().map(|unit| striking(unit)).sum();
+                let own = striking_mix(members.iter().copied());
                 // The whole free army joins while it regroups, or only what
                 // the attack still lacks at a seat that attacks piecemeal.
                 let (taken, ready) = if concentrates(plan.difficulty) {
-                    let ready = plan.meets(striking_strength, target, breach, plan.margin);
+                    let ready = plan.meets(&own, target, breach, plan.margin);
                     (u64::MAX, ready)
                 } else {
-                    let need = plan.need(target, breach);
-                    (
-                        need.saturating_sub(striking_strength),
-                        striking_strength >= need,
-                    )
+                    let (need, strength) = plan.weighed_need(target, breach, plan.margin, &own);
+                    (need.saturating_sub(strength), strength >= need)
                 };
-                let recruits = recruit(plan.frame, &fit, rally, taken, room);
+                let recruits = recruit_by(
+                    plan.frame,
+                    &fit,
+                    rally,
+                    taken,
+                    room,
+                    plan.worth_against(target),
+                );
                 let joining = plan.with_screens(recruits.clone(), rally, component, room);
                 let ordered = !joining.is_empty() && ledger.order(hunt(joining.clone(), rally));
                 if ordered {
@@ -720,9 +748,8 @@ fn engage_on(
             !blasting.contains(id) || mine(observation, *id).is_some_and(|unit| breacher(unit.kind))
         })
         .collect();
-    let opposition = plan.opposition(members, members);
     let outflown = plan.outflown(members);
-    if plan.outweighs(members, opposition, &outflown) {
+    if plan.outweighs(members, &outflown) {
         if ledger.order(run(leaving, rally)) {
             mission.attack_phase(target, AttackPhase::Withdraw, now, Some(rally));
             return Some(target.objective());
@@ -768,7 +795,7 @@ fn engage_on(
         !standing
             && fight.focus.is_none()
             && plan.meets(
-                onward_army.iter().map(|unit| striking(unit)).sum(),
+                &striking_mix(onward_army.iter().copied()),
                 *next,
                 breaching(observation, &mission.units),
                 plan.margin,
@@ -807,7 +834,7 @@ fn engage_on(
     let next = plan.best(Some(target)).filter(|next| {
         !standing
             && plan.meets(
-                members.iter().map(|unit| striking(unit)).sum(),
+                &striking_mix(members.iter().copied()),
                 *next,
                 breaching(observation, &mission.units),
                 plan.margin,
@@ -875,9 +902,8 @@ fn stage_on(
         .copied()
         .filter(|unit| unit.kind != UnitKind::Sapper && !breacher(unit.kind))
         .collect();
-    let opposition = plan.opposition(members, members);
     let outflown = plan.outflown(members);
-    if plan.outweighs(members, opposition, &outflown) {
+    if plan.outweighs(members, &outflown) {
         if ledger.order(run(mission.units.clone(), rally)) {
             mission.attack_phase(target, AttackPhase::Withdraw, now, Some(rally));
             return Some(target.objective());
@@ -974,8 +1000,12 @@ fn stage_on(
         return None;
     }
     // What the breachers drew out may leave the army short of what it needs.
-    let total: u64 = members.iter().map(|unit| striking(unit)).sum();
-    let enough = plan.meets(total, target, breach, plan.margin);
+    let enough = plan.meets(
+        &striking_mix(members.iter().copied()),
+        target,
+        breach,
+        plan.margin,
+    );
     // Breachers at the spot go in first, the hull built to take the guns'
     // fire; one that cannot move on holds no one up.
     let leaders: Vec<UnitId> = members
@@ -1366,67 +1396,87 @@ impl<'a> Plan<'a> {
             && self.map.start(objective.owner) == Some(objective.anchor)
     }
 
-    /// Army value the attack on `target` needs: the known army it would
-    /// meet times the margin, and never under the stance minimum. What
-    /// breachers bring against buildings, `breach`, answers the guarding
-    /// buildings before the army has to. Above the lowest rung, the known
-    /// defenses whose fire reaches the way there count with those around the
-    /// target.
-    fn need(&self, target: Target, breach: u64) -> u64 {
-        self.need_at(target, breach, self.margin)
+    /// Army strength the attack on `target` needs at `margin`: the known
+    /// army it would meet, each enemy weighed by what it trades against
+    /// `own`, the striking strength that would go, times the margin, and
+    /// never under the stance minimum. What breachers bring against
+    /// buildings, `breach`, answers the guarding buildings before the army
+    /// has to. Above the lowest rung, the known defenses whose fire reaches
+    /// the way there count with those around the target.
+    fn need_at(&self, target: Target, breach: u64, margin: u64, own: &[(Piece, u64)]) -> u64 {
+        self.weighed_need(target, breach, margin, own).0
     }
 
-    /// `need` at `margin` rather than the decision's own.
-    fn need_at(&self, target: Target, breach: u64, margin: u64) -> u64 {
-        let (units, sure, beyond) = self.opposing(target);
-        let reached = if beyond.is_empty() {
-            0
-        } else {
-            let way = self.way(target);
-            beyond
-                .into_iter()
-                .filter(|building| covers(building, &way))
-                .map(building_value)
-                .sum()
-        };
-        self.scaled(units, sure + reached, breach, margin)
+    /// [`need_at`](Self::need_at), and what `own` is worth against the army
+    /// it would meet there.
+    fn weighed_need(
+        &self,
+        target: Target,
+        breach: u64,
+        margin: u64,
+        own: &[(Piece, u64)],
+    ) -> (u64, u64) {
+        let (units, buildings) = self.met(target);
+        let need = self.scaled(weigh(&units, own), weigh(&buildings, own), breach, margin);
+        let mut met = units;
+        met.extend(buildings);
+        (need, weigh(own, &met))
     }
 
-    /// Whether `strength` meets [`need_at`](Self::need_at) `margin`. The
-    /// need lies between counting none and all of the known defenses whose
-    /// fire might reach the way there, so the way is walked only when those
-    /// bounds leave the answer open.
-    fn meets(&self, strength: u64, target: Target, breach: u64, margin: u64) -> bool {
-        if strength < self.minimum {
+    /// Whether `own`, the striking strength that would go, meets
+    /// [`need_at`](Self::need_at) `margin`, each side weighed by what it
+    /// trades against the other. The army met lies between counting none
+    /// and all of the known defenses whose fire might reach the way there,
+    /// so both sides' weights lie between those the bounds give, and the way
+    /// is walked only when the bounds leave the answer open. An army under
+    /// the stance minimum at its price meets none.
+    fn meets(&self, own: &[(Piece, u64)], target: Target, breach: u64, margin: u64) -> bool {
+        if priced(own) < self.minimum {
             return false;
         }
         let (units, sure, beyond) = self.opposing(target);
-        if strength < self.scaled(units, sure, breach, margin) {
+        let beyond: Vec<(Piece, u64)> = beyond.into_iter().map(gun).collect();
+        let (low, high) = strength_bounds(own, &units, &sure, &beyond);
+        let (units, sure) = (weigh(&units, own), weigh(&sure, own));
+        if high < self.scaled(units, sure, breach, margin) {
             return false;
         }
-        let most: u64 = beyond.iter().map(|building| building_value(building)).sum();
-        if strength >= self.scaled(units, sure + most, breach, margin) {
+        if low >= self.scaled(units, sure + weigh(&beyond, own), breach, margin) {
             return true;
         }
-        strength >= self.need_at(target, breach, margin)
+        let (need, strength) = self.weighed_need(target, breach, margin, own);
+        strength >= need
+    }
+
+    /// The known army an attack on `target` would meet: the armed units, and
+    /// the buildings that count, those whose fire reaches the way there
+    /// among them.
+    fn met(&self, target: Target) -> (Force, Force) {
+        let (units, mut buildings, beyond) = self.opposing(target);
+        if !beyond.is_empty() {
+            let way = self.way(target);
+            buildings.extend(
+                beyond
+                    .into_iter()
+                    .filter(|building| covers(building, &way))
+                    .map(gun),
+            );
+        }
+        (units, buildings)
     }
 
     /// The known army an attack on `target` would meet, before breachers
     /// and the margin: the armed units, the buildings that count wherever
     /// the way runs, and above the lowest rung the other known defenses,
     /// which count where their fire reaches the way.
-    fn opposing(&self, target: Target) -> (u64, u64, Vec<&'a BuildingObs>) {
+    fn opposing(&self, target: Target) -> (Force, Force, Vec<&'a BuildingObs>) {
         let (units, buildings) =
-            opposed_parts(self.observation, self.map, self.memory, &[target.approach]);
+            opposed_mixes(self.observation, self.map, self.memory, &[target.approach]);
         if !surveys(self.difficulty) {
             return (units, buildings, Vec::new());
         }
         let (guarding, beyond) = self.ground_defenses(target);
-        (
-            units,
-            guarding.into_iter().map(building_value).sum(),
-            beyond,
-        )
+        (units, guarding.into_iter().map(gun).collect(), beyond)
     }
 
     /// The need for `units` and `buildings` of known army, less what
@@ -1444,17 +1494,9 @@ impl<'a> Plan<'a> {
         let component = self.map.component(target.approach);
         let joining = self.breachers(component, UNIT_CAP);
         let breach = breaching(self.observation, members) + breaching(self.observation, &joining);
-        let gathered: u64 = members
-            .iter()
-            .filter_map(|id| mine(self.observation, *id))
-            .map(striking)
-            .sum();
-        self.meets(
-            gathered + self.reaching(target, fit),
-            target,
-            breach,
-            self.margin,
-        )
+        let mut own = striking_mix(members.iter().filter_map(|id| mine(self.observation, *id)));
+        own.extend(self.reaching(target, fit));
+        self.meets(&own, target, breach, self.margin)
     }
 
     /// The best open known target other than `skip` whose need at the full
@@ -1486,18 +1528,29 @@ impl<'a> Plan<'a> {
             let component = self.map.component(target.approach);
             let breachers = self.breachers(component, UNIT_CAP);
             let breach = breaching(self.observation, &breachers);
-            self.meets(self.reaching(target, fit), target, breach, full)
-                .then(|| (target, self.need_at(target, breach, full)))
+            let own = self.reaching(target, fit);
+            self.meets(&own, target, breach, full)
+                .then(|| (target, self.need_at(target, breach, full, &own)))
         })
     }
 
     /// The striking strength of those of `fit` that can reach `target`.
-    fn reaching(&self, target: Target, fit: &[&UnitObs]) -> u64 {
+    fn reaching(&self, target: Target, fit: &[&UnitObs]) -> Vec<(Piece, u64)> {
         let component = self.map.component(target.approach);
-        fit.iter()
-            .filter(|unit| reaches(self.map, unit, component))
-            .map(|unit| striking(unit))
-            .sum()
+        striking_mix(
+            fit.iter()
+                .copied()
+                .filter(|unit| reaches(self.map, unit, component)),
+        )
+    }
+
+    /// What one of `unit`'s kind adds against the army an attack on
+    /// `target` would meet: its striking strength weighed by what it trades
+    /// against them.
+    fn worth_against(&self, target: Target) -> impl Fn(&UnitObs) -> u64 {
+        let (mut met, buildings) = self.met(target);
+        met.extend(buildings);
+        move |unit: &UnitObs| striking(unit) * weight(Piece::Unit(unit.kind), &met) / 1_000
     }
 
     /// Known enemy buildings that fire on ground and guard `target`, or whose
@@ -1627,15 +1680,28 @@ impl<'a> Plan<'a> {
         ids
     }
 
-    /// Value of the armed enemies the seat knows of that can hit ground and
-    /// a member within contact of them, which the whole army answers:
-    /// remembered units by confidence, and known armed buildings by health,
-    /// less what the breachers among `breaching` bring against them.
-    fn opposition(&self, members: &[&UnitObs], breaching: &[&UnitObs]) -> u64 {
+    /// What `fighters` bring, and what the armed enemies the seat knows of
+    /// that can hit ground and a member within contact of them bring, each
+    /// side weighed by what it trades against the other: remembered units by
+    /// confidence, and known armed buildings by health, less what the
+    /// breachers among `breaching` bring against them.
+    fn weighed(
+        &self,
+        members: &[&UnitObs],
+        breaching: &[&UnitObs],
+        fighters: &[&UnitObs],
+    ) -> (u64, u64) {
         let armed = self.armed(members);
+        let own = striking_mix(fighters.iter().copied());
+        let mut enemy = armed.units.clone();
+        enemy.extend(armed.buildings.iter().copied());
         // Breachers answer the armed buildings first.
         let breach: u64 = breaching.iter().map(|unit| against_buildings(unit)).sum();
-        (armed.units + armed.buildings.saturating_sub(breach)) * self.misjudge / 1_000
+        let opposition = (weigh(&armed.units, &own)
+            + weigh(&armed.buildings, &own).saturating_sub(breach))
+            * self.misjudge
+            / 1_000;
+        (weigh(&own, &enemy), opposition)
     }
 
     /// The aircraft among `members` when the known enemies around the army
@@ -1648,12 +1714,14 @@ impl<'a> Plan<'a> {
             .copied()
             .filter(|unit| unit.kind.stats().domain == Domain::Air)
             .collect();
-        let strength: u64 = aircraft
+        let own: Vec<(Piece, u64)> = aircraft
             .iter()
             .filter(|unit| !unit.kind.stats().weapons.is_empty())
-            .map(|unit| value(unit))
-            .sum();
-        let anti_air = self.armed(members).aircraft * self.misjudge / 1_000;
+            .map(|unit| (Piece::Unit(unit.kind), value(unit)))
+            .collect();
+        let enemy = self.armed(members).aircraft;
+        let strength = weigh(&own, &enemy);
+        let anti_air = weigh(&enemy, &own) * self.misjudge / 1_000;
         if anti_air * 1_000 > strength * self.retreat {
             aircraft.iter().map(|unit| unit.id).collect()
         } else {
@@ -1704,9 +1772,9 @@ impl<'a> Plan<'a> {
     /// its whole armed strength by the odds the seat gives a fight up at, or
     /// outfly every member. Enemies that outweigh only the members already
     /// in the fight turn back the front alone, onto the army.
-    fn outweighs(&self, members: &[&UnitObs], opposition: u64, outflown: &[UnitId]) -> bool {
+    fn outweighs(&self, members: &[&UnitObs], outflown: &[UnitId]) -> bool {
         // Escorts that hit only aircraft hold no ground fight.
-        let strength: u64 = members.iter().map(|unit| striking(unit)).sum();
+        let (strength, opposition) = self.weighed(members, members, members);
         opposition * 1_000 > strength * self.retreat
             || (!outflown.is_empty() && outflown.len() == members.len())
     }
@@ -1718,14 +1786,13 @@ impl<'a> Plan<'a> {
     /// Returns whether any fell back.
     fn fall_back(&self, members: &[&UnitObs], goal: TilePos, ledger: &mut Ledger) -> bool {
         let near = self.in_fight(members);
-        // Only the breachers in the fight answer the guns the front meets.
-        let opposition = self.opposition(members, &near);
         let front: Vec<&UnitObs> = near
             .iter()
             .copied()
             .filter(|unit| !unit.kind.stats().weapons.is_empty())
             .collect();
-        let fighting: u64 = front.iter().map(|unit| striking(unit)).sum();
+        // Only the breachers in the fight answer the guns the front meets.
+        let (fighting, opposition) = self.weighed(members, &near, &front);
         if opposition * 1_000 <= fighting * self.retreat {
             return false;
         }
@@ -1787,9 +1854,10 @@ impl<'a> Plan<'a> {
             let ground = crate::defenses::reach(unit.kind) > Fx::ZERO;
             let air = unit.kind.stats().can_target(Domain::Air);
             let contact = |member: &UnitObs| member.tile.chebyshev(unit.tile) <= CONTACT_TILES;
+            let piece = (Piece::Unit(unit.kind), unit.value(now));
             match part(ground, air, &contact) {
-                Some(Against::Army) => armed.units += unit.value(now),
-                Some(Against::Aircraft) => armed.aircraft += unit.value(now),
+                Some(Against::Army) => armed.units.push(piece),
+                Some(Against::Aircraft) => armed.aircraft.push(piece),
                 None => {}
             }
         }
@@ -1803,8 +1871,8 @@ impl<'a> Plan<'a> {
                 gap(building.anchor, building.kind.size(), member.tile, (1, 1)) < CONTACT_TILES
             };
             match part(ground, air, &contact) {
-                Some(Against::Army) => armed.buildings += building_value(building),
-                Some(Against::Aircraft) => armed.aircraft += building_value(building),
+                Some(Against::Army) => armed.buildings.push(gun(building)),
+                Some(Against::Aircraft) => armed.aircraft.push(gun(building)),
                 None => {}
             }
         }
@@ -1835,20 +1903,23 @@ impl<'a> Plan<'a> {
     }
 }
 
+/// A force as the counter chart weighs it: each piece with its value.
+type Force = Vec<(Piece, u64)>;
+
 /// The armed enemies the seat knows of around an attack's members, before
-/// any breacher answers them.
+/// any breacher answers them, each as the chart weighs it.
 #[derive(Default)]
 struct Armed {
     /// Remembered units that can hit ground and a member in contact, by
     /// confidence.
-    units: u64,
+    units: Vec<(Piece, u64)>,
     /// Known buildings that can hit ground and a member in contact, by
     /// health.
-    buildings: u64,
+    buildings: Vec<(Piece, u64)>,
     /// Remembered units by confidence and known buildings by health that
     /// can hit only aircraft, in contact with any member: where the army's
     /// aircraft fly.
-    aircraft: u64,
+    aircraft: Vec<(Piece, u64)>,
 }
 
 /// Whom an armed enemy around an attack counts against.
@@ -1876,38 +1947,43 @@ pub(super) fn opposed(
     memory: &Memory,
     tiles: &[TilePos],
 ) -> u64 {
-    let (units, buildings) = opposed_parts(observation, map, memory, tiles);
-    units + buildings
+    let (units, buildings) = opposed_mixes(observation, map, memory, tiles);
+    priced(&units) + priced(&buildings)
 }
 
-/// [`opposed`] in its two parts: the armed enemy units, and the guarding
-/// buildings.
-fn opposed_parts(
+/// [`opposed`] in its two parts, each as the chart weighs it: the armed
+/// enemy units, and the guarding buildings.
+fn opposed_mixes(
     observation: &ObservationData,
     map: &MapModel,
     memory: &Memory,
     tiles: &[TilePos],
-) -> (u64, u64) {
+) -> (Force, Force) {
     let now = observation.tick;
     let ground = tiles.first().and_then(|tile| map.component(*tile));
     let home = map
         .start(observation.me)
         .and_then(|start| map.component(start));
-    let units: u64 = memory
+    let units = memory
         .units()
         .iter()
         .filter(|unit| {
             crate::defenses::reach(unit.kind) > Fx::ZERO
                 && (unit.kind.stats().domain == Domain::Air || map.component(unit.tile) == ground)
         })
-        .map(|unit| super::remembered(unit, map, home, now))
-        .sum();
-    let buildings: u64 = observation
+        .map(|unit| {
+            (
+                Piece::Unit(unit.kind),
+                super::remembered(unit, map, home, now),
+            )
+        })
+        .collect();
+    let buildings = observation
         .enemy_buildings
         .iter()
         .filter(|building| tiles.iter().any(|tile| guards(building, *tile)))
-        .map(building_value)
-        .sum();
+        .map(gun)
+        .collect();
     (units, buildings)
 }
 
@@ -1928,8 +2004,18 @@ pub(super) fn defense_around(
     tiles: &[TilePos],
     counted: &[UnitId],
 ) -> u64 {
+    priced(&defense_mix(observation, memory, tiles, counted))
+}
+
+/// [`defense_around`] as the chart weighs it.
+fn defense_mix(
+    observation: &ObservationData,
+    memory: &Memory,
+    tiles: &[TilePos],
+    counted: &[UnitId],
+) -> Vec<(Piece, u64)> {
     let now = observation.tick;
-    let units: u64 = memory
+    let units = memory
         .units()
         .iter()
         .filter(|unit| !counted.contains(&unit.id))
@@ -1939,15 +2025,13 @@ pub(super) fn defense_around(
                 .iter()
                 .any(|tile| unit.tile.chebyshev(*tile) <= DEFENSE_TILES)
         })
-        .map(|unit| unit.value(now))
-        .sum();
-    let buildings: u64 = observation
+        .map(|unit| (Piece::Unit(unit.kind), unit.value(now)));
+    let buildings = observation
         .enemy_buildings
         .iter()
         .filter(|building| tiles.iter().any(|tile| guards(building, *tile)))
-        .map(building_value)
-        .sum();
-    units + buildings
+        .map(gun);
+    units.chain(buildings).collect()
 }
 
 /// Whether a known, built enemy building's ground fire reaches `tile`.
@@ -2019,6 +2103,58 @@ pub(super) fn contact(observation: &ObservationData, members: &[&UnitObs]) -> bo
         })
 }
 
+/// A known building as the chart weighs it: its kind at its rung, by its
+/// value.
+fn gun(building: &BuildingObs) -> (Piece, u64) {
+    (
+        Piece::Gun(building.kind, building.tier),
+        building_value(building),
+    )
+}
+
+/// The least and most `own` can be worth against the armed `units` and
+/// `sure` buildings an attack meets wherever the way runs, with any of the
+/// `beyond` buildings that might reach it: each piece's trade against a mix
+/// lies between its trade against what is sure and the extremes of its
+/// trades against what might join.
+fn strength_bounds(
+    own: &[(Piece, u64)],
+    units: &[(Piece, u64)],
+    sure: &[(Piece, u64)],
+    beyond: &[(Piece, u64)],
+) -> (u64, u64) {
+    let certain: Vec<(Piece, u64)> = units.iter().chain(sure).copied().collect();
+    let mut low = 0;
+    let mut high = 0;
+    for (piece, value) in own {
+        let base = crate::counters::trade(*piece, &certain);
+        let joining = beyond
+            .iter()
+            .map(|(enemy, _)| crate::counters::pair(*piece, *enemy));
+        let (least, most) = joining.fold((base, base), |(least, most), trade| {
+            (least.min(trade), most.max(trade))
+        });
+        low += value * (least * 1_000).isqrt() / 1_000;
+        high += value * (most * 1_000).isqrt() / 1_000;
+    }
+    (low, high)
+}
+
+/// What `side` comes to at its price.
+fn priced(side: &[(Piece, u64)]) -> u64 {
+    side.iter().map(|(_, value)| value).sum()
+}
+
+/// `units`' striking strength, each as its kind at what it adds against a
+/// building.
+fn striking_mix<'u>(units: impl IntoIterator<Item = &'u UnitObs>) -> Vec<(Piece, u64)> {
+    units
+        .into_iter()
+        .map(|unit| (Piece::Unit(unit.kind), striking(unit)))
+        .filter(|(_, value)| *value > 0)
+        .collect()
+}
+
 /// A known building's price with every upgrade it reached, discounted by its
 /// missing health at that tier.
 pub(crate) fn building_value(building: &BuildingObs) -> u64 {
@@ -2047,7 +2183,7 @@ pub(super) fn recruit_by(
     rally: TilePos,
     need: u64,
     room: usize,
-    worth: fn(&UnitObs) -> u64,
+    worth: impl Fn(&UnitObs) -> u64,
 ) -> Vec<UnitId> {
     let mut sorted = fit.to_vec();
     sorted.sort_by_key(|unit| (frame.rank(doubled(rally), doubled(unit.tile)), unit.id));
