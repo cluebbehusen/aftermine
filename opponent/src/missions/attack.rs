@@ -2155,6 +2155,34 @@ fn strength_bounds(
     (low, high)
 }
 
+/// The seat's units of the kinds that `fit`, each at its price; with none,
+/// every such kind its built producers train, at even value: what a
+/// production need is weighed for.
+pub(super) fn fitting(observation: &ObservationData, fits: impl Fn(UnitKind) -> bool) -> Force {
+    let owned: Force = observation
+        .my_units
+        .iter()
+        .filter(|unit| fits(unit.kind))
+        .map(|unit| (Piece::Unit(unit.kind), u64::from(unit.kind.stats().cost)))
+        .collect();
+    if !owned.is_empty() {
+        return owned;
+    }
+    UnitKind::ALL
+        .into_iter()
+        .filter(|kind| fits(*kind))
+        .filter(|kind| {
+            BuildingKind::ALL
+                .into_iter()
+                .filter(|building| crate::investments::built(observation, *building))
+                .any(|building| {
+                    crate::composition::producible(observation, building).any(|each| each == *kind)
+                })
+        })
+        .map(|kind| (Piece::Unit(kind), 1_000))
+        .collect()
+}
+
 /// What `side` comes to at its price.
 pub(super) fn priced(side: &[(Piece, u64)]) -> u64 {
     side.iter().map(|(_, value)| value).sum()

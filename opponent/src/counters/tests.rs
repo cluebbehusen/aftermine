@@ -137,3 +137,48 @@ fn a_gun_destroys_none_of_a_kind_built_to_wreck_structures() {
         125
     );
 }
+
+#[test]
+fn a_force_bought_to_the_price_to_beat_meets_its_margin() {
+    // Production sized this way stops only once a launch would go: the
+    // force at that price stands at the margin over the enemy, each weighed
+    // against the other.
+    let cases = [
+        (
+            UnitKind::Condor,
+            vec![(Piece::Gun(BuildingKind::FlakTurret, 0), 270)],
+        ),
+        (
+            UnitKind::Buzzard,
+            vec![(Piece::Unit(UnitKind::Flakhound), 360)],
+        ),
+        (
+            UnitKind::Scuttler,
+            vec![(Piece::Unit(UnitKind::Warden), 280)],
+        ),
+        (
+            UnitKind::Breaker,
+            vec![(Piece::Gun(BuildingKind::Bastion, 1), 600)],
+        ),
+    ];
+    for (kind, enemy) in cases {
+        let price = price_to_beat(&enemy, &[(Piece::Unit(kind), 1)], 2_000);
+        let force = [(Piece::Unit(kind), price)];
+        let (held, met) = (weigh(&force, &enemy), weigh(&enemy, &force));
+        assert!(
+            held + 1 >= met * 2,
+            "{kind:?}: {held} against {met} at {price}"
+        );
+        let short = [(Piece::Unit(kind), price * 9 / 10)];
+        assert!(
+            weigh(&short, &enemy) < met * 2,
+            "{kind:?}: a tenth less falls short"
+        );
+    }
+    let nothing: [(Piece, u64); 0] = [];
+    assert_eq!(
+        price_to_beat(&[(Piece::Unit(UnitKind::Lancer), 330)], &nothing, 2_000),
+        660,
+        "with nothing to weigh, the enemy's price by the margin"
+    );
+}

@@ -199,6 +199,27 @@ pub(crate) fn weight<P: Into<Piece> + Copy>(piece: impl Into<Piece>, enemies: &[
     (trade(piece, enemies) * 1_000).isqrt()
 }
 
+/// The price a force of `mix`'s proportions takes to stand at `margin` per
+/// mille over `enemy`, each side weighed against the other: weighed against
+/// `enemy`, such a force grows with its price, while `enemy` weighed against
+/// it does not. With no `mix` to weigh, `enemy`'s price by the margin.
+pub(crate) fn price_to_beat(enemy: &[(Piece, u64)], mix: &[(Piece, u64)], margin: u64) -> u64 {
+    let price = |side: &[(Piece, u64)]| side.iter().map(|(_, value)| value).sum::<u64>();
+    let total = price(mix);
+    if total == 0 {
+        return price(enemy) * margin / 1_000;
+    }
+    // Per mille of its price the force is worth against `enemy`, kept whole
+    // however small the sample `mix` is.
+    let quality = (mix
+        .iter()
+        .map(|(piece, value)| value * weight(*piece, enemy))
+        .sum::<u64>()
+        / total)
+        .max(1);
+    weigh(enemy, mix) * margin / 1_000 * 1_000 / quality
+}
+
 /// What `side` is worth against `against`: each of its pieces' value
 /// weighed by what the piece trades against the other side.
 pub(crate) fn weigh(side: &[(Piece, u64)], against: &[(Piece, u64)]) -> u64 {

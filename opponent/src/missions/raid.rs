@@ -16,7 +16,7 @@ use super::{
     MISSION_CAP, Mission, Missions, Objective, RaidPhase, Task, approach, distant_worth, hunt,
     meeting, mine, run, standing, value,
 };
-use crate::counters::{Piece, weigh};
+use crate::counters::{Piece, weigh, weight};
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, ring};
 use crate::map::MapModel;
@@ -105,9 +105,10 @@ struct Foray<'a> {
     light: u64,
 }
 
-/// The most known guard a raid takes on, as a share of the stance's attack
-/// minimum: a stance limit on what counts as lightly defended. Raiders sent
-/// at a real guard die before they reach their target.
+/// The most known guard a raid takes on, weighed against the raiders, as a
+/// share of the stance's attack minimum: a stance limit on what counts as
+/// lightly defended. Raiders sent at a real guard die before they reach
+/// their target, and a guard they trade poorly against is a real one.
 fn light(stance: BotStance) -> u64 {
     minimum(stance) / 4
 }
@@ -163,7 +164,9 @@ impl Missions {
 
     /// Scuttlers a raid on the least guarded known harvest line not raided
     /// lately and not under known guns needs: its known guard by the margin,
-    /// at least one. Zero while no such line is known.
+    /// each side weighed against the other, so the stock it trains is one a
+    /// raid would set out with; at least one. Zero while no such line is
+    /// known.
     pub(crate) fn raid_squad(
         observation: &ObservationData,
         map: &MapModel,
@@ -173,9 +176,12 @@ impl Missions {
     ) -> usize {
         Foray::new(observation, map, profile, memory, scratch)
             .target(Raider::Scuttler, None)
-            .map_or(0, |(_, _, need, _)| {
-                usize::try_from(need.div_ceil(u64::from(UnitKind::Scuttler.stats().cost)))
-                    .unwrap_or(usize::MAX)
+            .map_or(0, |(_, _, need, guard)| {
+                // Each Scuttler counts at what it trades against the guard.
+                let one = u64::from(UnitKind::Scuttler.stats().cost)
+                    * weight(UnitKind::Scuttler, &guard)
+                    / 1_000;
+                usize::try_from(need.div_ceil(one.max(1))).unwrap_or(usize::MAX)
             })
     }
 
@@ -385,6 +391,14 @@ impl<'a> Foray<'a> {
         kind: Raider,
         own: Option<&[(Piece, u64)]>,
     ) -> Option<(Objective, TilePos, u64, Force)> {
+        // Without a squad, what a squad of the kind would face.
+        let sample = match kind {
+            Raider::Bomber => UnitKind::Buzzard,
+            Raider::Sapper => UnitKind::Sapper,
+            Raider::Scuttler => UnitKind::Scuttler,
+        };
+        let sample = [(Piece::Unit(sample), 1)];
+        let against = own.unwrap_or(&sample);
         let observation = self.observation;
         let now = observation.tick;
         let start = self.map.start(observation.me)?;
@@ -432,7 +446,7 @@ impl<'a> Foray<'a> {
         };
         match kind {
             Raider::Sapper => candidates
-                .filter(|(_, goal)| priced(&self.guarded(*goal)) <= self.light)
+                .filter(|(_, goal)| weigh(&self.guarded(*goal, against), against) <= self.light)
                 .filter_map(|(target, goal)| {
                     // Enough blasts for what is left of the building.
                     let hp = observation
@@ -476,10 +490,10 @@ impl<'a> Foray<'a> {
                         Raider::Bomber => {
                             air::cover(self.air, footprint_centre(target.building, target.anchor))
                         }
-                        _ => self.guarded(goal),
+                        _ => self.guarded(goal, against),
                     };
-                    let light = kind != Raider::Scuttler || priced(&guard) <= self.light;
-                    let met = own.map_or_else(|| priced(&guard), |own| weigh(&guard, own));
+                    let met = weigh(&guard, against);
+                    let light = kind != Raider::Scuttler || met <= self.light;
                     let need = (met * self.margin / 1_000).max(1);
                     let takes = own.is_none_or(|own| weigh(own, &guard) >= need);
                     (takes && light).then_some((met, target, goal, need, guard))
@@ -490,13 +504,19 @@ impl<'a> Foray<'a> {
     }
 
     /// What a ground raid on `goal` meets: its known guard there, or the
-    /// strongest known enemy force on its way, whichever is worth more. A
-    /// line held across the way stops raiders as surely as a guard at the
-    /// target.
-    fn guarded(&self, goal: TilePos) -> Force {
+    /// strongest known enemy force on its way, whichever weighs more against
+    /// the raiders, `against`. A line held across the way stops raiders as
+    /// surely as a guard at the target.
+    fn guarded(&self, goal: TilePos, against: &[(Piece, u64)]) -> Force {
         let guard = defense_mix(self.observation, self.memory, &[goal], &[]);
-        let way = meeting::on_the_way(self.observation, self.memory, (self.map, self.frame), goal);
-        if priced(&way) > priced(&guard) {
+        let way = meeting::on_the_way(
+            self.observation,
+            self.memory,
+            (self.map, self.frame),
+            goal,
+            against,
+        );
+        if weigh(&way, against) > weigh(&guard, against) {
             way
         } else {
             guard
