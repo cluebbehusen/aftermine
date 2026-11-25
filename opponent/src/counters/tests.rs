@@ -45,3 +45,57 @@ fn a_mix_weighs_each_enemy_kind_by_its_value() {
     );
     assert_eq!(weight(UnitKind::Lancer, &[(UnitKind::Lancer, 110)]), 1_000);
 }
+
+#[test]
+fn a_gun_reads_as_the_inverse_of_what_its_attackers_trade_against_it() {
+    for (a, kind) in MEASURED.iter().enumerate() {
+        for (g, gun) in GUNS.iter().enumerate() {
+            let taken = u64::from(chart::AGAINST[a][g]);
+            let domain = kind.stats().domain;
+            let fires = gun
+                .base_stats()
+                .weapons
+                .iter()
+                .any(|weapon| weapon.targets.covers(domain));
+            if !fires {
+                continue;
+            }
+            let product = against(*gun, *kind) * taken;
+            assert!(
+                product.abs_diff(1_000_000) <= 10_000 || taken == 125 || taken == 8_000,
+                "{gun:?} against {kind:?}: {product}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_gun_against_a_kind_the_chart_does_not_measure_is_even_if_it_can_fire_on_it() {
+    assert_eq!(against(BuildingKind::Turret, UnitKind::Bombard), 1_000);
+    assert_eq!(
+        against(BuildingKind::FlakTurret, UnitKind::Bombard),
+        125,
+        "flak cannot fire on the ground"
+    );
+    assert_eq!(
+        against(BuildingKind::Lattice, UnitKind::Lancer),
+        1_000,
+        "an unmeasured structure is even"
+    );
+}
+
+#[test]
+fn a_gun_destroys_none_of_an_attacker_it_cannot_fire_on() {
+    assert_eq!(
+        against(BuildingKind::FlakTurret, UnitKind::Flakhound),
+        125,
+        "though neither can hurt the other, flak only fires at the air"
+    );
+    assert_eq!(against(BuildingKind::Turret, UnitKind::Buzzard), 125);
+}
+
+#[test]
+fn a_gun_destroys_none_of_a_kind_built_to_wreck_structures() {
+    assert_eq!(against(BuildingKind::Turret, UnitKind::Maw), 125);
+    assert_eq!(against(BuildingKind::Bastion, UnitKind::Maw), 125);
+}

@@ -71,9 +71,10 @@ normative for this crate.
   `--opponent-difficulty` and `--opponent-stance` override seat one. Add
   `--paired` for a second leg with the two configurations exchanged.
 - **Counter chart:** `cargo run --release -p aftermine-driver -- fight-lab`
-  prints how unit kinds trade in the simulation. When unit stats change, the
-  chart's fingerprint test fails: regenerate it with `fight-lab --write` from
-  the repository root, rebuild, and confirm with `fight-lab --check`.
+  prints how unit kinds trade in the simulation, against each other and against
+  the structures a seat raises to defend. When unit or structure stats change,
+  the chart's fingerprint test fails: regenerate it with `fight-lab --write`
+  from the repository root, rebuild, and confirm with `fight-lab --check`.
 - **Traces:** `--decision-trace-out <file>`, with `--out` and `--candidate`,
   writes one JSONL row per decision. Opponent seats' rows carry this crate's
   `Trace`: tick, player, bank, received own events, spent, purchases, unit-order

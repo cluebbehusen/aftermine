@@ -47,7 +47,8 @@ Headless execution (`runner`, `render`, `playback` and `stats`) lives in
   seed, as authored and mirrored left to right.
 - `fight_lab` (`fight-lab`) stages armies on open ground and reports what each
   destroyed of the other's value per value it lost: every pair of combat kinds
-  at even prices, then mixed armies, each fight played from both seats.
+  at even prices, each kind against blocks of defensive structures, then mixed
+  armies, each fight played from both seats.
 - `challengers` holds scripted players, each playing one known way to beat the
   bot from its seat's fog-honest view, with a seed that varies timings, counts
   and targets within the plan. `bot_gauntlet` (`bot-gauntlet`) plays them

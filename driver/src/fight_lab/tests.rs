@@ -65,7 +65,10 @@ fn presets_fit_the_field_at_about_even_price() {
             .sum()
     };
     for (name, first, second) in presets() {
-        assert!(field(&first, &second).is_ok(), "{name}");
+        assert!(
+            field(Side::army(&first), Side::army(&second)).is_ok(),
+            "{name}"
+        );
         let (first, second) = (value(&first), value(&second));
         assert!(
             first.abs_diff(second) * 100 <= first.max(second) * 25,
@@ -91,6 +94,15 @@ fn the_report_shows_each_budget_and_the_mixed_fights() {
                 ],
             ]],
         },
+        guns: GunMatrix {
+            kinds: vec![UnitKind::Lancer],
+            guns: vec![BuildingKind::Turret],
+            budgets: vec![1_400],
+            trades: vec![vec![vec![Trade {
+                killed: 50,
+                lost: 20,
+            }]]],
+        },
         mixed: vec![Mixed {
             name: "Lancers v Wardens".to_owned(),
             first: even(UnitKind::Lancer, 440),
@@ -107,6 +119,12 @@ fn the_report_shows_each_budget_and_the_mixed_fights() {
     assert!(report.contains("inf"), "{report}");
     assert!(report.contains("Lancers v Wardens"), "{report}");
     assert!(report.contains("1.5"), "{report}");
+    assert!(
+        report.contains("attacking the column structure"),
+        "{report}"
+    );
+    assert!(report.contains(" Turre"), "{report}");
+    assert!(report.contains("2.5"), "{report}");
 }
 
 #[test]
@@ -128,9 +146,7 @@ fn the_geometric_mean_is_the_root_of_the_product() {
 
 #[test]
 fn the_chart_source_carries_the_fingerprint_and_every_row() {
-    let (_, chart) = aftermine_opponent::chart();
-    let trades: Vec<Vec<u16>> = chart.iter().map(|row| row.to_vec()).collect();
-    let source = chart_source(&trades);
+    let source = chart_source(&checked_in());
     let stats = format!("{:016x}", aftermine_opponent::fingerprint());
     assert!(
         source.contains(&format!("0x{}_{}", &stats[..4], &stats[4..8])),
@@ -140,22 +156,46 @@ fn the_chart_source_carries_the_fingerprint_and_every_row() {
         .lines()
         .filter(|line| line.starts_with("    ["))
         .count();
-    assert_eq!(rows, aftermine_opponent::MEASURED.len(), "{source}");
+    assert_eq!(rows, 2 * aftermine_opponent::MEASURED.len(), "{source}");
+    assert!(
+        source.contains(&format!(
+            "AGAINST: [[u16; {}]; {}]",
+            aftermine_opponent::GUNS.len(),
+            aftermine_opponent::MEASURED.len()
+        )),
+        "{source}"
+    );
+}
+
+/// The checked-in chart as the lab measures one.
+fn checked_in() -> Measured {
+    let chart = aftermine_opponent::chart();
+    Measured {
+        trades: chart.trades.iter().map(|row| row.to_vec()).collect(),
+        against: chart.against.iter().map(|row| row.to_vec()).collect(),
+    }
 }
 
 #[test]
 fn the_check_accepts_the_checked_in_chart_and_refuses_another() {
-    let (_, chart) = aftermine_opponent::chart();
-    let mut trades: Vec<Vec<u16>> = chart.iter().map(|row| row.to_vec()).collect();
-    check(&trades).unwrap();
-    trades[0][1] += 1;
+    check(&checked_in()).unwrap();
+    let mut trades = checked_in();
+    trades.trades[0][1] += 1;
     let error = check(&trades).unwrap_err();
     assert!(error.to_string().contains("Scuttler row"), "{error}");
+    let mut against = checked_in();
+    against.against[2][0] += 1;
+    let error = check(&against).unwrap_err();
+    assert!(
+        error.to_string().contains("Lancer row against structures"),
+        "{error}"
+    );
 }
 
 #[test]
 fn a_unit_already_attacking_keeps_its_attack() {
-    let mut state = field(&even(UnitKind::Lancer, 440), &even(UnitKind::Warden, 440))
+    let (lancers, wardens) = (even(UnitKind::Lancer, 440), even(UnitKind::Warden, 440));
+    let mut state = field(Side::army(&lancers), Side::army(&wardens))
         .unwrap()
         .build()
         .unwrap();
@@ -191,4 +231,58 @@ fn a_unit_already_attacking_keeps_its_attack() {
         state.units().len(),
         "every other unit hunts"
     );
+}
+
+#[test]
+fn aircraft_destroy_guns_that_cannot_fire_on_them() {
+    let trade = siege(
+        &even(UnitKind::Buzzard, 600),
+        &even_guns(BuildingKind::Turret, 600),
+    )
+    .unwrap();
+    assert!(trade.killed > 0 && trade.lost == 0, "{trade:?}");
+}
+
+#[test]
+fn lancers_outrange_turrets() {
+    let trade = siege(
+        &even(UnitKind::Lancer, 600),
+        &even_guns(BuildingKind::Turret, 600),
+    )
+    .unwrap();
+    assert!(trade.killed > 2 * trade.lost, "{trade:?}");
+}
+
+#[test]
+fn a_siege_reads_the_same_from_either_seat() {
+    let (wardens, turrets) = (
+        even(UnitKind::Warden, 420),
+        even_guns(BuildingKind::Turret, 420),
+    );
+    let one = play(Side::army(&wardens), Side::guns(&turrets)).unwrap();
+    let other = play(Side::guns(&turrets), Side::army(&wardens)).unwrap();
+    assert_eq!(
+        siege(&wardens, &turrets).unwrap(),
+        Trade {
+            killed: one.killed + other.lost,
+            lost: one.lost + other.killed,
+        }
+    );
+}
+
+#[test]
+fn a_block_too_big_for_the_field_is_refused() {
+    let error = siege(&even(UnitKind::Lancer, 440), &[(BuildingKind::Bastion, 60)]).unwrap_err();
+    assert!(error.to_string().contains("does not fit"), "{error}");
+}
+
+#[test]
+fn guns_are_worth_what_was_paid_by_their_health_left() {
+    let turrets = even_guns(BuildingKind::Turret, 300);
+    let state = field(Side::army(&[]), Side::guns(&turrets))
+        .unwrap()
+        .build()
+        .unwrap();
+    assert_eq!(worth(&state, 1), 300);
+    assert_eq!(worth(&state, 0), 0);
 }
