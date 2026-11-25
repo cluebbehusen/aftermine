@@ -29,7 +29,7 @@ fn each_pair_reads_as_the_inverse_from_the_other_side() {
 fn a_kind_the_chart_does_not_measure_counts_at_its_price() {
     assert_eq!(trade(UnitKind::Bombard, &[(UnitKind::Lancer, 110)]), 1_000);
     assert_eq!(trade(UnitKind::Lancer, &[(UnitKind::Mantle, 500)]), 1_000);
-    assert_eq!(trade(UnitKind::Lancer, &[]), 1_000);
+    assert_eq!(trade(UnitKind::Lancer, &[] as &[(UnitKind, u64)]), 1_000);
 }
 
 #[test]
@@ -49,21 +49,22 @@ fn a_mix_weighs_each_enemy_kind_by_its_value() {
 #[test]
 fn a_gun_reads_as_the_inverse_of_what_its_attackers_trade_against_it() {
     for (a, kind) in MEASURED.iter().enumerate() {
-        for (g, gun) in GUNS.iter().enumerate() {
+        for (g, (gun, tier)) in GUNS.iter().enumerate() {
             let taken = u64::from(chart::AGAINST[a][g]);
+            assert_eq!(pair(*kind, Piece::Gun(*gun, *tier)), taken);
             let domain = kind.stats().domain;
             let fires = gun
-                .base_stats()
+                .tier_stats(*tier)
                 .weapons
                 .iter()
                 .any(|weapon| weapon.targets.covers(domain));
             if !fires {
                 continue;
             }
-            let product = against(*gun, *kind) * taken;
+            let product = pair(Piece::Gun(*gun, *tier), *kind) * taken;
             assert!(
                 product.abs_diff(1_000_000) <= 10_000 || taken == 125 || taken == 8_000,
-                "{gun:?} against {kind:?}: {product}"
+                "{gun:?} {tier} against {kind:?}: {product}"
             );
         }
     }
@@ -71,31 +72,68 @@ fn a_gun_reads_as_the_inverse_of_what_its_attackers_trade_against_it() {
 
 #[test]
 fn a_gun_against_a_kind_the_chart_does_not_measure_is_even_if_it_can_fire_on_it() {
-    assert_eq!(against(BuildingKind::Turret, UnitKind::Bombard), 1_000);
+    let gun = |kind, tier| Piece::Gun(kind, tier);
+    assert_eq!(pair(gun(BuildingKind::Turret, 0), UnitKind::Bombard), 1_000);
     assert_eq!(
-        against(BuildingKind::FlakTurret, UnitKind::Bombard),
+        pair(gun(BuildingKind::FlakTurret, 1), UnitKind::Bombard),
         125,
         "flak cannot fire on the ground"
     );
     assert_eq!(
-        against(BuildingKind::Lattice, UnitKind::Lancer),
+        pair(UnitKind::Bombard, gun(BuildingKind::FlakTurret, 0)),
+        8_000,
+        "and the Bombard destroys it for nothing"
+    );
+    assert_eq!(
+        pair(gun(BuildingKind::Turret, 0), UnitKind::Kestrel),
+        125,
+        "a gun destroys none of what it cannot fire on"
+    );
+    assert_eq!(
+        pair(gun(BuildingKind::Lattice, 0), UnitKind::Lancer),
         1_000,
         "an unmeasured structure is even"
     );
+    assert_eq!(
+        pair(gun(BuildingKind::Turret, 0), gun(BuildingKind::Bastion, 1)),
+        1_000
+    );
+}
+
+#[test]
+fn two_sides_weighed_against_each_other_stand_in_their_measured_ratio() {
+    let lancers = [(Piece::Unit(UnitKind::Lancer), 1_100)];
+    let sentinels = [(Piece::Unit(UnitKind::Sentinel), 1_100)];
+    let (own, theirs) = (weigh(&lancers, &sentinels), weigh(&sentinels, &lancers));
+    let measured = pair(UnitKind::Lancer, UnitKind::Sentinel);
+    assert!(
+        (own * 1_000 / theirs).abs_diff(measured) * 100 <= measured * 2,
+        "{own} v {theirs}: {measured}"
+    );
+    assert_eq!(weigh(&sentinels, &sentinels), 1_100, "a mirror is even");
 }
 
 #[test]
 fn a_gun_destroys_none_of_an_attacker_it_cannot_fire_on() {
     assert_eq!(
-        against(BuildingKind::FlakTurret, UnitKind::Flakhound),
+        pair(Piece::Gun(BuildingKind::FlakTurret, 0), UnitKind::Flakhound),
         125,
         "though neither can hurt the other, flak only fires at the air"
     );
-    assert_eq!(against(BuildingKind::Turret, UnitKind::Buzzard), 125);
+    assert_eq!(
+        pair(Piece::Gun(BuildingKind::Turret, 0), UnitKind::Buzzard),
+        125
+    );
 }
 
 #[test]
 fn a_gun_destroys_none_of_a_kind_built_to_wreck_structures() {
-    assert_eq!(against(BuildingKind::Turret, UnitKind::Maw), 125);
-    assert_eq!(against(BuildingKind::Bastion, UnitKind::Maw), 125);
+    assert_eq!(
+        pair(Piece::Gun(BuildingKind::Turret, 0), UnitKind::Maw),
+        125
+    );
+    assert_eq!(
+        pair(Piece::Gun(BuildingKind::Bastion, 1), UnitKind::Maw),
+        125
+    );
 }

@@ -15,9 +15,17 @@ pub(super) const WEST: [(i32, i32); 8] = [
 /// The field with West's garrison, `west` West Sentinels and the given East
 /// units.
 pub(super) fn armed(west: usize, east: &[(UnitKind, i32, i32)]) -> Scenario {
+    armed_as(UnitKind::Sentinel, west, east)
+}
+
+/// [`armed`] with West's army of `kind`; its garrison stays Sentinels.
+pub(super) fn armed_as(kind: UnitKind, west: usize, east: &[(UnitKind, i32, i32)]) -> Scenario {
     let mut scenario = field();
-    for (x, y) in GARRISON.iter().chain(&WEST[..west]) {
-        scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
+    for (x, y) in GARRISON {
+        scenario.units.push(unit(0, UnitKind::Sentinel, x, y));
+    }
+    for (x, y) in &WEST[..west] {
+        scenario.units.push(unit(0, kind, *x, *y));
     }
     for (kind, x, y) in east {
         scenario.units.push(unit(1, *kind, *x, *y));

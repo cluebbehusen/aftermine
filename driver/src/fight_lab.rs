@@ -58,14 +58,14 @@ const TICK_LIMIT: u64 = 6_000;
 /// An army: how many of each kind.
 pub type Army = Vec<(UnitKind, u32)>;
 
-/// A block of structures: how many of each kind, built at their first rung.
-pub type Guns = Vec<(BuildingKind, u32)>;
+/// A block of structures: how many of each kind at each rung, built.
+pub type Guns = Vec<(BuildingKind, u8, u32)>;
 
 /// One side of a fight: an army, or a block of structures.
 #[derive(Clone, Copy)]
 struct Side<'a> {
     army: &'a [(UnitKind, u32)],
-    guns: &'a [(BuildingKind, u32)],
+    guns: &'a [(BuildingKind, u8, u32)],
 }
 
 impl<'a> Side<'a> {
@@ -73,7 +73,7 @@ impl<'a> Side<'a> {
         Side { army, guns: &[] }
     }
 
-    fn guns(guns: &'a [(BuildingKind, u32)]) -> Self {
+    fn guns(guns: &'a [(BuildingKind, u8, u32)]) -> Self {
         Side { army: &[], guns }
     }
 }
@@ -129,8 +129,8 @@ pub struct Matrix {
 pub struct GunMatrix {
     /// The kinds, in row order.
     pub kinds: Vec<UnitKind>,
-    /// The structures, in column order.
-    pub guns: Vec<BuildingKind>,
+    /// The structures, each at a rung, in column order.
+    pub guns: Vec<(BuildingKind, u8)>,
     /// Scrap a side spent, one table each.
     pub budgets: Vec<u32>,
     /// `trades[budget][a][g]`: kind `a` against structure `g`.
@@ -175,7 +175,7 @@ pub fn fight(first: &[(UnitKind, u32)], second: &[(UnitKind, u32)]) -> Result<Tr
 ///
 /// # Errors
 /// An army or a block that does not fit the field.
-pub fn siege(army: &[(UnitKind, u32)], guns: &[(BuildingKind, u32)]) -> Result<Trade> {
+pub fn siege(army: &[(UnitKind, u32)], guns: &[(BuildingKind, u8, u32)]) -> Result<Trade> {
     both_seats(Side::army(army), Side::guns(guns))
 }
 
@@ -195,12 +195,12 @@ pub fn even(kind: UnitKind, budget: u32) -> Army {
     vec![(kind, ((budget + cost / 2) / cost).max(1))]
 }
 
-/// As many of the structure `kind` at its first rung as `budget` buys,
-/// rounded, and at least one.
+/// As many of the structure `kind` at `tier` as `budget` buys, rounded, and
+/// at least one, each costing every rung paid for.
 #[must_use]
-pub fn even_guns(kind: BuildingKind, budget: u32) -> Guns {
-    let cost = kind.base_stats().construction.cost.max(1);
-    vec![(kind, ((budget + cost / 2) / cost).max(1))]
+pub fn even_guns(kind: BuildingKind, tier: u8, budget: u32) -> Guns {
+    let cost = kind.invested_cost(tier).max(1);
+    vec![(kind, tier, ((budget + cost / 2) / cost).max(1))]
 }
 
 /// Every one of `kinds` against every one of `guns` at every one of
@@ -210,7 +210,7 @@ pub fn even_guns(kind: BuildingKind, budget: u32) -> Guns {
 /// An army or a block that does not fit the field.
 pub fn guns(
     kinds: &[UnitKind],
-    guns: &[BuildingKind],
+    guns: &[(BuildingKind, u8)],
     budgets: &[u32],
     jobs: NonZeroUsize,
 ) -> Result<GunMatrix> {
@@ -222,7 +222,7 @@ pub fn guns(
     let results = fan_out_bounded(&fights, jobs, |&(budget, a, g)| {
         siege(
             &even(kinds[a], budgets[budget]),
-            &even_guns(guns[g], budgets[budget]),
+            &even_guns(guns[g].0, guns[g].1, budgets[budget]),
         )
     })?;
     let mut trades = vec![vec![vec![Trade::default(); guns.len()]; kinds.len()]; budgets.len()];
@@ -389,8 +389,9 @@ pub fn report(lab: &Lab) -> String {
             "{budget} scrap a side: value the row kind destroyed per value it lost attacking the column structure"
         );
         let _ = write!(out, "{:11}", "");
-        for gun in &guns.guns {
-            let _ = write!(out, "{:>6}", short(gun));
+        for (gun, tier) in &guns.guns {
+            let name: String = format!("{gun:?}").chars().take(4).collect();
+            let _ = write!(out, "{:>6}", format!("{name}{tier}"));
         }
         out.push('\n');
         for (a, row) in trades.iter().enumerate() {
@@ -589,9 +590,7 @@ fn short(kind: &impl std::fmt::Debug) -> String {
 
 /// One fight, `west` in seat 0 and `east` in seat 1, from the west's side.
 fn play(west: Side<'_>, east: Side<'_>) -> Result<Trade> {
-    let mut state = field(west, east)?
-        .build()
-        .context("staging a fight-lab field")?;
+    let mut state = stage(west, east)?;
     let start = [worth(&state, 0), worth(&state, 1)];
     for tick in 0..TICK_LIMIT {
         if over(&state) {
@@ -608,6 +607,29 @@ fn play(west: Side<'_>, east: Side<'_>) -> Result<Trade> {
         killed: start[1] - worth(&state, 1),
         lost: start[0] - worth(&state, 0),
     })
+}
+
+/// The field built, each structure at its rung with that rung's full
+/// health. A scenario stands its structures at their first rung, so the
+/// higher rungs are set on the built state, as an upgrade would leave them.
+fn stage(west: Side<'_>, east: Side<'_>) -> Result<State> {
+    let state = field(west, east)?
+        .build()
+        .context("staging a fight-lab field")?;
+    let rungs: Vec<(BuildingKind, u8)> = [west, east]
+        .iter()
+        .flat_map(|side| side.guns.iter())
+        .flat_map(|&(kind, tier, count)| (0..count).map(move |_| (kind, tier)))
+        .collect();
+    if rungs.iter().all(|(_, tier)| *tier == 0) {
+        return Ok(state);
+    }
+    let mut forged = serde_json::to_value(&state).context("forging fight-lab rungs")?;
+    for (index, (kind, tier)) in rungs.iter().enumerate() {
+        forged["buildings"][index]["tier"] = (*tier).into();
+        forged["buildings"][index]["hp"] = kind.tier_stats(*tier).max_hp.into();
+    }
+    serde_json::from_value(forged).context("forging fight-lab rungs")
 }
 
 /// The open field with `west` formed up on seat 0's side and `east` on
@@ -628,12 +650,12 @@ fn field(west: Side<'_>, east: Side<'_>) -> Result<Scenario> {
         let step = side
             .guns
             .iter()
-            .map(|(kind, _)| kind.size().0.max(kind.size().1))
+            .map(|(kind, _, _)| kind.size().0.max(kind.size().1))
             .max()
             .unwrap_or(1)
             + 1;
         let mut index = 0_i32;
-        for &(kind, count) in side.guns {
+        for &(kind, _, count) in side.guns {
             let (width, height) = kind.size();
             for _ in 0..count {
                 let (column, row) = (index % PER_ROW, index / PER_ROW);
@@ -641,7 +663,7 @@ fn field(west: Side<'_>, east: Side<'_>) -> Result<Scenario> {
                 if y + height > bottom {
                     bail!(
                         "a block of {} structures does not fit the field",
-                        side.guns.iter().map(|(_, count)| count).sum::<u32>()
+                        side.guns.iter().map(|(_, _, count)| count).sum::<u32>()
                     );
                 }
                 let x = if player == 0 {

@@ -1542,7 +1542,9 @@ pub(crate) fn answer(fighter: Fighter, short: &Shortfall) -> u64 {
             let trades = match fighter {
                 Fighter::Unit(kind) => crate::counters::pair(kind, *attacker),
                 Fighter::Structure(kind) => {
-                    crate::counters::against(kind, *attacker) * STANDING / 1_000
+                    crate::counters::pair(crate::counters::Piece::Gun(kind, 0), *attacker)
+                        * STANDING
+                        / 1_000
                 }
             };
             trades * value

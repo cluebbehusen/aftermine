@@ -78,17 +78,19 @@ fn a_start_scouting_sees_later_in_the_decision_is_no_longer_presumed_held() {
     assert_eq!(best(&memory), None);
 }
 
-/// [`Plan::need_at`] as it walked the way to every target.
-fn need_walking_the_way(plan: &Plan<'_>, target: Target, breach: u64) -> u64 {
+/// [`Plan::need_at`] as it walked the way to every target, each enemy
+/// weighed against `own`.
+fn need_walking_the_way(plan: &Plan<'_>, target: Target, breach: u64, own: &[(Piece, u64)]) -> u64 {
     let (units, mut buildings) =
-        opposed_parts(plan.observation, plan.map, plan.memory, &[target.approach]);
+        opposed_mixes(plan.observation, plan.map, plan.memory, &[target.approach]);
     if surveys(plan.difficulty) {
         buildings = plan
             .on_the_way(target, &plan.way(target))
             .into_iter()
-            .map(building_value)
-            .sum();
+            .map(gun)
+            .collect();
     }
+    let (units, buildings) = (weigh(&units, own), weigh(&buildings, own));
     ((units + buildings.saturating_sub(breach)) * plan.misjudge / 1_000 * plan.margin / 1_000)
         .max(plan.minimum)
 }
@@ -103,6 +105,7 @@ fn whether_an_army_meets_a_need_never_hangs_on_skipping_the_way_there() {
     // Needs the way raised over the defenses around the target, and needs
     // under every known defense.
     let mut open = [0; 2];
+    let lancers = |value: u64| vec![(Piece::Unit(UnitKind::Lancer), value)];
     for difficulty in [BotDifficulty::Scrapheap, BotDifficulty::Standard] {
         let profile = ResolvedProfile::resolve(aftermine_sim::scenario::BotConfig::new(
             difficulty,
@@ -131,17 +134,23 @@ fn whether_an_army_meets_a_need_never_hangs_on_skipping_the_way_there() {
                     continue;
                 };
                 for breach in [0, 150] {
-                    let need = need_walking_the_way(&plan, target, breach);
-                    assert_eq!(plan.need_at(target, breach, plan.margin), need);
+                    // A need depends on what goes, not how much of it.
+                    let need = need_walking_the_way(&plan, target, breach, &lancers(1));
+                    assert_eq!(plan.need_at(target, breach, plan.margin, &lancers(1)), need);
                     let (units, sure, beyond) = plan.opposing(target);
-                    let most: u64 = beyond.iter().map(|building| building_value(building)).sum();
+                    let own = lancers(1);
+                    let (units, sure) = (weigh(&units, &own), weigh(&sure, &own));
+                    let beyond: Vec<(Piece, u64)> = beyond.into_iter().map(gun).collect();
+                    let most = weigh(&beyond, &own);
                     open[0] += usize::from(plan.scaled(units, sure, breach, plan.margin) < need);
                     open[1] +=
                         usize::from(need < plan.scaled(units, sure + most, breach, plan.margin));
-                    for strength in (0..need + 400).step_by(50).chain([need - 1, need]) {
+                    for value in (0..need * 2 + 400).step_by(50).chain([need]) {
+                        let own = lancers(value);
+                        let strength = plan.weighed_need(target, breach, plan.margin, &own).1;
                         assert_eq!(
-                            plan.meets(strength, target, breach, plan.margin),
-                            strength >= need,
+                            plan.meets(&own, target, breach, plan.margin),
+                            value >= plan.minimum && strength >= need,
                             "{difficulty:?}, {strength} against {need} at {:?}",
                             target.anchor
                         );

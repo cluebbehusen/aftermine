@@ -306,15 +306,18 @@ pub struct Launch {
     pub mission: u64,
     /// The attack and the building it went after.
     pub kind: MissionKind,
-    /// Known local defense at the target's approach, in scrap.
+    /// Known local defense at the target's approach, each defender weighed
+    /// by what it trades against the units sent.
     pub defense: u64,
     /// Per mille of the known army it would meet that the attack had to
     /// bring.
     pub margin: u64,
-    /// Strength the attack needed: the known army it would meet times the
-    /// margin, never under the stance minimum.
+    /// Strength the attack needed: the known army it would meet, each
+    /// weighed by what it trades against what would go, times the margin,
+    /// never under the stance minimum.
     pub need: u64,
-    /// Strength against buildings of the units sent.
+    /// Strength against buildings of the units sent, each weighed by what
+    /// it trades against the army they would meet.
     pub sent: u64,
     /// The units sent, by id.
     pub units: Vec<UnitId>,
