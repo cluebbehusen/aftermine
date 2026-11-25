@@ -26,7 +26,7 @@ fn a_machine_reported_standing_up_out_of_sight_opposes_at_once() {
             .any(|enemy| enemy.id == UnitId(9_000)),
         "premise: the machine is out of sight"
     );
-    assert!(opposed(&observation, &memory, place) > 0);
+    assert!(!opposed(&observation, &memory, place).is_empty());
 }
 
 #[test]

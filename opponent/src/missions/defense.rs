@@ -10,13 +10,13 @@
 //! attacked, once those gathered match any escort beside it. Defenders
 //! falling back run without stopping to fight on the way.
 
-use super::attack::{building_value, concentrates, defense, defense_around};
+use super::attack::{Force, building_value, concentrates, defense_mix, force_of, priced};
 use super::reserve::LOCAL_REACH;
 use super::{
     AttackPhase, DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, against_machines,
     fill, force, hits, hunt, insert, meeting, mine, reached, run, value, worth,
 };
-use crate::counters::weight;
+use crate::counters::{Piece, weigh, weight};
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, gap, ring};
 use crate::map::MapModel;
@@ -76,9 +76,8 @@ impl Missions {
     /// defense that is only recovering lends its units, as does an attack
     /// regrouping at home, or travelling out of contact at a seat of
     /// `difficulty` that calls such an army back.
-    /// At a `difficulty` that reads threats, the seat's units count against
-    /// the ground attackers in sight at what they trade against them, never
-    /// above their price.
+    /// The seat's units count against the ground attackers, and the known
+    /// guns beside the batteries, at what they trade against them.
     /// Returns each of the seat's own Foundries whose defense falls short of
     /// its attackers, home-nearest first.
     ///
@@ -100,12 +99,7 @@ impl Missions {
         let now = observation.tick;
         let lendable = self.available(observation, Some(difficulty));
         let mut groups = threats(observation, map, frame, (memory, searched));
-        self.weigh(
-            (observation, map, memory, ledger),
-            &lendable,
-            &mut groups,
-            difficulty,
-        );
+        self.weigh((observation, map, memory, ledger), &lendable, &mut groups);
         groups.retain(|(_, siege, _)| siege.presses());
         let returning = self.stand_down((observation, memory), (map, frame), &groups, ledger);
         self.list.retain(|mission| {
@@ -186,9 +180,9 @@ impl Missions {
             // held a few tiles behind them joins in. Going at an escorted
             // gun, they meet what stands near it too.
             let meet = |place: TilePos| -> u64 {
-                meeting::joiners(observation, memory, place)
+                meeting::opposed(observation, memory, place)
                     .into_iter()
-                    .map(|(kind, worth)| siege.trades.enemy(kind, worth))
+                    .map(|(piece, worth)| siege.trades.enemy(piece, worth))
                     .sum()
             };
             let meets = grounded.filter(|_| gathering).map_or(0, meet).max(
@@ -197,9 +191,11 @@ impl Missions {
                     .map_or(0, |threat| meet(threat.tile)),
             );
             let pressing = siege.pressing_value(meets);
-            let besides: Vec<TilePos> = siege.batteries.iter().map(|(_, beside)| *beside).collect();
-            // An escort beside a battery is pressing already: it counts once.
-            let guns = defense_around(observation, memory, &besides, &siege.pressing())
+            let guns = siege
+                .guns
+                .iter()
+                .map(|(piece, value)| siege.trades.enemy(*piece, *value))
+                .sum::<u64>()
                 + siege.unseen.map_or(0, |_| gun_value())
                 + siege.search.map_or(0, |(_, need)| need);
             let unarmed = siege.unarmed();
@@ -481,16 +477,15 @@ impl Missions {
     }
 
     /// Notes on each siege in `groups` what the seat's units trade against
-    /// its attackers at `difficulty` and what its Foundry's defense holds and
-    /// could take from `lendable` against them, not units out on missions
-    /// that will not lend them, and leaves to production the batteries that
-    /// force cannot beat.
+    /// its attackers and the known guns beside its batteries, and what its
+    /// Foundry's defense holds and could take from `lendable` against them,
+    /// not units out on missions that will not lend them, and leaves to
+    /// production the batteries that force cannot beat.
     fn weigh(
         &self,
         (observation, map, memory, ledger): (&ObservationData, &MapModel, &Memory, &Ledger),
         lendable: &[UnitId],
         groups: &mut [(&BuildingObs, Siege<'_>, bool)],
-        difficulty: BotDifficulty,
     ) {
         let now = observation.tick;
         for (foundry, siege, _) in groups {
@@ -517,21 +512,30 @@ impl Missions {
                 .collect();
             let own: Vec<(UnitKind, u64)> =
                 armed.iter().map(|unit| (unit.kind, value(unit))).collect();
+            let pool: Vec<&UnitObs> = armed
+                .into_iter()
+                .filter(|unit| hits(unit, Domain::Ground))
+                .collect();
+            siege.leave_unbeaten(observation, memory, &force_of(pool.iter().copied(), value));
+            let besides: Vec<TilePos> = siege.batteries.iter().map(|(_, beside)| *beside).collect();
+            // An escort beside a battery is pressing already: it counts once.
+            siege.guns = defense_mix(observation, memory, &besides, &siege.pressing());
             let recalled: Vec<_> = memory
                 .units()
                 .iter()
                 .filter(|seen| siege.recalled.contains(&seen.id))
                 .collect();
-            let attackers: Vec<(UnitKind, u64)> = siege
+            let attackers: Vec<(Piece, u64)> = siege
                 .units
                 .iter()
-                .map(|threat| (threat.kind, value(threat)))
+                .map(|threat| (Piece::Unit(threat.kind), value(threat)))
                 .chain(recalled.iter().map(|seen| {
                     let value = seen.value(now) * against_machines(seen.kind) / 1_000;
-                    (seen.kind, value)
+                    (Piece::Unit(seen.kind), value)
                 }))
+                .chain(siege.guns.iter().copied())
                 .collect();
-            siege.trades = Trades::of(&attackers, &own, difficulty);
+            siege.trades = Trades::of(&attackers, &own);
             // Remembered attackers press by what they trade against the seat,
             // as those in sight do.
             siege.remembered = [Domain::Ground, Domain::Air].map(|domain| {
@@ -544,14 +548,7 @@ impl Missions {
                     })
                     .sum()
             });
-            let pool: Vec<&UnitObs> = armed
-                .into_iter()
-                .filter(|unit| hits(unit, Domain::Ground))
-                .collect();
-            // Batteries are guns, not the units the trades read.
-            let force: u64 = pool.iter().map(|unit| value(unit)).sum();
             siege.held = pool.iter().map(|unit| siege.trades.ground(unit)).sum();
-            siege.leave_unbeaten(observation, memory, force);
         }
     }
 
@@ -849,24 +846,28 @@ fn outweighed(
         reach > Fx::ZERO
             && tile.chebyshev(unit.tile) <= reach.ceil().to_num::<i32>().max(LOCAL_REACH)
     };
-    let enemies = |body: Domain| {
+    let enemies = |body: Domain| -> Force {
         observation
             .enemy_units
             .iter()
             .filter(move |enemy| enemy.body_domain() == body)
             .filter(|enemy| near(reach(enemy.kind.stats().weapons), enemy.tile))
-            .map(value)
-            .sum::<u64>()
+            .map(|enemy| (Piece::Unit(enemy.kind), value(enemy)))
+            .collect()
     };
     let flying = enemies(Domain::Air);
-    let standing = if domain == Domain::Ground {
+    let mut standing = if domain == Domain::Ground {
         // The guns alone: remembered units near are the meeting's already.
         let counted: Vec<UnitId> = memory.units().iter().map(|seen| seen.id).collect();
-        meeting::opposed(observation, memory, unit.tile)
-            + defense_around(observation, memory, &[unit.tile], &counted)
+        let mut met = meeting::opposed(observation, memory, unit.tile);
+        met.extend(defense_mix(observation, memory, &[unit.tile], &counted));
+        met
     } else {
         enemies(Domain::Ground)
-            + observation
+    };
+    if domain != Domain::Ground {
+        standing.extend(
+            observation
                 .enemy_buildings
                 .iter()
                 .filter(|building| {
@@ -876,20 +877,21 @@ fn outweighed(
                     let gap = gap(building.anchor, building.kind.size(), unit.tile, (1, 1));
                     reach > Fx::ZERO && Fx::from_num(gap) <= reach
                 })
-                .map(building_value)
-                .sum::<u64>()
+                .map(super::attack::gun),
+        );
+    }
+    let beats = |met: &[(Piece, u64)], against: Domain| {
+        let own = force_of(
+            members
+                .iter()
+                .filter_map(|id| mine(observation, *id))
+                .filter(|other| other.tile.chebyshev(unit.tile) <= GATHER_TILES)
+                .filter(|other| hits(other, against)),
+            value,
+        );
+        priced(met) > 0 && weigh(&own, met) < weigh(met, &own)
     };
-    let beats = |met: u64, against: Domain| {
-        let could: u64 = members
-            .iter()
-            .filter_map(|id| mine(observation, *id))
-            .filter(|other| other.tile.chebyshev(unit.tile) <= GATHER_TILES)
-            .filter(|other| hits(other, against))
-            .map(value)
-            .sum();
-        met > 0 && could < met
-    };
-    beats(standing, Domain::Ground) || beats(flying, Domain::Air)
+    beats(&standing, Domain::Ground) || beats(&flying, Domain::Air)
 }
 
 /// Whether `tile` lies within `reach` of one of the seat's or its allies'
@@ -1239,12 +1241,12 @@ pub(super) fn home_post(
     waiting_post(map, frame, home, toward)
 }
 
-/// What the seat's units and their attackers are worth against each other
-/// at one Foundry, at the rungs that read threats: each counts at its price
-/// weighed by what its kind trades against the other side's, by the counter
-/// chart. Lancers are worth more against Sentinels than their scrap says,
-/// Sentinels far less against Lancers; kinds the chart does not measure
-/// count at their price.
+/// What the seat's units and their attackers, with the known guns beside the
+/// batteries, are worth against each other at one Foundry: each counts at
+/// its price weighed by what its kind, or a gun at its rung, trades against
+/// the other side's, by the counter chart. Lancers are worth more against
+/// Sentinels than their scrap says, Sentinels far less against Lancers;
+/// kinds the chart does not measure count at their price.
 #[derive(Default)]
 struct Trades {
     /// Per mille of its price each of the seat's kinds is worth against the
@@ -1257,21 +1259,20 @@ struct Trades {
 }
 
 impl Trades {
-    /// The trades between `attackers` and the seat's `own` units, each kind
-    /// with its value, at `difficulty`.
-    fn of(
-        attackers: &[(UnitKind, u64)],
-        own: &[(UnitKind, u64)],
-        difficulty: BotDifficulty,
-    ) -> Self {
-        if !crate::reads_threats(difficulty) || attackers.is_empty() {
+    /// The trades between `attackers`, units and guns, and the seat's `own`
+    /// units, each kind with its value.
+    fn of(attackers: &[(Piece, u64)], own: &[(UnitKind, u64)]) -> Self {
+        if attackers.is_empty() {
             return Self::default();
         }
-        let flying = |domain: Domain| -> Vec<(UnitKind, u64)> {
+        let flying = |domain: Domain| -> Force {
             attackers
                 .iter()
                 .copied()
-                .filter(|(kind, _)| kind.stats().domain == domain)
+                .filter(|(piece, _)| match piece {
+                    Piece::Unit(kind) => kind.stats().domain == domain,
+                    Piece::Gun(..) => domain == Domain::Ground,
+                })
                 .collect()
         };
         let (ground, air) = (flying(Domain::Ground), flying(Domain::Air));
@@ -1296,10 +1297,10 @@ impl Trades {
     /// What an enemy worth `value` at its price is worth against the seat's
     /// units, those that cannot fire on it included: Buzzards over Lancers
     /// destroy them freely, and that is the threat an air defense answers.
-    fn enemy(&self, kind: UnitKind, value: u64) -> u64 {
+    fn enemy(&self, piece: impl Into<Piece>, value: u64) -> u64 {
         self.against
             .as_ref()
-            .map_or(value, |against| value * weight(kind, against) / 1_000)
+            .map_or(value, |against| value * weight(piece, against) / 1_000)
     }
 
     /// `unit`'s [`force`] against ground and air, each weighed by what it
@@ -1369,7 +1370,10 @@ struct Siege<'a> {
     /// ground are worth against the ground attackers by `trades`: the most
     /// it could bring.
     held: u64,
-    /// What the seat's units trade against the ground attackers in sight.
+    /// The known defense beside the batteries left to fight, each piece by
+    /// its value: the guns a defense going at them meets.
+    guns: Force,
+    /// What the seat's units trade against the attackers and those guns.
     trades: Trades,
     /// Whether something armed threatens the Foundry that the lists above
     /// leave out: a gun the seat cannot beat yet, left to production, or a
@@ -1379,10 +1383,19 @@ struct Siege<'a> {
 
 impl Siege<'_> {
     /// Leaves a battery among defenses the seat's `force` cannot beat now to
-    /// production: fighters sent beside it would only feed its guns. An armed
-    /// one left still marks the siege armed.
-    fn leave_unbeaten(&mut self, observation: &ObservationData, memory: &Memory, force: u64) {
-        let beaten = |beside: TilePos| defense(observation, memory, beside) * 3 / 2 <= force;
+    /// production, each side weighed by what it trades against the other:
+    /// fighters sent beside it would only feed its guns. An armed one left
+    /// still marks the siege armed.
+    fn leave_unbeaten(
+        &mut self,
+        observation: &ObservationData,
+        memory: &Memory,
+        force: &[(Piece, u64)],
+    ) {
+        let beaten = |beside: TilePos| {
+            let guard = defense_mix(observation, memory, &[beside], &[]);
+            weigh(&guard, force) * 3 / 2 <= weigh(force, &guard)
+        };
         self.armed |= self
             .batteries
             .iter()

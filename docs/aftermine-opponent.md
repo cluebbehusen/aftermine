@@ -336,15 +336,16 @@ kind.
   nodes more thinly, refit fewer of their Extractors into Deep Bores and want
   each kind of growth less, though never so little that they stop growing. The
   lowest rung also misjudges the enemy's strength by a deterministic draw from
-  its seed. Veteran and Prime read what a threat at home is, train what beats it
-  and count their own defenders and the attackers by what each kind trades
-  against the other's, as measured in the simulation; Standard and Scrapheap
-  read only how much of it there is and answer with their cheapest helpful unit.
-  Memory fades at the same rate on every rung. Difficulty also sets how well a
-  seat carries out its repertoire: lower rungs attack and defend piecemeal, pick
-  targets worse, walk into known defenses as a column or gather short of them
-  only briefly, count only the defenses around a target, let a defense call back
-  an army on its way, focus fire on the nearest enemy or by a rough read of its
-  wounds, leave reinforcements at home, and lift without a fresh look or without
-  counting bomber cover. Every rung keeps every capability. Lower rungs make
-  understandable mistakes, and higher rungs beat lower ones.
+  its seed. Every rung counts its own defenders and the attackers by what each
+  kind trades against the other's, as measured in the simulation. Veteran and
+  Prime read what a threat at home is and train what beats it; Standard and
+  Scrapheap read only how much of it there is and answer with their cheapest
+  helpful unit. Memory fades at the same rate on every rung. Difficulty also
+  sets how well a seat carries out its repertoire: lower rungs attack and defend
+  piecemeal, pick targets worse, walk into known defenses as a column or gather
+  short of them only briefly, count only the defenses around a target, let a
+  defense call back an army on its way, focus fire on the nearest enemy or by a
+  rough read of its wounds, leave reinforcements at home, and lift without a
+  fresh look or without counting bomber cover. Every rung keeps every
+  capability. Lower rungs make understandable mistakes, and higher rungs beat
+  lower ones.

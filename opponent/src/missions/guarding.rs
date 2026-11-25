@@ -2,12 +2,14 @@
 //! as the known threats near it call for beyond the completed guns covering
 //! it. The start keeps its own reserve, which offense already respects.
 
+use super::attack::{force_of, priced};
 use super::defense::at_home;
 use super::reserve::{self, LOCAL_REACH};
 use super::{
     DefendPhase, MISSION_CAP, Mission, Missions, Shortfall, Task, UNIT_CAP, fill, force, hits,
     hunt, meeting, mine, value,
 };
+use crate::counters::weigh;
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled, footprint_centre, gap, ring};
 use crate::map::MapModel;
@@ -162,11 +164,10 @@ impl Missions {
                     u.id,
                 )
             });
-            let could: u64 = pool
-                .iter()
-                .filter(|u| hits(u, Domain::Ground))
-                .map(|u| value(u))
-                .sum();
+            let could = force_of(
+                pool.iter().copied().filter(|u| hits(u, Domain::Ground)),
+                value,
+            );
             let mut have = [0_u64; 2];
             let mut kept = fill(pool, need, &mut have, UNIT_CAP, |unit| {
                 force(unit.kind, unit.hp)
@@ -217,7 +218,8 @@ impl Missions {
             let last = asset.kind == BuildingKind::Foundry
                 && asset.built
                 && crate::investments::built_foundries(&observation.my_buildings).count() == 1;
-            if !at_home(observation, map, goal) && !last && met > 0 && could < met {
+            let outweighed = priced(&met) > 0 && weigh(&could, &met) < weigh(&met, &could);
+            if !at_home(observation, map, goal) && !last && outweighed {
                 self.give_up(index, observation, map, frame, goal, ledger);
                 continue;
             }
