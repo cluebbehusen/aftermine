@@ -397,6 +397,29 @@ impl Missions {
         if recruits.is_empty() {
             return false;
         }
+        // The need was weighed against every fit unit; the nearest few may
+        // trade worse, so it is weighed again against those and they grow
+        // once to it.
+        if !concentrated && fallback.is_none() {
+            let taken_mix =
+                striking_mix(recruits.iter().filter_map(|id| mine(plan.observation, *id)));
+            let (again, _) = plan.weighed_need(
+                target,
+                breaching(plan.observation, &breachers),
+                plan.margin,
+                &taken_mix,
+            );
+            if again > need {
+                recruits = recruit_by(
+                    plan.frame,
+                    &fit,
+                    rally,
+                    again,
+                    UNIT_CAP,
+                    plan.worth_against(target),
+                );
+            }
+        }
         for breacher in breachers {
             if recruits.len() < UNIT_CAP {
                 insert(&mut recruits, breacher);
@@ -406,6 +429,10 @@ impl Missions {
         if !ledger.order(hunt(recruits.clone(), rally)) {
             return false;
         }
+        // The trace compares what was sent with the defense around the
+        // target, each weighed against the other.
+        let sent = striking_mix(recruits.iter().filter_map(|id| mine(plan.observation, *id)));
+        let defense = defense_mix(plan.observation, plan.memory, &[target.approach], &[]);
         ledger.launched(super::Launch {
             mission: self.next,
             kind: Task::Attack {
@@ -413,24 +440,10 @@ impl Missions {
                 phase: AttackPhase::Gather,
             }
             .kind(),
-            defense: {
-                let sent =
-                    striking_mix(recruits.iter().filter_map(|id| mine(plan.observation, *id)));
-                weigh(
-                    &defense_mix(plan.observation, plan.memory, &[target.approach], &[]),
-                    &sent,
-                )
-            },
+            defense: weigh(&defense, &sent),
             margin: plan.margin,
             need,
-            sent: plan
-                .weighed_need(
-                    target,
-                    0,
-                    plan.margin,
-                    &striking_mix(recruits.iter().filter_map(|id| mine(plan.observation, *id))),
-                )
-                .1,
+            sent: weigh(&sent, &defense),
             units: recruits.clone(),
         });
         self.list.push(Mission {
