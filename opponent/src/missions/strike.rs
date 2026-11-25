@@ -148,15 +148,31 @@ impl Missions {
             return false;
         };
         let guard = cover(raid.air, target);
-        let recruits = recruit_by(
-            raid.frame,
-            &fit,
-            rally,
-            raid.need(&guard, &own),
-            UNIT_CAP,
-            worth_against(&guard, striking),
-        );
-        if recruits.is_empty() || !ledger.order(run(recruits.clone(), rally)) {
+        let recruit = |need| {
+            recruit_by(
+                raid.frame,
+                &fit,
+                rally,
+                need,
+                UNIT_CAP,
+                worth_against(&guard, striking),
+            )
+        };
+        let mut recruits = recruit(raid.need(&guard, &own));
+        // The need was weighed against every fit aircraft; the nearest few may
+        // trade worse, so it is weighed again against those and they grow
+        // once to it. A wing that still falls short does not gather, which
+        // would only disband it and form it again.
+        let taken =
+            |ids: &[UnitId]| striking_mix(ids.iter().filter_map(|id| mine(observation, *id)));
+        let again = raid.need(&guard, &taken(&recruits));
+        if again > raid.need(&guard, &own) {
+            recruits = recruit(again);
+        }
+        if recruits.is_empty()
+            || !raid.holds(&guard, &taken(&recruits))
+            || !ledger.order(run(recruits.clone(), rally))
+        {
             return false;
         }
         self.list.push(Mission {
