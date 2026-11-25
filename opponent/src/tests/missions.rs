@@ -822,21 +822,24 @@ fn a_gun_out_of_sight_stays_answered_between_its_shells() {
     }
 }
 
+/// What a shelled seat's garrison and picket are: Wardens beat a lone
+/// Bastion by the counter chart, where Sentinels would only feed it.
+const AGAINST_BASTION: UnitKind = UnitKind::Warden;
+
 /// The field with West's garrison and picket, an East Bastion shelling the
-/// picket with a Kestrel spotting for it, East Turrets around the Bastion
+/// picket with a Kestrel spotting for it, two more East Bastions beside it
 /// when `guarded`, and a West Kestrel that has seen them all; played until
 /// the shells come.
 fn bastion(guarded: bool) -> (Scenario, State) {
-    bastion_with(guarded, &GARRISON)
+    bastion_with(guarded, &GARRISON, AGAINST_BASTION)
 }
 
-/// `bastion` with West's garrison on `garrison` instead.
-fn bastion_with(guarded: bool, garrison: &[(i32, i32)]) -> (Scenario, State) {
+/// `bastion` with West's garrison on `garrison` instead, it and the picket
+/// of `kind`.
+fn bastion_with(guarded: bool, garrison: &[(i32, i32)], kind: UnitKind) -> (Scenario, State) {
     let mut scenario = field();
     for spot in garrison.iter().copied().chain([PICKET]) {
-        scenario
-            .units
-            .push(unit(0, UnitKind::Sentinel, spot.0, spot.1));
+        scenario.units.push(unit(0, kind, spot.0, spot.1));
     }
     scenario
         .units
@@ -849,10 +852,10 @@ fn bastion_with(guarded: bool, garrison: &[(i32, i32)]) -> (Scenario, State) {
         y: 11,
     });
     if guarded {
-        for (x, y) in [(19, 10), (19, 13), (19, 11)] {
+        for (x, y) in [(19, 9), (19, 12)] {
             scenario.buildings.push(BuildingSpec {
                 player: 1,
-                kind: BuildingKind::Turret,
+                kind: BuildingKind::Bastion,
                 x,
                 y,
             });
@@ -876,6 +879,19 @@ fn a_lone_bastion_shelling_the_base_is_answered_beside_it() {
     let (scenario, state) = bastion(false);
     let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
     assert!(sent_beside_the_bastion(&commands), "{commands:?}");
+}
+
+#[test]
+fn sentinels_leave_a_lone_bastion_they_lose_to_to_production() {
+    // Five Sentinels cost more than the Bastion by half again, but destroy a
+    // small fraction of their price in one: sent beside it, they would only
+    // feed it.
+    let sentinels = u64::from(UnitKind::Sentinel.stats().cost) * 5;
+    let bastion = u64::from(BuildingKind::Bastion.base_stats().construction.cost);
+    assert!(sentinels * 2 >= bastion * 3, "premise: they cost more");
+    let (scenario, state) = bastion_with(false, &GARRISON, UnitKind::Sentinel);
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    assert!(!sent_beside_the_bastion(&commands), "{commands:?}");
 }
 
 #[test]
@@ -911,10 +927,10 @@ fn a_bastion_is_left_alone_while_the_army_that_could_beat_it_is_away_fighting() 
 
 #[test]
 fn a_recovering_defense_counts_its_units_once_against_a_bastion() {
-    // Two Sentinels and the picket, 270 scrap, fall short of the lone
-    // Bastion's 315 unless counted twice.
-    let garrison = [(2, 11), (2, 12)];
-    let (scenario, state) = bastion_with(false, &garrison);
+    // The picket alone falls short of the lone Bastion by half again unless
+    // counted twice.
+    let garrison = [];
+    let (scenario, state) = bastion_with(false, &garrison, AGAINST_BASTION);
     let home = foundries(&state, PlayerId(0))[0];
     let units: Vec<UnitId> = garrison
         .iter()
@@ -1346,7 +1362,7 @@ fn bastions(shelled: &[u8], watched: bool) -> Scenario {
     for &player in shelled {
         for spot in GARRISON.into_iter().chain([PICKET]) {
             let (x, y) = turned(player, spot);
-            scenario.units.push(unit(player, UnitKind::Sentinel, x, y));
+            scenario.units.push(unit(player, AGAINST_BASTION, x, y));
         }
     }
     for &player in shelled {
@@ -1426,23 +1442,27 @@ fn defended_beside_the_bastion(scenario: &Scenario, state: &State, seen: bool) {
         "premise: no armed enemy unit in sight"
     );
     let (commands, trace) = seat(scenario, 0).act_traced(state, &mut OwnEvents::default());
-    let [(units, goal)] = &hunts(&commands)[..] else {
-        panic!("{commands:?}");
-    };
-    assert!(!units.is_empty());
-    assert_eq!(
-        crate::frame::gap(known.anchor, (2, 2), *goal, (1, 1)),
-        0,
-        "beside the Bastion, not toward a guess: {goal:?}"
-    );
+    // Units the defense leaves may go at the Bastion in an attack of their
+    // own; the defense's hunt is the answer.
+    let defense = trace
+        .unwrap()
+        .missions
+        .into_iter()
+        .find(|mission| {
+            matches!(mission.kind, MissionKind::Defend { .. }) && mission.phase == Phase::Engage
+        })
+        .expect("a defense answers it");
     assert!(
-        trace
-            .unwrap()
-            .missions
+        hunts(&commands)
             .iter()
-            .any(|mission| matches!(mission.kind, MissionKind::Defend { .. })
-                && mission.phase == Phase::Engage),
-        "a defense answers it"
+            .any(|(units, goal)| !units.is_empty() && *goal == defense.goal),
+        "{commands:?}"
+    );
+    assert_eq!(
+        crate::frame::gap(known.anchor, (2, 2), defense.goal, (1, 1)),
+        0,
+        "beside the Bastion, not toward a guess: {:?}",
+        defense.goal
     );
 }
 
@@ -2482,10 +2502,11 @@ fn a_defense_standing_down_brings_its_members_back_beside_the_foundry() {
         "the raiders gone: home"
     );
     // A Lancer beyond the base's threat gap but still in reach of them: two
-    // do not turn their backs to it, but one, outweighed out there, runs
-    // home rather than die where it stands.
+    // Wardens, which out-trade it, do not turn their backs to it, but a
+    // Sentinel, outweighed out there, runs home rather than die where it
+    // stands.
     assert_eq!(
-        stand_down(UnitKind::Sentinel, Some((UnitKind::Lancer, 19))),
+        stand_down(UnitKind::Warden, Some((UnitKind::Lancer, 19))),
         (false, false),
         "still under fire and not outweighed: they stay"
     );
@@ -3635,16 +3656,17 @@ fn goes_at_the_lancers(scenario: &Scenario, difficulty: BotDifficulty) -> bool {
 #[test]
 fn a_defense_counts_its_units_by_what_they_trade_against_the_attackers() {
     // Scuttlers and a Sentinel cost more than the Lancers but trade poorly
-    // against them: at the rungs that read threats they stay home rather
-    // than walk out to fight them in the open.
+    // against them: every rung stays home rather than walk out to fight them
+    // in the open.
     let mut cheap = vec![UnitKind::Scuttler; 8];
     cheap.push(UnitKind::Sentinel);
-    let scenario = lancers_far_out(&cheap);
+    let price = |kinds: &[UnitKind]| -> u32 { kinds.iter().map(|kind| kind.stats().cost).sum() };
     assert!(
-        goes_at_the_lancers(&scenario, BotDifficulty::Standard),
-        "premise: a rung that judges by price alone goes out"
+        price(&cheap) > price(&[UnitKind::Lancer; 3]),
+        "premise: they cost more"
     );
-    for difficulty in [BotDifficulty::Veteran, BotDifficulty::Prime] {
+    let scenario = lancers_far_out(&cheap);
+    for difficulty in BotDifficulty::ALL {
         assert!(
             !goes_at_the_lancers(&scenario, difficulty),
             "{difficulty:?}"
@@ -3736,14 +3758,16 @@ fn a_defender_chasing_past_an_expansion_the_start_cannot_walk_to_runs_back() {
 #[test]
 fn lancers_go_out_against_sentinels_they_outtrade_though_they_cost_less() {
     // Three Lancers cost less than five Sentinels, but trade far above their
-    // price against them: the rungs that read threats go out; one that
-    // judges by price waits for more.
-    let scenario = raiders_far_out(&[UnitKind::Lancer; 3], &[UnitKind::Sentinel; 5]);
+    // price against them: every rung goes out.
+    let price = |kind: UnitKind, count: u32| kind.stats().cost * count;
     assert!(
-        !goes_at_the_lancers(&scenario, BotDifficulty::Standard),
-        "premise: by price the Lancers are short"
+        price(UnitKind::Lancer, 3) < price(UnitKind::Sentinel, 5),
+        "premise: they cost less"
     );
-    assert!(goes_at_the_lancers(&scenario, BotDifficulty::Prime));
+    let scenario = raiders_far_out(&[UnitKind::Lancer; 3], &[UnitKind::Sentinel; 5]);
+    for difficulty in BotDifficulty::ALL {
+        assert!(goes_at_the_lancers(&scenario, difficulty), "{difficulty:?}");
+    }
 }
 
 #[test]
