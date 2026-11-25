@@ -349,8 +349,7 @@ fn a_short_defense_nothing_pays_back_against_keeps_its_savings() {
     // Lancers outrange a Turret, and with Wardens beside them they outfight
     // what the seat could train: no answer pays back against them, so the
     // scrap kept for the saving target stays kept rather than feed the
-    // attackers. A seat that judges the threat by its size answers with its
-    // cheapest unit, as before.
+    // attackers, at every rung.
     let threatened = |lancers: bool| {
         let mut scenario = arena(100);
         scenario.units.extend(workforce(0));
@@ -394,7 +393,7 @@ fn a_short_defense_nothing_pays_back_against_keeps_its_savings() {
         "{commands:?}"
     );
     let commands = seat_with(&scenario, 0, sizing_thrifty()).act(&state, &mut OwnEvents::default());
-    assert!(!trains(&commands).is_empty(), "{commands:?}");
+    assert!(trains(&commands).is_empty(), "{commands:?}");
 }
 
 #[test]
@@ -2718,9 +2717,8 @@ fn only_a_defense_out_at_its_fight_holds_on_and_only_where_it_can_fall_back() {
 #[test]
 fn a_guard_short_of_known_enemies_is_answered_with_what_beats_them() {
     // Lancers stand near a bare expansion, not near enough to attack it, in a
-    // West scout's sight. Its guard is short; a seat that reads threats trains
-    // the Warden that beats them, while Standard, which judges the threat by
-    // its size, answers with the cheapest unit.
+    // West scout's sight. Its guard is short; every rung trains the Warden
+    // that beats them.
     let trained = |difficulty: BotDifficulty| {
         let mut scenario = widened(arena(400), 12, 20);
         scenario.players[0].bot_config = Some(rung(difficulty));
@@ -2750,11 +2748,13 @@ fn a_guard_short_of_known_enemies_is_answered_with_what_beats_them() {
             .map(|(_, kind)| kind)
             .collect::<Vec<_>>()
     };
-    let prime = trained(BotDifficulty::Prime);
-    assert!(!prime.is_empty(), "premise: the short guard trains");
-    assert!(prime.contains(&UnitKind::Warden), "{prime:?}");
-    let standard = trained(BotDifficulty::Standard);
-    assert!(standard.contains(&UnitKind::Scuttler), "{standard:?}");
+    for difficulty in BotDifficulty::ALL {
+        let trained = trained(difficulty);
+        assert!(
+            trained.contains(&UnitKind::Warden),
+            "{difficulty:?}: {trained:?}"
+        );
+    }
 }
 
 #[test]

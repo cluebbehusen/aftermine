@@ -125,10 +125,9 @@ actions affect the running total and mission state.
   part. Stance, personality and threat set the share.
 - An affordable target is bought ahead of everything except emergencies. Targets
   switch only when another scores clearly higher or the reason disappears;
-  protected scrap carries over. Emergencies may spend protected scrap, at the
-  rungs that read threats only on an answer that pays back. A rejected,
-  cancelled or refunded purchase keeps the target and recomputes the protected
-  amount from the bank.
+  protected scrap carries over. Emergencies may spend protected scrap, only on
+  an answer that pays back. A rejected, cancelled or refunded purchase keeps the
+  target and recomputes the protected amount from the bank.
 
 ## Missions and production
 
@@ -176,9 +175,8 @@ are promised. The escort is sized as the site's local guard will be, holds the
 landing while known enemies stand near, and joins that guard once the building
 is placed. Expansion guards follow nearby known threats, without a quiet
 minimum, and completed guns release mobile defenders. A guard short of those
-threats is answered with what beats them at the rungs that read threats. A late
-delivery turns its passengers home; a builder already on the island builds there
-on the next attempt.
+threats is answered with what beats them. A late delivery turns its passengers
+home; a builder already on the island builds there on the next attempt.
 
 ## Persistent state
 
@@ -337,15 +335,13 @@ kind.
   each kind of growth less, though never so little that they stop growing. The
   lowest rung also misjudges the enemy's strength by a deterministic draw from
   its seed. Every rung counts its own defenders and the attackers by what each
-  kind trades against the other's, as measured in the simulation. Veteran and
-  Prime read what a threat at home is and train what beats it; Standard and
-  Scrapheap read only how much of it there is and answer with their cheapest
-  helpful unit. Memory fades at the same rate on every rung. Difficulty also
-  sets how well a seat carries out its repertoire: lower rungs attack and defend
-  piecemeal, pick targets worse, walk into known defenses as a column or gather
-  short of them only briefly, count only the defenses around a target, let a
-  defense call back an army on its way, focus fire on the nearest enemy or by a
-  rough read of its wounds, leave reinforcements at home, and lift without a
-  fresh look or without counting bomber cover. Every rung keeps every
+  kind trades against the other's, as measured in the simulation, and trains
+  what beats a threat at home. Memory fades at the same rate on every rung.
+  Difficulty also sets how well a seat carries out its repertoire: lower rungs
+  attack and defend piecemeal, pick targets worse, walk into known defenses as a
+  column or gather short of them only briefly, count only the defenses around a
+  target, let a defense call back an army on its way, focus fire on the nearest
+  enemy or by a rough read of its wounds, leave reinforcements at home, and lift
+  without a fresh look or without counting bomber cover. Every rung keeps every
   capability. Lower rungs make understandable mistakes, and higher rungs beat
   lower ones.

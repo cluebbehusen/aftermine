@@ -15,7 +15,7 @@ use crate::frame::{HomeFrame, doubled, footprint_centre, gap, ring};
 use crate::map::MapModel;
 use crate::memory::Memory;
 use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
-use aftermine_sim::scenario::{BotDifficulty, BotStance};
+use aftermine_sim::scenario::BotStance;
 use aftermine_sim::stats::Domain;
 use aftermine_sim::{BuildingKind, UnitId};
 
@@ -102,7 +102,7 @@ impl Missions {
         map: &MapModel,
         scratch: &super::Scratch,
         memory: &Memory,
-        (stance, difficulty): (BotStance, BotDifficulty),
+        stance: BotStance,
         ledger: &mut Ledger,
     ) -> Vec<Shortfall> {
         let frame = scratch.frame;
@@ -210,7 +210,7 @@ impl Missions {
                     ground,
                     gap,
                     attackers,
-                    read: crate::reads_threats(difficulty),
+                    read: true,
                 });
             }
             let met = meeting::opposed(observation, memory, goal);
