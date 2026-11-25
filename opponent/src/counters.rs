@@ -122,6 +122,9 @@ pub(crate) fn pair(piece: impl Into<Piece>, enemy: impl Into<Piece>) -> u64 {
             _ => 1_000,
         },
         (Piece::Gun(gun, tier), Piece::Unit(unit)) => {
+            if column(gun, tier).is_none() {
+                return 1_000;
+            }
             let domain = unit.stats().domain;
             let fires = gun
                 .tier_stats(tier)
@@ -199,9 +202,35 @@ pub(crate) fn weight<P: Into<Piece> + Copy>(piece: impl Into<Piece>, enemies: &[
 /// What `side` is worth against `against`: each of its pieces' value
 /// weighed by what the piece trades against the other side.
 pub(crate) fn weigh(side: &[(Piece, u64)], against: &[(Piece, u64)]) -> u64 {
+    // A force lists each unit, but a trade is a mean weighed by value, so
+    // pieces of a kind merge exactly: the work grows with the kinds on each
+    // side, not the units.
+    let against = merged(against);
+    let mut weights: Vec<(Piece, u64)> = Vec::new();
     side.iter()
-        .map(|(piece, value)| value * weight(*piece, against) / 1_000)
+        .map(|(piece, value)| {
+            let weight = if let Some((_, weight)) = weights.iter().find(|(seen, _)| seen == piece) {
+                *weight
+            } else {
+                let weight = weight(*piece, &against);
+                weights.push((*piece, weight));
+                weight
+            };
+            value * weight / 1_000
+        })
         .sum()
+}
+
+/// `force` with each piece once, at its total value.
+fn merged(force: &[(Piece, u64)]) -> Vec<(Piece, u64)> {
+    let mut merged: Vec<(Piece, u64)> = Vec::new();
+    for (piece, value) in force {
+        match merged.iter_mut().find(|(seen, _)| seen == piece) {
+            Some((_, total)) => *total += value,
+            None => merged.push((*piece, *value)),
+        }
+    }
+    merged
 }
 
 #[cfg(test)]
