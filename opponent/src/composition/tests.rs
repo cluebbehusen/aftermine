@@ -20,8 +20,17 @@ fn needs(reach: Option<Reach>, clustered: bool) -> Needs {
             reach,
             clustered,
             targets: Vec::new(),
+            ground_units: Vec::new(),
+            heavy_units: Vec::new(),
+            air_units: Vec::new(),
+            guns: Vec::new(),
+            ground_extra: 1_000,
+            heavy_extra: 0,
+            air_extra: 0,
         },
+        foes: Default::default(),
         traits: crate::tests::middling(),
+        stance: BotStance::Balanced,
         income: 1_000,
         kinds: [0; UnitKind::ALL.len()],
     }
@@ -67,10 +76,24 @@ fn a_seat_wants_siege_behind_its_line_by_stance_unless_it_lifts_its_army() {
 }
 
 #[test]
-fn longer_reaching_enemies_count_against_short_reach() {
-    let sentinel = |reach| needs(Some(reach), false).suitability(UnitKind::Sentinel, Role::Line);
-    assert!(sentinel(Reach::Long) < sentinel(Reach::Medium));
-    assert!(sentinel(Reach::Medium) < sentinel(Reach::Short));
+fn a_line_unit_counts_by_what_it_trades_against_the_enemy_ground_units() {
+    let against = |enemy: UnitKind| {
+        let mut needs = needs(None, false);
+        needs.foes[Role::Line as usize] = vec![(Piece::Unit(enemy), 1_000)];
+        needs
+    };
+    // Sentinels fall to Lancers that outrange them, and Wardens outlast
+    // them; against Sentinels the cheaper Sentinel holds its own.
+    let lancers = against(UnitKind::Lancer);
+    assert!(
+        lancers.suitability(UnitKind::Warden, Role::Line)
+            > lancers.suitability(UnitKind::Sentinel, Role::Line)
+    );
+    let sentinels = against(UnitKind::Sentinel);
+    assert!(
+        sentinels.suitability(UnitKind::Sentinel, Role::Line)
+            > lancers.suitability(UnitKind::Sentinel, Role::Line)
+    );
 }
 
 #[test]
@@ -432,7 +455,7 @@ fn once_anti_heavy_units_can_be_trained_the_line_leaves_the_heavies_to_them() {
     });
     let (line_after, anti_heavy_after) = measure(&observation);
     assert!(line_after < line_before, "{line_after} < {line_before}");
-    assert_eq!(anti_heavy_after, anti_heavy_before);
+    assert!(anti_heavy_after > 0, "the Breakers still call for it");
 }
 
 #[test]
@@ -486,28 +509,25 @@ fn a_known_enemy_cradle_raises_the_need_its_machine_raises_before_it_stands() {
 }
 
 #[test]
-fn enemy_air_that_cannot_shoot_aircraft_leans_anti_air_to_flyers() {
-    let anti_air = |enemy_air: u64, grounders: u64| {
+fn anti_air_answers_enemy_air_by_what_each_kind_trades_against_it() {
+    let anti_air = |enemy: UnitKind| {
         let mut needs = needs(None, false);
-        needs.enemy.air = enemy_air;
-        needs.enemy.grounders = grounders;
+        needs.foes[Role::AntiAir as usize] = vec![(Piece::Unit(enemy), 3_200)];
         (
             needs.suitability(UnitKind::Talon, Role::AntiAir),
             needs.suitability(UnitKind::Flakhound, Role::AntiAir),
         )
     };
-    let (talon, flakhound) = anti_air(3_200, 0);
+    let (talon, flakhound) = anti_air(UnitKind::Talon);
     assert!(
-        flakhound >= talon,
-        "premise: against air that shoots back, the ground gun leads"
+        flakhound > talon,
+        "against air that shoots back, the ground gun leads"
     );
-    let (talon, flakhound) = anti_air(3_200, 3_200);
+    let (talon, flakhound) = anti_air(UnitKind::Buzzard);
     assert!(
         talon > flakhound,
         "against air that only fires at the ground, the flyer is out of its reach"
     );
-    let (lean, _) = anti_air(3_200, 1_600);
-    assert!(lean > anti_air(3_200, 0).0 && lean < talon, "in proportion");
 }
 
 #[test]
@@ -517,4 +537,84 @@ fn a_known_roc_counts_as_air_that_cannot_shoot_aircraft() {
     assert!(!grounder(UnitKind::Talon), "it fights aircraft");
     assert!(!grounder(UnitKind::Skyhook), "unarmed");
     assert!(!grounder(UnitKind::Sentinel), "on the ground");
+}
+
+#[test]
+fn a_line_of_sentinels_leaves_more_need_against_lancers_than_one_of_wardens() {
+    use aftermine_sim::{PlayerId, Scenario};
+    let state = Scenario::skirmish().build().unwrap();
+    let memory: Memory = serde_json::from_value(serde_json::json!({
+        "units": (0..6).map(|index| serde_json::json!({
+            "id": 1_000 + index, "kind": "lancer", "tile": {"x": 40, "y": 2 + index}, "seen": 0,
+        })).collect::<Vec<_>>(),
+        "failures": [], "abandoned": [], "raided": [], "scouted": [], "stuck": [], "extractors": [],
+    }))
+    .unwrap();
+    let line = |kind: UnitKind, count: usize| {
+        let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
+        let template = observation.my_units[0].clone();
+        observation
+            .my_units
+            .extend((0..count).map(|_| aftermine_sim::observation::UnitObs {
+                kind,
+                ..template.clone()
+            }));
+        let outlet = Outlet {
+            ground: true,
+            lifted: false,
+            invaders: 0,
+            air_strikes: false,
+            strike: 0,
+        };
+        super::needs(
+            &observation,
+            &memory,
+            crate::tests::middling(),
+            BotStance::Balanced,
+            1_000,
+            outlet,
+        )
+        .need[Role::Line as usize]
+    };
+    // The same scrap in each line: the Sentinels' falls far short of the
+    // Lancers, the Wardens' does not.
+    assert!(line(UnitKind::Sentinel, 28) > line(UnitKind::Warden, 9));
+    assert!(line(UnitKind::Warden, 9) <= 0);
+}
+
+#[test]
+fn a_stance_leans_the_army_it_wants() {
+    use aftermine_sim::{PlayerId, Scenario};
+    let state = Scenario::skirmish().build().unwrap();
+    let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let template = observation.my_units[0].clone();
+    observation
+        .my_units
+        .extend((0..12).map(|_| aftermine_sim::observation::UnitObs {
+            kind: UnitKind::Sentinel,
+            ..template.clone()
+        }));
+    let outlet = Outlet {
+        ground: true,
+        lifted: false,
+        invaders: 0,
+        air_strikes: true,
+        strike: 0,
+    };
+    let at = |stance| {
+        super::needs(
+            &observation,
+            &Memory::default(),
+            crate::tests::middling(),
+            stance,
+            1_000,
+            outlet,
+        )
+    };
+    let (turtle, aggressive) = (at(BotStance::Turtle), at(BotStance::Aggressive));
+    let role = |needs: &Needs, role: Role| {
+        needs.need[role as usize] * i64::try_from(needs.weight[role as usize]).unwrap()
+    };
+    assert!(role(&aggressive, Role::AirStrike) > role(&turtle, Role::AirStrike));
+    assert!(role(&turtle, Role::Siege) > role(&aggressive, Role::Siege));
 }
