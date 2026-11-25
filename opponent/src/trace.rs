@@ -121,8 +121,8 @@ pub enum PickPath {
         /// The ground role it trained for.
         role: Role,
     },
-    /// A short defense or guard took the costliest armed unit it could
-    /// afford.
+    /// A short defense or guard took what best beats its attackers by the
+    /// counter chart, or the cheapest unit against builders alone.
     Shortfall,
     /// The unit the seat was saving for.
     Saved,

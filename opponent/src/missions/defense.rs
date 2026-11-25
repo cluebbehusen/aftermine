@@ -228,7 +228,7 @@ impl Missions {
             let mut recruits = fill(candidates, need, &mut have, room, |unit| trades.force(unit));
             let gap = siege.gap(pressing, have);
             if *own && gap != [0, 0] {
-                shortfalls.push(siege.shortfall(component, gap, difficulty));
+                shortfalls.push(siege.shortfall(component, gap));
             }
             // Guns are reached rather than waited for: they shell from
             // where they stand.
@@ -699,15 +699,16 @@ impl Missions {
 pub(crate) struct Shortfall {
     /// The Foundry's ground: ground units help only from there.
     pub(crate) ground: Option<u32>,
-    /// The shortfall, in scrap, against ground and air attackers.
+    /// The shortfall against ground and air attackers, each side weighed by
+    /// what it trades against the other.
     pub(crate) gap: [u64; 2],
     /// The attackers in sight the shortfall counts, by kind with their
     /// value, so what is trained can be what beats them; empty when the
     /// shortfall answers no particular force.
     pub(crate) attackers: Vec<(UnitKind, u64)>,
-    /// Whether the seat reads what the attackers are. One that only judges
-    /// their size answers with what is cheapest, which leaves its emergency
-    /// structures the rest of the bank.
+    /// Whether armed attackers press, to be answered with what beats them.
+    /// Builders and producers alone are answered with what is cheapest,
+    /// which leaves the emergency structures the rest of the bank.
     pub(crate) read: bool,
 }
 
@@ -1443,15 +1444,12 @@ impl Siege<'_> {
             .sum()
     }
 
-    /// Its armed enemies in sight, by kind, with their value.
-    /// The armed attackers in a domain that `gap` leaves short, so an answer
-    /// is weighed against the attackers it must still beat, not those
-    /// already covered; none for a seat that does not `read` what they are
-    /// and judges the threat by its size.
-    fn attackers(&self, gap: [u64; 2], read: bool) -> Vec<(UnitKind, u64)> {
+    /// The armed attackers in a domain that `gap` leaves short, by kind with
+    /// their value, so an answer is weighed against the attackers it must
+    /// still beat, not those already covered.
+    fn attackers(&self, gap: [u64; 2]) -> Vec<(UnitKind, u64)> {
         self.units
             .iter()
-            .filter(|_| read)
             .filter(|threat| gap[usize::from(threat.body_domain() == Domain::Air)] > 0)
             .map(|threat| (threat.kind, value(threat)))
             .collect()
@@ -1496,21 +1494,15 @@ impl Siege<'_> {
     }
 
     /// The shortfall `gap` of the defense of a Foundry on `ground`, with the
-    /// attackers it answers at a `difficulty` that reads them. Builders and
-    /// producers with nothing armed beside them are met with the cheapest
-    /// unit: the first one there soonest stops the site going up.
-    fn shortfall(
-        &self,
-        ground: Option<u32>,
-        gap: [u64; 2],
-        difficulty: BotDifficulty,
-    ) -> Shortfall {
-        let read = crate::reads_threats(difficulty);
+    /// attackers it answers. Builders and producers with nothing armed beside
+    /// them are met with the cheapest unit: the first one there soonest stops
+    /// the site going up.
+    fn shortfall(&self, ground: Option<u32>, gap: [u64; 2]) -> Shortfall {
         Shortfall {
             ground,
             gap,
-            attackers: self.attackers(gap, read),
-            read: read && !self.unarmed_only(),
+            attackers: self.attackers(gap),
+            read: !self.unarmed_only(),
         }
     }
 

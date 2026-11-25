@@ -922,25 +922,19 @@ fn a_defense_short_of_wardens_saves_for_an_answer_rather_than_feed_scuttlers() {
             .map(|(_, kind)| kind)
             .collect::<Vec<_>>()
     };
-    let trained = |scrap| trained_at(BotDifficulty::Prime, scrap);
-    // The lowest rung judges the Wardens by their size alone and feeds them
-    // what the bank holds: its readable mistake.
-    let lowest = trained_at(BotDifficulty::Scrapheap, 60);
-    assert!(
-        lowest.contains(&UnitKind::Scuttler),
-        "Scrapheap answers with what it can afford: {lowest:?}"
-    );
-    let poor = trained(60);
-    assert!(
-        !poor.contains(&UnitKind::Scuttler),
-        "a Scuttler only feeds the Wardens: {poor:?}"
-    );
-    let rich = trained(400);
-    assert!(
-        rich.iter()
-            .any(|kind| matches!(kind, UnitKind::Lancer | UnitKind::Warden)),
-        "an answer that outlasts or outranges them: {rich:?}"
-    );
+    for difficulty in BotDifficulty::ALL {
+        let poor = trained_at(difficulty, 60);
+        assert!(
+            !poor.contains(&UnitKind::Scuttler),
+            "{difficulty:?}: a Scuttler only feeds the Wardens: {poor:?}"
+        );
+        let rich = trained_at(difficulty, 400);
+        assert!(
+            rich.iter()
+                .any(|kind| matches!(kind, UnitKind::Lancer | UnitKind::Warden)),
+            "{difficulty:?}: an answer that outlasts or outranges them: {rich:?}"
+        );
+    }
 }
 
 #[test]

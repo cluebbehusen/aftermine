@@ -1,8 +1,8 @@
 //! The counter chart: how each combat kind trades against each other, and
 //! against the structures a seat raises to defend, at even prices, measured
 //! in the simulation by the driver's fight lab and checked in as generated
-//! data. Veteran and Prime weigh units by it instead of by price: a Warden is
-//! worth more against Lancers than its scrap says, a Sentinel far less.
+//! data. The bot weighs units by it instead of by price: a Warden is worth
+//! more against Lancers than its scrap says, a Sentinel far less.
 //!
 //! Support and unarmed kinds (artillery, the Mantle, spotters, workers and
 //! carriers) and the cradle machines are not measured: a pure army of them

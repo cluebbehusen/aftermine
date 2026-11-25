@@ -2338,7 +2338,7 @@ const MISJUDGE_STREAM: u64 = 0x0B07_1630;
 
 /// Per mille by which the lowest rung's sense of the enemy's strength strays
 /// at most, either way: a difficulty limit on estimate accuracy.
-const MISJUDGE: u32 = 400;
+const MISJUDGE: u32 = 600;
 
 /// Ticks one misjudgment of enemy strength lasts: a difficulty limit on
 /// estimate accuracy. A fresh misjudgment every decision would average out
