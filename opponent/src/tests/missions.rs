@@ -451,7 +451,12 @@ fn a_short_defense_defers_the_saving_target_and_spends_protected_scrap() {
     let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
     let foundry = foundries(&state, PlayerId(0))[0];
     assert!(turret(&commands), "{commands:?}");
-    assert_eq!(trains(&commands), [(foundry, UnitKind::Sentinel)]);
+    // And one unit at the Foundry with what the Turret left.
+    let trained = trains(&commands);
+    assert!(
+        matches!(&trained[..], [(at, _)] if *at == foundry),
+        "{commands:?}"
+    );
 }
 
 #[test]

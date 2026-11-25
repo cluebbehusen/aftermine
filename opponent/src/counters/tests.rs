@@ -45,3 +45,32 @@ fn a_mix_weighs_each_enemy_kind_by_its_value() {
     );
     assert_eq!(weight(UnitKind::Lancer, &[(UnitKind::Lancer, 110)]), 1_000);
 }
+
+#[test]
+fn a_gun_reads_as_the_inverse_of_what_its_attackers_trade_against_it() {
+    for (a, kind) in MEASURED.iter().enumerate() {
+        for (g, gun) in GUNS.iter().enumerate() {
+            let taken = u64::from(chart::AGAINST[a][g]);
+            let product = against(*gun, *kind) * taken;
+            assert!(
+                product.abs_diff(1_000_000) <= 10_000 || taken == 125 || taken == 8_000,
+                "{gun:?} against {kind:?}: {product}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_gun_against_a_kind_the_chart_does_not_measure_is_even_if_it_can_fire_on_it() {
+    assert_eq!(against(BuildingKind::Turret, UnitKind::Bombard), 1_000);
+    assert_eq!(
+        against(BuildingKind::FlakTurret, UnitKind::Bombard),
+        125,
+        "flak cannot fire on the ground"
+    );
+    assert_eq!(
+        against(BuildingKind::Lattice, UnitKind::Lancer),
+        1_000,
+        "an unmeasured structure is even"
+    );
+}

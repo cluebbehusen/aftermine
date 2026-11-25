@@ -603,7 +603,7 @@ pub(crate) fn needs(
     }
 }
 
-/// What fights in a matchup: a unit, or a structure that cannot move.
+/// What answers a short defense: a unit, or a structure that cannot move.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Fighter {
     Unit(UnitKind),
@@ -611,115 +611,12 @@ pub(crate) enum Fighter {
     Structure(BuildingKind),
 }
 
-/// Per mille of its score a structure keeps in a matchup: it fights only
-/// where it stands, and only once it stands.
-const STRUCTURE_SHARE: u64 = 600;
-
 impl Fighter {
-    fn weapons(self) -> &'static [aftermine_sim::stats::WeaponStats] {
-        match self {
-            Fighter::Unit(kind) => kind.stats().weapons,
-            Fighter::Structure(kind) => kind.base_stats().weapons,
-        }
-    }
-
-    fn max_hp(self) -> u64 {
-        u64::from(match self {
-            Fighter::Unit(kind) => kind.stats().max_hp,
-            Fighter::Structure(kind) => kind.base_stats().max_hp,
-        })
-    }
-
     pub(crate) fn cost(self) -> u64 {
         u64::from(match self {
             Fighter::Unit(kind) => kind.stats().cost,
             Fighter::Structure(kind) => kind.base_stats().construction.cost,
         })
-    }
-
-    fn domain(self) -> Domain {
-        match self {
-            Fighter::Unit(kind) => kind.stats().domain,
-            Fighter::Structure(_) => Domain::Ground,
-        }
-    }
-
-    /// Thousandths of a tile a tick, none for a structure.
-    fn speed(self) -> u64 {
-        match self {
-            Fighter::Unit(kind) => (kind.stats().speed * Fx::from_num(1_000)).to_num::<u64>(),
-            Fighter::Structure(_) => 0,
-        }
-    }
-
-    /// Damage per thousand ticks its weapons deal to a target in `domain`.
-    fn damage_rate(self, domain: Domain) -> u64 {
-        self.damage_rate_against(domain, false)
-    }
-
-    /// [`Self::damage_rate`] against a structure when `structure`, whose
-    /// weapons may hit structures harder.
-    fn damage_rate_against(self, domain: Domain, structure: bool) -> u64 {
-        self.weapons()
-            .iter()
-            .filter(|weapon| weapon.targets.covers(domain))
-            .map(|weapon| {
-                let damage = if structure {
-                    weapon.building_damage.unwrap_or(weapon.damage)
-                } else {
-                    weapon.damage
-                };
-                u64::from(damage) * 1_000 / u64::from(weapon.cooldown_ticks.max(1))
-            })
-            .sum()
-    }
-
-    /// Its longest weapon range against `domain`, in thousandths of a tile.
-    fn reach(self, domain: Domain) -> u64 {
-        self.weapons()
-            .iter()
-            .filter(|weapon| weapon.targets.covers(domain))
-            .map(|weapon| (weapon.range * Fx::from_num(1_000)).to_num::<u64>())
-            .max()
-            .unwrap_or(0)
-    }
-}
-
-/// Per mille of its price in attacker value `fighter` destroys fighting units
-/// of `attacker` before they kill it: what it deals over its life, which an
-/// outranged unit spends partly closing in under fire and an outranged
-/// structure cannot close at all, and to which one that outranges adds the
-/// time the attacker spends closing. A structure keeps
-/// [`STRUCTURE_SHARE`] of it.
-pub(crate) fn matchup(fighter: Fighter, attacker: UnitKind) -> u64 {
-    let theirs = Fighter::Unit(attacker);
-    let dealt_rate = fighter.damage_rate(theirs.domain());
-    if dealt_rate == 0 {
-        return 0;
-    }
-    let taken_rate =
-        theirs.damage_rate_against(fighter.domain(), matches!(fighter, Fighter::Structure(_)));
-    // Ticks it lives under the attacker's fire.
-    let life = (fighter.max_hp() * 1_000)
-        .checked_div(taken_rate)
-        .unwrap_or(100_000);
-    let (reach, outreach) = (
-        fighter.reach(theirs.domain()),
-        theirs.reach(fighter.domain()),
-    );
-    let firing = if reach >= outreach {
-        // The attacker closes the difference under its fire first.
-        life + (reach - outreach) / theirs.speed().max(1)
-    } else if fighter.speed() == 0 {
-        0
-    } else {
-        life.saturating_sub((outreach - reach) / fighter.speed())
-    };
-    let dealt = dealt_rate * firing / 1_000;
-    let score = dealt * theirs.cost() / theirs.max_hp().max(1) * 1_000 / fighter.cost().max(1);
-    match fighter {
-        Fighter::Unit(_) => score,
-        Fighter::Structure(_) => score * STRUCTURE_SHARE / 1_000,
     }
 }
 

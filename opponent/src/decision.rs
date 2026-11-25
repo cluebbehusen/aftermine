@@ -1507,6 +1507,12 @@ fn hits(kind: UnitKind, domain: Domain) -> bool {
         .any(|weapon| weapon.targets.covers(domain))
 }
 
+/// Per mille of what the counter chart measures a structure destroys that it
+/// keeps as an answer: the chart measures it standing, but it fights only
+/// once a builder raises it, under the very fire it is to answer. Not how
+/// strong it is but how soon it is there.
+const STANDING: u64 = 600;
+
 /// How well `fighter` answers `short`: attacker value it destroys per scrap
 /// against the attackers the shortfall counts in a domain still short; when
 /// it counts none there, or the seat does not read the attackers, how cheap
@@ -1531,11 +1537,13 @@ pub(crate) fn answer(fighter: Fighter, short: &Shortfall) -> u64 {
     pressing
         .iter()
         .map(|(attacker, value)| {
-            // Units trade as the counter chart measured them; structures,
-            // which it does not measure, by the duel estimate.
+            // Units and structures alike trade as the counter chart
+            // measured them.
             let trades = match fighter {
                 Fighter::Unit(kind) => crate::counters::pair(kind, *attacker),
-                Fighter::Structure(_) => composition::matchup(fighter, *attacker),
+                Fighter::Structure(kind) => {
+                    crate::counters::against(kind, *attacker) * STANDING / 1_000
+                }
             };
             trades * value
         })

@@ -1094,12 +1094,12 @@ fn main() -> Result<()> {
         } => {
             use aftermine_driver::fight_lab;
             if write || check {
-                let trades = fight_lab::chart(jobs)?;
+                let measured = fight_lab::chart(jobs)?;
                 if check {
-                    fight_lab::check(&trades)?;
+                    fight_lab::check(&measured)?;
                     println!("the counter chart is current");
                 } else {
-                    std::fs::write(fight_lab::CHART, fight_lab::chart_source(&trades))
+                    std::fs::write(fight_lab::CHART, fight_lab::chart_source(&measured))
                         .with_context(|| format!("writing {}", fight_lab::CHART))?;
                     println!("wrote {}", fight_lab::CHART);
                 }
@@ -1108,6 +1108,7 @@ fn main() -> Result<()> {
             let kinds = kinds.unwrap_or_else(|| fight_lab::COMBAT.to_vec());
             let lab = fight_lab::Lab {
                 matrix: fight_lab::matrix(&kinds, &budgets, jobs)?,
+                guns: fight_lab::guns(&kinds, &aftermine_opponent::GUNS, &budgets, jobs)?,
                 mixed: if no_mixed {
                     Vec::new()
                 } else {

@@ -530,15 +530,16 @@ fn the_least_valuable_of_many_buildings_is_guarded_too() {
     ));
     scenario.units.push(unit(1, UnitKind::Scuttler, 22, 7));
     let state = scenario.build().unwrap();
-    // Standard reads no raider's kind, and its emergency Turret still goes up.
+    // The raider at the least valuable building is answered too: an
+    // emergency Turret beside it, or units that beat a Scuttler.
     let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
-    assert!(
-        builds(&commands).iter().any(|(kind, anchor)| {
-            *kind == BuildingKind::Turret
-                && crate::frame::gap(reclaimer, (1, 1), *anchor, (1, 1)) <= 3
-        }),
-        "{commands:?}"
-    );
+    let turret = builds(&commands).iter().any(|(kind, anchor)| {
+        *kind == BuildingKind::Turret && crate::frame::gap(reclaimer, (1, 1), *anchor, (1, 1)) <= 3
+    });
+    let beaters = trains(&commands)
+        .iter()
+        .any(|(_, kind)| crate::counters::pair(*kind, UnitKind::Scuttler) > 1_000);
+    assert!(turret || beaters, "{commands:?}");
 }
 
 #[test]
