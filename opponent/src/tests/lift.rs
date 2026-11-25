@@ -1579,6 +1579,12 @@ fn an_island_army_seen_long_ago_still_holds_a_lift_back() {
 #[test]
 fn a_lift_lands_out_of_reach_of_the_guns_it_knows() {
     let mut scenario = strait();
+    // Riders that beat Turrets, so the lift goes despite them.
+    for rider in &mut scenario.units {
+        if rider.kind == UnitKind::Sentinel {
+            rider.kind = UnitKind::Warden;
+        }
+    }
     for (x, y) in [(31, 9), (31, 13)] {
         scenario.buildings.push(BuildingSpec {
             player: 1,

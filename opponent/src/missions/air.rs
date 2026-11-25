@@ -1,7 +1,8 @@
 //! What aircraft need to know about known enemy fire: where it reaches, how
 //! much of it a straight flight crosses, and a detour around it.
 
-use super::attack::building_value;
+use super::attack::{Force, gun};
+use crate::counters::Piece;
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled, footprint_centre, ring};
 use crate::map::MapModel;
@@ -22,10 +23,17 @@ const CLEARANCE: i32 = 2;
 pub(crate) struct Hazard {
     centre: (i64, i64),
     reach: i64,
+    /// What shoots, as the chart weighs it.
+    piece: Piece,
     pub(super) value: u64,
 }
 
 impl Hazard {
+    /// What shoots, with its value.
+    pub(super) fn force(&self) -> (Piece, u64) {
+        (self.piece, self.value)
+    }
+
     /// Whether `point`, in doubled coordinates, lies within reach.
     pub(crate) fn covers(&self, point: (i64, i64)) -> bool {
         distance2(self.centre, point) <= self.reach * self.reach
@@ -186,22 +194,22 @@ pub(super) fn fly_around(
     fly(units, via, goal, legs, ledger)
 }
 
-/// Value of the `hazards` reaching any of `members`.
-pub(super) fn opposition(hazards: &[Hazard], members: &[&UnitObs]) -> u64 {
+/// The `hazards` reaching any of `members`, each by its value.
+pub(super) fn opposition(hazards: &[Hazard], members: &[&UnitObs]) -> Force {
     hazards
         .iter()
         .filter(|hazard| members.iter().any(|unit| hazard.covers(doubled(unit.tile))))
-        .map(|hazard| hazard.value)
-        .sum()
+        .map(Hazard::force)
+        .collect()
 }
 
-/// Value of the `hazards` reaching `point`, in doubled coordinates.
-pub(super) fn cover(hazards: &[Hazard], point: (i64, i64)) -> u64 {
+/// The `hazards` reaching `point`, in doubled coordinates, each by its value.
+pub(super) fn cover(hazards: &[Hazard], point: (i64, i64)) -> Force {
     hazards
         .iter()
         .filter(|hazard| hazard.covers(point))
-        .map(|hazard| hazard.value)
-        .sum()
+        .map(Hazard::force)
+        .collect()
 }
 
 /// Known enemies that fire at `domain`: remembered units by confidence and
@@ -230,6 +238,7 @@ pub(crate) fn hazards(
         Some(Hazard {
             centre: doubled(unit.tile),
             reach: i64::from(2 * (range + CLEARANCE)),
+            piece: Piece::Unit(unit.kind),
             value: super::remembered(unit, map, home, now),
         })
     });
@@ -239,10 +248,12 @@ pub(crate) fn hazards(
         }
         let range = reach(building.kind.tier_stats(building.tier).weapons)?;
         let (width, height) = building.kind.size();
+        let (piece, value) = gun(building);
         Some(Hazard {
             centre: footprint_centre(building.kind, building.anchor),
             reach: i64::from(2 * (range + CLEARANCE) + width.max(height)),
-            value: building_value(building),
+            piece,
+            value,
         })
     });
     units.chain(buildings).collect()

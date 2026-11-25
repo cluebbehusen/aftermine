@@ -7,7 +7,9 @@
 use super::Scratch;
 use super::air::{self, Hazard, Legs};
 
-use super::attack::{FIT, healthy, margin, minimum, opposed, striking};
+use super::attack::{
+    FIT, Force, healthy, margin, minimum, opposed, priced, striking, striking_mix,
+};
 use super::fight::Fight;
 use super::raid::{aim, blast};
 use super::{
@@ -15,6 +17,7 @@ use super::{
     hits, hunt, known, mine, open, presumed, run, standing,
 };
 use crate::composition::{self, Role};
+use crate::counters::{Piece, weigh};
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, gap, ring};
 use crate::gunship::gunship;
@@ -363,7 +366,7 @@ struct Drop {
 
 /// A carrier and the riders packed into it, with their value against
 /// ground.
-type Load = (UnitId, Vec<UnitId>, u64);
+type Load = (UnitId, Vec<UnitId>, Force);
 
 /// The own ground a lift loads on, and the tile its carriers gather beside.
 #[derive(Clone, Copy)]
@@ -384,7 +387,7 @@ struct Flight<'a> {
     /// Members aboard the carriers.
     aboard: usize,
     /// Their value against ground, with the lift's gunships'.
-    loaded: u64,
+    loaded: Force,
 }
 
 /// What one decision knows about lifting.
@@ -497,16 +500,18 @@ impl Missions {
         let Some((source, loads)) = self.loads(lifting, None, &[], ledger) else {
             return;
         };
-        let value = loads.iter().map(|(_, _, value)| value).sum::<u64>();
-        if loads.is_empty() || value < minimum(lifting.profile.stance) {
+        let mut side: Force = loads
+            .iter()
+            .flat_map(|(_, _, load)| load.iter().copied())
+            .collect();
+        if loads.is_empty() || priced(&side) < minimum(lifting.profile.stance) {
             return;
         }
         let Some(drop) = lifting.best_drop() else {
             return;
         };
-        let need = lifting.need(drop.target, drop.landing);
-        let cover = lifting.cover(self.cover(observation, drop.target.anchor));
-        if value + cover < need || !lifting.looked(drop.target) {
+        side.extend(lifting.cover(self.cover(observation, drop.target.anchor)));
+        if !lifting.carries(drop.target, drop.landing, &side) || !lifting.looked(drop.target) {
             return;
         }
         let mut units = lifting.load(source, &loads, UNIT_CAP, ledger);
@@ -581,13 +586,11 @@ impl Missions {
         let loads = pack(&rooms, &riders)
             .into_iter()
             .map(|(carrier, riders)| {
-                let guns = mine(observation, carrier)
-                    .filter(|unit| gunship(unit.kind))
-                    .map_or(0, striking);
-                let value = riders.iter().map(|unit| striking(unit)).sum::<u64>() + guns;
+                let guns = mine(observation, carrier).filter(|unit| gunship(unit.kind));
+                let load = striking_mix(riders.iter().copied().chain(guns));
                 let mut riders = ids(&riders);
                 riders.sort_unstable();
-                (carrier, riders, value)
+                (carrier, riders, load)
             })
             .collect();
         Some((source, loads))
@@ -725,15 +728,17 @@ impl Missions {
         let loaded = manifest
             .aboard
             .iter()
-            .map(|u| super::force(u.kind, u.hp)[0])
+            .map(|u| (u.kind, u.hp))
             .chain(
                 manifest
                     .carriers
                     .iter()
                     .filter(|u| gunship(u.kind))
-                    .map(|u| super::force(u.kind, u.hp)[0]),
+                    .map(|u| (u.kind, u.hp)),
             )
-            .sum();
+            .map(|(kind, hp)| (Piece::Unit(kind), super::force(kind, hp)[0]))
+            .filter(|(_, value)| *value > 0)
+            .collect();
         let flight = Flight {
             index,
             target,
@@ -765,7 +770,6 @@ impl Missions {
     /// short of its carrier could not board it and is not sent again.
     fn board(&mut self, flight: &Flight<'_>, lifting: &Lifting<'_>, ledger: &mut Ledger) {
         let waiting = &flight.grounded;
-        let need = lifting.need(flight.target, flight.landing);
         if flight.age < LOAD_TICKS {
             // Riders wait to board, and loaded carriers hover, on the ground
             // the lift loads at.
@@ -800,8 +804,9 @@ impl Missions {
         if waiting.iter().any(|unit| !unit.idle) && flight.age < LOAD_TICKS {
             return;
         }
-        let cover = lifting.cover(self.cover(lifting.observation, flight.target.anchor));
-        if flight.aboard > 0 && flight.loaded + cover >= need {
+        let mut side = flight.loaded.clone();
+        side.extend(lifting.cover(self.cover(lifting.observation, flight.target.anchor)));
+        if flight.aboard > 0 && lifting.carries(flight.target, flight.landing, &side) {
             self.take_off(flight, lifting, ledger);
             return;
         }
@@ -1266,10 +1271,10 @@ impl<'a> Lifting<'a> {
 
     /// The bombers' `cover` a lift counts on: only the upper rungs time a
     /// lift to them. A difficulty limit.
-    fn cover(&self, cover: u64) -> u64 {
+    fn cover(&self, cover: Force) -> Force {
         match self.profile.difficulty {
             BotDifficulty::Veteran | BotDifficulty::Prime => cover,
-            BotDifficulty::Scrapheap | BotDifficulty::Standard => 0,
+            BotDifficulty::Scrapheap | BotDifficulty::Standard => Vec::new(),
         }
     }
 
@@ -1295,19 +1300,21 @@ impl<'a> Lifting<'a> {
             .is_none_or(|(index, _)| self.memory.looked(index, self.observation.tick))
     }
 
-    /// Army value a lift to `target` set down at `landing` needs: the known
-    /// army it would meet, with the guns at the target the riders walk into
-    /// as well as those at the landing, times the margin, and never under the
-    /// stance minimum.
-    fn need(&self, target: Objective, landing: TilePos) -> u64 {
-        (opposed(
+    /// Whether `side` meets what a lift to `target` set down at `landing`
+    /// needs: the known army it would meet, with the guns at the target the
+    /// riders walk into as well as those at the landing, each side weighed by
+    /// what it trades against the other, times the margin, and never under
+    /// the stance minimum.
+    fn carries(&self, target: Objective, landing: TilePos, side: &[(Piece, u64)]) -> bool {
+        let enemy = opposed(
             self.observation,
             self.map,
             self.memory,
             &[landing, target.anchor],
-        ) * margin(self.profile.difficulty)
-            / 1_000)
-            .max(minimum(self.profile.stance))
+        );
+        let need = (weigh(&enemy, side) * margin(self.profile.difficulty) / 1_000)
+            .max(minimum(self.profile.stance));
+        weigh(side, &enemy) >= need
     }
 
     /// Where to set a payload down near `target`: known open ground on the

@@ -298,3 +298,54 @@ fn a_strike_fight_keeps_what_it_knew_and_resumes_identically() {
     state.tick(&commands);
     resumes_identically(&mut opponent, &scenario, &mut state, 600);
 }
+
+#[test]
+fn condors_strike_under_flakhounds_but_not_under_flak_turrets_of_the_same_price() {
+    let posts = [(40, 9), (40, 11), (40, 13)];
+    let mut scenario = field();
+    garrison(&mut scenario);
+    for (x, y) in [(6, 18), (8, 18), (10, 18)] {
+        scenario.units.push(unit(0, UnitKind::Condor, x, y));
+    }
+    scenario.units.push(unit(0, UnitKind::Kestrel, 37, 11));
+
+    let state = scenario.build().unwrap();
+    let mut hounds = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["memory"]["units"] = remembered(
+            (1_000..)
+                .zip(posts)
+                .map(|(id, (x, y))| (id, UnitKind::Flakhound, TilePos::new(x, y), 0)),
+        );
+    });
+    let (_, trace) = hounds.act_traced(&state, &mut OwnEvents::default());
+    assert!(
+        strike(&trace.unwrap().missions).is_some(),
+        "Condors trade about evenly with Flakhounds"
+    );
+
+    let mut turrets = scenario.clone();
+    for (x, y) in posts {
+        turrets.buildings.push(BuildingSpec {
+            player: 1,
+            kind: BuildingKind::FlakTurret,
+            x,
+            y,
+        });
+    }
+    let state = turrets.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    assert_eq!(
+        observation
+            .enemy_buildings
+            .iter()
+            .filter(|building| building.kind == BuildingKind::FlakTurret)
+            .count(),
+        posts.len(),
+        "premise: West has seen the Flak Turrets"
+    );
+    let (_, trace) = seat(&turrets, 0).act_traced(&state, &mut OwnEvents::default());
+    assert!(
+        strike(&trace.unwrap().missions).is_none(),
+        "Flak Turrets destroy many times their price in aircraft"
+    );
+}

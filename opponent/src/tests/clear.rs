@@ -551,6 +551,9 @@ fn mirrored_seats_send_their_rocs_alike() {
 #[test]
 fn a_clearance_goes_at_a_known_flak_turret_around_the_target() {
     let mut scenario = with_bombers(strait());
+    // Bombers trade poorly against a Flak Turret, so two Condors are not
+    // enough to go at even one.
+    scenario.units.push(unit(0, UnitKind::Condor, 13, 2));
     scenario.buildings.push(BuildingSpec {
         player: 1,
         kind: BuildingKind::FlakTurret,

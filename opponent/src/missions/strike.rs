@@ -5,13 +5,17 @@
 
 use super::Scratch;
 use super::air::{self, Hazard, Legs};
-use super::attack::{FIT, healthy, margin, minimum, outweighed, recruit, striking};
+use super::attack::{
+    FIT, Force, healthy, margin, minimum, outweighed, priced, recruit_by, striking, striking_mix,
+    worth_against,
+};
 use super::sortie::Sortie;
 use super::{
     MISSION_CAP, Mission, Missions, Objective, StrikePhase, Task, UNIT_CAP, distant_worth, mine,
     run, standing,
 };
 use crate::composition::{self, Role};
+use crate::counters::{Piece, weigh};
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, ring};
 use crate::map::MapModel;
@@ -132,18 +136,26 @@ impl Missions {
         let fit = self
             .spare(observation, raid.map, raid.reserve)
             .outermost(raid.map, raid.frame, fit);
-        let strength: u64 = fit.iter().map(|unit| striking(unit)).sum();
-        if strength < raid.minimum {
+        let own = striking_mix(fit.iter().copied());
+        if priced(&own) < raid.minimum {
             return false;
         }
-        let Some(target) = raid.best(strength, None) else {
+        let Some(target) = raid.best(&own, None) else {
             return false;
         };
         let centre = footprint_centre(target.building, target.anchor);
         let Some(rally) = air::pad(observation, raid.map, raid.frame, centre) else {
             return false;
         };
-        let recruits = recruit(raid.frame, &fit, rally, raid.need(target), UNIT_CAP);
+        let guard = cover(raid.air, target);
+        let recruits = recruit_by(
+            raid.frame,
+            &fit,
+            rally,
+            raid.need(&guard, &own),
+            UNIT_CAP,
+            worth_against(&guard, striking),
+        );
         if recruits.is_empty() || !ledger.order(run(recruits.clone(), rally)) {
             return false;
         }
@@ -163,19 +175,19 @@ impl Missions {
 }
 
 impl Raid<'_> {
-    /// The most valuable target for its distance that `strength` can strike,
+    /// The most valuable target for its distance that `own` can strike,
     /// other than `skip`: a known enemy building or hostile start not
     /// recently given up and not seen gone, the rival's first when there are
     /// several enemies.
-    pub(super) fn best(&self, strength: u64, skip: Option<Objective>) -> Option<Objective> {
+    pub(super) fn best(&self, own: &[(Piece, u64)], skip: Option<Objective>) -> Option<Objective> {
         let rival = |target: &Objective| self.rival.is_none_or(|rival| target.owner == rival);
-        self.best_of(strength, skip, rival)
-            .or_else(|| self.best_of(strength, skip, |_| true))
+        self.best_of(own, skip, rival)
+            .or_else(|| self.best_of(own, skip, |_| true))
     }
 
     fn best_of(
         &self,
-        strength: u64,
+        own: &[(Piece, u64)],
         skip: Option<Objective>,
         eligible: impl Fn(&Objective) -> bool,
     ) -> Option<Objective> {
@@ -191,7 +203,7 @@ impl Raid<'_> {
                     .memory
                     .abandoned(target.building, target.anchor, observation.tick)
             })
-            .filter(|target| self.need(*target) <= strength)
+            .filter(|target| self.holds(&cover(self.air, *target), own))
             .max_by_key(|target| {
                 let distance = centre_distance(
                     footprint_centre(BuildingKind::Foundry, start),
@@ -207,10 +219,17 @@ impl Raid<'_> {
             })
     }
 
-    /// Strength a strike on `target` needs: the known anti-air that reaches
-    /// over it times the margin, and never under the stance minimum.
-    fn need(&self, target: Objective) -> u64 {
-        (cover(self.air, target) * self.margin / 1_000).max(self.minimum)
+    /// Strength a strike needs against `cover`, the known anti-air that
+    /// reaches over its target: each weighed by what it trades against
+    /// `own`, times the margin, and never under the stance minimum.
+    fn need(&self, cover: &[(Piece, u64)], own: &[(Piece, u64)]) -> u64 {
+        (weigh(cover, own) * self.margin / 1_000).max(self.minimum)
+    }
+
+    /// Whether `own`, weighed by what it trades against `cover`, meets a
+    /// strike's need under it.
+    fn holds(&self, cover: &[(Piece, u64)], own: &[(Piece, u64)]) -> bool {
+        weigh(own, cover) >= self.need(cover, own)
     }
 
     /// Where a strike on `target` gathers and comes back to.
@@ -219,9 +238,9 @@ impl Raid<'_> {
         air::pad(self.observation, self.map, self.frame, centre)
     }
 
-    /// Whether a gathered strike of `strength` still goes at `target`.
-    pub(super) fn sets_out(&self, target: Objective, strength: u64) -> bool {
-        strength >= self.need(target) && standing(self.observation, target)
+    /// Whether a gathered strike of `own` still goes at `target`.
+    pub(super) fn sets_out(&self, target: Objective, own: &[(Piece, u64)]) -> bool {
+        self.holds(&cover(self.air, target), own) && standing(self.observation, target)
     }
 
     /// Sends `units` from `from` at the side of `target` nearest it, around
@@ -255,7 +274,7 @@ impl Raid<'_> {
 }
 
 /// Known anti-air reaching over `target`.
-fn cover(air: &[Hazard], target: Objective) -> u64 {
+fn cover(air: &[Hazard], target: Objective) -> Force {
     air::cover(air, footprint_centre(target.building, target.anchor))
 }
 
@@ -273,7 +292,7 @@ pub(crate) fn strike_need(
         .objectives
         .iter()
         .filter(|target| !memory.abandoned(target.building, target.anchor, observation.tick))
-        .map(|target| cover(&scratch.air, *target) * margin / 1_000)
+        .map(|target| priced(&cover(&scratch.air, *target)) * margin / 1_000)
         .min()
         .map_or(0, |need| need.max(minimum(profile.stance)))
 }
