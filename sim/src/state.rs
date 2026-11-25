@@ -102,16 +102,18 @@ pub enum Order {
         goal: Goal,
     },
     /// Work a bounded salvage zone, hauling to the nearest Foundry until
-    /// every safe remembered source near the clicked anchor is exhausted.
+    /// every remembered source near the anchor is exhausted. Danger moves
+    /// the worker to the nearest safe source, which anchors a new zone, but
+    /// never idles it.
     Harvest {
         /// The node or wreck tile currently being worked.
         node: TilePos,
-        /// The source the player clicked: the fixed center of the work
-        /// zone.
+        /// The source the player clicked, or the safe one danger moved the
+        /// worker to: the fixed center of the work zone.
         anchor: TilePos,
-        /// The zone was observed exhausted or unsafe. Sticky until the
-        /// Harvester deposits its cargo, reaches a built Foundry, and
-        /// advances its queued program.
+        /// The zone was observed exhausted, or its clicked source cut off.
+        /// Sticky until the Harvester deposits its cargo, reaches a built
+        /// Foundry, and advances its queued program.
         #[serde(default, skip_serializing_if = "core::ops::Not::not")]
         withdrawing: bool,
     },
@@ -544,7 +546,8 @@ pub struct Worker {
     /// meters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unloading: Option<Unloading>,
-    /// While held by danger, the tick from which it searches again. See
+    /// While walking a route through known danger, the tick from which it
+    /// searches for a safe one again. See
     /// [`crate::stats::HARVEST_DANGER_RETRY_TICKS`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub danger_retry_at: Option<crate::Tick>,
@@ -827,7 +830,8 @@ impl Unit {
         self.worker.is_some_and(|worker| !worker.idle_weld_off)
     }
 
-    /// The tick a danger-held harvester searches again, if it is held.
+    /// The tick a harvester walking through danger searches for a safe
+    /// route again, if it is.
     pub fn danger_retry_at(&self) -> Option<crate::Tick> {
         self.worker.and_then(|worker| worker.danger_retry_at)
     }
@@ -846,8 +850,9 @@ impl Unit {
         }
     }
 
-    /// Lets a danger-held harvester search again at once.
-    pub(crate) fn clear_danger_hold(&mut self) {
+    /// Lets a harvester walking through danger search for a safe route
+    /// again at once.
+    pub(crate) fn clear_danger_retry(&mut self) {
         if let Some(worker) = &mut self.worker {
             worker.danger_retry_at = None;
         }

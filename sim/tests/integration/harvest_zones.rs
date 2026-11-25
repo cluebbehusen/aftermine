@@ -484,7 +484,7 @@ fn withdrawal_deposits_then_advances_one_queued_order_at_the_foundry() {
 }
 
 #[test]
-fn shared_sight_withdraws_an_autonomous_retarget_but_not_before_it_is_known() {
+fn shared_sight_settles_an_autonomous_retarget_but_not_before_it_is_known() {
     let anchor = TilePos::new(11, 5);
     let fallback = TilePos::new(14, 5);
     let mut state = state_with_salvage(
@@ -525,30 +525,31 @@ fn shared_sight_withdraws_an_autonomous_retarget_but_not_before_it_is_known() {
         "the autonomous retarget was legal only because the Bombard was still hidden"
     );
 
+    // Once the Bombard is seen, the zone holds no safe source and none
+    // lies near the Foundry, so the worker keeps at the one it chose as if
+    // it had been clicked rather than going idle.
     state.tick(&[cmd(0, orders::run([scout], TilePos::new(20, 5)))]);
     run_until(&mut state, 300, |state, _| {
-        matches!(
-            state.unit(worker).unwrap().order,
-            Order::Harvest {
-                withdrawing: true,
-                ..
+        state.unit(worker).unwrap().order
+            == Order::Harvest {
+                node: fallback,
+                anchor: fallback,
+                withdrawing: false,
             }
-        )
     });
     state.tick(&[cmd(0, orders::run([scout], TilePos::new(4, 5)))]);
-    let events = run_until(&mut state, 800, |state, _| {
-        state.unit(worker).unwrap().order == Order::Idle
+    let events = run_until(&mut state, 800, |_, events| {
+        events
+            .iter()
+            .any(|event| matches!(event, Event::ScrapDeposited { .. }))
     });
     assert!(
         events
             .iter()
             .any(|event| matches!(event, Event::ScrapDeposited { .. })),
-        "sticky withdrawal brought the partial load home"
+        "the worker keeps hauling from its source"
     );
-    assert!(
-        state.map().scrap_at(fallback) > 0,
-        "losing sight cannot send the withdrawn worker back into the zone"
-    );
+    assert_ne!(state.unit(worker).unwrap().order, Order::Idle);
 }
 
 #[test]
@@ -799,7 +800,7 @@ fn a_hidden_hit_on_any_harvesting_worker_is_remembered() {
 }
 
 #[test]
-fn an_own_loss_withdraws_a_worker_home_before_it_surfaces_idle() {
+fn an_own_loss_with_nowhere_safe_to_go_leaves_a_worker_at_its_source() {
     let anchor = TilePos::new(13, 5);
     let exposed = TilePos::new(15, 5);
     let struck = TilePos::new(19, 4);
@@ -849,22 +850,26 @@ fn an_own_loss_withdraws_a_worker_home_before_it_surfaces_idle() {
     );
 
     state.tick(&[]);
-    assert!(matches!(
+    assert_eq!(
         state.unit(worker).unwrap().order,
         Order::Harvest {
-            withdrawing: true,
-            ..
-        }
-    ));
-    let events = run_until(&mut state, 800, |state, _| {
-        state.unit(worker).unwrap().order == Order::Idle
+            node: exposed,
+            anchor: exposed,
+            withdrawing: false,
+        },
+        "with no safe source anywhere near, the worker keeps at its own"
+    );
+    let events = run_until(&mut state, 800, |_, events| {
+        events
+            .iter()
+            .any(|event| matches!(event, Event::ScrapDeposited { .. }))
     });
     assert!(
         events
             .iter()
             .any(|event| matches!(event, Event::ScrapDeposited { .. }))
     );
-    assert!(state.map().scrap_at(exposed) > 0);
+    assert_ne!(state.unit(worker).unwrap().order, Order::Idle);
     assert!(state.map().wreck_at(struck) > 0);
 }
 

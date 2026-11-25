@@ -407,7 +407,7 @@ fn accepted_units(state: &State, player: PlayerId, ids: &[UnitId]) -> Vec<UnitId
 fn end_station_keeping(unit: &mut crate::state::Unit) {
     unit.leash = None;
     unit.settled = 0;
-    unit.clear_danger_hold();
+    unit.clear_danger_retry();
 }
 
 /// Drops the active leg without rotating it into a looping program. This is

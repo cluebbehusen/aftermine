@@ -1906,47 +1906,33 @@ impl Presentation {
                     pos,
                     reason,
                 } if self.plays_as(*player) => {
-                    let scout = state
-                        .unit(*unit)
-                        .is_some_and(|unit| unit.kind.stats().scouts);
                     // Own-state facts only: a stall reason must never reveal
                     // what fog hides.
-                    let (text, danger) = match reason {
-                        aftermine_sim::StallReason::NoRoute => ("Can't reach that", false),
+                    let text = match reason {
+                        aftermine_sim::StallReason::NoRoute => "Can't reach that",
                         aftermine_sim::StallReason::NoFiringPosition => {
-                            ("No ground to fire from there", false)
+                            "No ground to fire from there"
                         }
-                        aftermine_sim::StallReason::InsufficientScrap => {
-                            ("Not enough scrap", false)
-                        }
-                        aftermine_sim::StallReason::CrewFull => ("Cradle crew is full", false),
-                        aftermine_sim::StallReason::TransportFull => {
-                            ("The transport is full", false)
-                        }
+                        aftermine_sim::StallReason::InsufficientScrap => "Not enough scrap",
+                        aftermine_sim::StallReason::CrewFull => "Cradle crew is full",
+                        aftermine_sim::StallReason::TransportFull => "The transport is full",
                         aftermine_sim::StallReason::NoOpenGround => {
-                            ("No open ground to unload there", false)
+                            "No open ground to unload there"
                         }
-                        // A scout's wait ends in a verdict within seconds,
-                        // and that verdict is the news.
-                        aftermine_sim::StallReason::DangerHold if scout => continue,
-                        aftermine_sim::StallReason::DangerHold => {
-                            ("Worker holding: enemies nearby", true)
-                        }
+                        // Only a scout waits on danger, and its wait ends in
+                        // a verdict within seconds; that verdict is the news.
+                        aftermine_sim::StallReason::DangerHold => continue,
                         // The scout still has its tile in sight, so the
                         // order did its job; the stop needs no feedback.
                         aftermine_sim::StallReason::SafeVantage => continue,
                         aftermine_sim::StallReason::NoSafeVantage => {
-                            ("Surveyor can't see there safely", false)
+                            "Surveyor can't see there safely"
                         }
                     };
                     if !self.stall_is_news(*reason, state.current_tick()) {
                         continue;
                     }
-                    if danger {
-                        self.danger_toast(text);
-                    } else {
-                        self.toast(text);
-                    }
+                    self.toast(text);
                     self.fx.push(Effect {
                         kind: EffectKind::Ping {
                             at: world_vec(*pos),

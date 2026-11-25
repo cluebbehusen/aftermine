@@ -302,16 +302,8 @@ fn a_held_drop_off_route_yields_only_to_a_nearer_worker() {
     }
     let keeps = |state: &mut State, id: UnitId| {
         let danger = GroundSalvageDanger::capture(state, PlayerId(0));
-        let mut events = Vec::new();
         let index = indexed(state);
-        assert!(try_drop_offs(
-            state,
-            &index,
-            &danger,
-            id,
-            &[foundry_id],
-            &mut events
-        ));
+        assert!(try_drop_offs(state, &index, &danger, id, &[foundry_id]));
         state
             .unit(id)
             .unwrap()
@@ -470,7 +462,7 @@ fn a_sealed_worker_settles_every_work_position_with_one_search() {
 }
 
 #[test]
-fn a_worker_held_from_its_drop_off_rescans_after_the_retry_period_and_on_command() {
+fn a_worker_with_no_safe_way_home_goes_anyway_and_rescans_after_the_retry_period() {
     let scenario = serde_json::json!({
         "name": "danger-held-delivery", "map": [
             "##########################",
@@ -503,45 +495,29 @@ fn a_worker_held_from_its_drop_off_rescans_after_the_retry_period_and_on_command
         .unwrap()
         .id;
     let period = crate::stats::HARVEST_DANGER_RETRY_TICKS;
-    let start = crate::stats::DANGER_HOLD_REPORT_PERIOD - 1;
+    let start = 99;
     let mut searched = Vec::new();
-    let mut reported = Vec::new();
     for tick in start..=start + period {
         state.tick = tick;
         let danger = GroundSalvageDanger::capture(&state, PlayerId(0));
         let before = danger.route_search_count();
-        let mut events = Vec::new();
         let index = indexed(&state);
         assert!(try_drop_offs(
             &mut state,
             &index,
             &danger,
             worker,
-            &[foundry],
-            &mut events
+            &[foundry]
         ));
-        assert!(state.units[0].path.is_none(), "a held worker stands");
+        assert!(
+            state.units[0].path.is_some(),
+            "a worker with no safe way home goes the way it has"
+        );
         if danger.route_search_count() > before {
             searched.push(tick - start);
         }
-        if events.iter().any(|event| {
-            matches!(
-                event,
-                Event::OrderStalled {
-                    reason: StallReason::DangerHold,
-                    ..
-                }
-            )
-        }) {
-            reported.push(tick);
-        }
     }
     assert_eq!(searched, [0, period]);
-    assert_eq!(
-        reported,
-        [crate::stats::DANGER_HOLD_REPORT_PERIOD],
-        "the hold stays visible"
-    );
     assert!(state.units[0].danger_retry_at().is_some());
     crate::tick::commands::apply(
         &mut state,
@@ -1102,4 +1078,110 @@ fn a_work_position_walled_off_from_every_side_costs_no_search() {
             .expect("the pocket is one step or none away");
         assert_eq!(path.goal, pocket);
     }
+}
+
+#[test]
+fn a_worker_danger_drives_from_its_zone_crosses_to_the_nearest_safe_source_alike_on_either_side() {
+    // Each seat's worker works a source its zone chose beside a seen enemy
+    // Sentinel; no safe source is left in the zone, and the worker stands
+    // inside the danger, so it crosses it to the nearest safe source, by its
+    // Foundry beyond the zone. The board is a half-turn, and so is the
+    // choice.
+    let (width, height) = (40, 14);
+    let mirror = |pos: TilePos| TilePos::new(width - 1 - pos.x, height - 1 - pos.y);
+    let (anchor, node, home) = (TilePos::new(14, 6), TilePos::new(15, 6), TilePos::new(4, 9));
+    let mut rows = vec![vec!['#'; 40]; 14];
+    for row in rows.iter_mut().take(13).skip(1) {
+        for cell in row.iter_mut().take(39).skip(1) {
+            *cell = '.';
+        }
+    }
+    rows[1][1] = '1';
+    rows[10][36] = '2';
+    for pos in [anchor, node, home] {
+        for pos in [pos, mirror(pos)] {
+            rows[usize::try_from(pos.y).unwrap()][usize::try_from(pos.x).unwrap()] = 's';
+        }
+    }
+    let player = |name: &str| PlayerSpec {
+        name: name.into(),
+        team: None,
+        scrap: 0,
+        bot: false,
+        bot_config: None,
+    };
+    let at = |player, kind, pos: TilePos| UnitSpec {
+        player,
+        kind,
+        x: pos.x,
+        y: pos.y,
+    };
+    let worker_at = TilePos::new(13, 6);
+    let threat_at = TilePos::new(14, 2);
+    let mut state = Scenario {
+        levels: Vec::new(),
+        mode: ScenarioMode::Match,
+        name: "harvest-home-search".into(),
+        map: rows
+            .into_iter()
+            .map(|row| row.into_iter().collect())
+            .collect(),
+        players: vec![player("West"), player("East")],
+        units: vec![
+            at(0, UnitKind::Harvester, worker_at),
+            at(1, UnitKind::Harvester, mirror(worker_at)),
+            at(1, UnitKind::Sentinel, threat_at),
+            at(0, UnitKind::Sentinel, mirror(threat_at)),
+        ],
+        buildings: Vec::new(),
+        meta: None,
+    }
+    .build()
+    .unwrap();
+    let mut picks = Vec::new();
+    for (slot, frame) in [(0, None), (1, Some(mirror))] {
+        let local = |pos: TilePos| frame.map_or(pos, |mirror| mirror(pos));
+        let (id, player) = (state.units[slot].id, state.units[slot].player);
+        state.units[slot].order = Order::Harvest {
+            node: local(node),
+            anchor: local(anchor),
+            withdrawing: false,
+        };
+        let danger = GroundSalvageDanger::capture(&state, player);
+        assert!(
+            [anchor, node]
+                .into_iter()
+                .all(|pos| danger.contains(local(pos))),
+            "premise: the Sentinel endangers the whole zone"
+        );
+        let drop_offs = DropOffs::built(&state);
+        let index = indexed(&state);
+        leave_source(
+            &mut state,
+            &index,
+            &danger,
+            &drop_offs,
+            id,
+            local(node),
+            local(anchor),
+            &mut Vec::new(),
+        );
+        picks.push(state.unit(id).unwrap().order);
+    }
+    assert_eq!(
+        picks[0],
+        Order::Harvest {
+            node: home,
+            anchor: home,
+            withdrawing: false,
+        }
+    );
+    assert_eq!(
+        picks[1],
+        Order::Harvest {
+            node: mirror(home),
+            anchor: mirror(home),
+            withdrawing: false,
+        }
+    );
 }

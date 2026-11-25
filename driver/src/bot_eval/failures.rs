@@ -25,8 +25,8 @@ pub const REPEATED_ORDER_STALLS: usize = 5;
 /// keeps growing past it.
 pub const MAX_FAILURE_EXAMPLES: usize = 8;
 
-/// Stall reason the repeated-order detector ignores: a harvest line holding
-/// out of danger re-reports it periodically by design.
+/// Stall reason the repeated-order detector ignores: a scout waiting for a
+/// safe way to see its goal re-reports it periodically by design.
 pub const EXEMPT_STALL_REASON: &str = "danger_hold";
 
 /// Ticks an armed unit must stay put, out of every enemy's reach, before it

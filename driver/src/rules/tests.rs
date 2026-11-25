@@ -105,7 +105,7 @@ fn the_sheet_opens_with_the_rules_a_player_cannot_watch() {
 }
 
 #[test]
-fn the_sheet_says_how_far_units_chase_and_why_workers_hold() {
+fn the_sheet_says_how_far_units_chase_and_what_workers_do_in_danger() {
     let sheet = sheet();
     let label = aftermine_kit::roster::tick_time_label;
     assert!(
@@ -117,7 +117,10 @@ fn the_sheet_says_how_far_units_chase_and_why_workers_hold() {
         "{sheet}"
     );
     assert!(
-        sheet.contains("the advance reports DangerHold once every"),
+        sheet.contains(&format!(
+            "moves to the nearest safe source within {} tiles",
+            stats::HARVEST_ESCAPE_RADIUS
+        )),
         "{sheet}"
     );
     assert!(

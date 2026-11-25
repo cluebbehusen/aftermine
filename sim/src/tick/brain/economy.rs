@@ -9,7 +9,7 @@ use super::{PendingHpGain, Stall, stall};
 use crate::event::{Event, StallReason};
 use crate::ids::{BuildingId, PlayerId, Target, UnitId};
 use crate::state::{Order, PathFollow, State};
-use crate::stats::HARVEST_ZONE_RADIUS;
+use crate::stats::{HARVEST_ESCAPE_RADIUS, HARVEST_ZONE_RADIUS};
 use crate::tick::crowding;
 use crate::tick::spatial::UnitIndex;
 use crate::vision::GroundSalvageDanger;
@@ -731,11 +731,11 @@ pub(super) fn harvest(
         .expect("caller checked")
         .in_work_reach(node, (1, 1))
     {
-        // Arriving ends any hold from the route here; only a drop-off
-        // scan may start the next one.
+        // Arriving ends any wait on a safe search from the route here; only
+        // a drop-off scan may start the next one.
         let worker = state.unit_mut(id).expect("caller checked");
         worker.path = None;
-        worker.clear_danger_hold();
+        worker.clear_danger_retry();
         if !worker.work_stopped() {
             return false;
         }
@@ -863,10 +863,6 @@ fn known_source(state: &State, player: PlayerId, pos: TilePos) -> Option<KnownSo
 }
 
 /// Pick one reachable, safe known source inside the fixed work zone.
-/// Worker-local distance leads the key so a group spreads across its
-/// nearby sources instead of collapsing onto the globally cheapest path.
-/// Safe route length then breaks local ties; the fixed anchor and final
-/// coordinates make every pick unique.
 fn replacement_source(
     state: &State,
     index: &UnitIndex,
@@ -874,6 +870,30 @@ fn replacement_source(
     id: UnitId,
     anchor: TilePos,
     exclude: Option<TilePos>,
+) -> Option<KnownSource> {
+    safe_source_near(
+        state,
+        danger,
+        id,
+        (anchor, HARVEST_ZONE_RADIUS),
+        |pos| exclude == Some(pos),
+        |source| source_route_len(state, index, danger, id, source),
+    )
+}
+
+/// Pick one safe known source within `radius` of `centre` that `route_len`
+/// reaches, passing over those `skip` names. Worker-local distance leads
+/// the key so a group spreads across its nearby sources instead of
+/// collapsing onto the globally cheapest path. Route length then breaks
+/// local ties; the fixed centre and final coordinates make every pick
+/// unique.
+fn safe_source_near(
+    state: &State,
+    danger: &GroundSalvageDanger,
+    id: UnitId,
+    (anchor, radius): (TilePos, i32),
+    skip: impl Fn(TilePos) -> bool,
+    route_len: impl Fn(KnownSource) -> Option<usize>,
 ) -> Option<KnownSource> {
     let unit = state.unit(id).expect("caller checked");
     let from = unit.tile();
@@ -894,10 +914,10 @@ fn replacement_source(
         )
     };
     let mut candidates = Vec::new();
-    for dy in -HARVEST_ZONE_RADIUS..=HARVEST_ZONE_RADIUS {
-        for dx in -HARVEST_ZONE_RADIUS..=HARVEST_ZONE_RADIUS {
+    for dy in -radius..=radius {
+        for dx in -radius..=radius {
             let pos = anchor.offset(dx, dy);
-            if exclude == Some(pos) {
+            if skip(pos) {
                 continue;
             }
             let Some(source) = known_source(state, unit.player, pos) else {
@@ -917,7 +937,7 @@ fn replacement_source(
         if best.as_ref().is_some_and(|(key, _)| distance > key.0) {
             break;
         }
-        let Some(route_len) = source_route_len(state, index, danger, id, source) else {
+        let Some(route_len) = route_len(source) else {
             continue;
         };
         let kind_key = match source.kind {
@@ -950,6 +970,40 @@ fn source_route_len(
     source: KnownSource,
 ) -> Option<usize> {
     safe_source_route(state, index, danger, id, source).map(|path| path.waypoints.len())
+}
+
+/// The length of a route to a work position beside `source` that is itself
+/// out of known danger, crossing danger on the way if it must: the way out
+/// for a worker inside a danger ring, where every safe search fails at its
+/// first step. Positions are tried in the worker's own stance order.
+fn crossing_route_len(
+    state: &State,
+    danger: &GroundSalvageDanger,
+    id: UnitId,
+    source: KnownSource,
+) -> Option<usize> {
+    let unit = state.unit(id).expect("caller checked");
+    let (from, player) = (unit.tile(), unit.player);
+    let passable = |tile| known_ground_passable(state, danger, player, tile);
+    let mut positions: Vec<_> = crate::geometry::work_positions(
+        source.pos,
+        (1, 1),
+        crate::geometry::work_approach_distance(unit.kind.stats().radius)
+            + const { Fx::lit("0.06") },
+        unit.kind.stats().radius * crate::stats::CONTACT_COMPRESSION,
+    )
+    .into_iter()
+    .map(|point| crowding::Position {
+        goal: TilePos::containing(point),
+        point,
+    })
+    .filter(|position| passable(position.goal) && !danger.contains(position.goal))
+    .collect();
+    crowding::sort_stances(state, unit, (source.pos, (1, 1)), &mut positions);
+    positions
+        .iter()
+        .find_map(|position| danger.find_route(from, position.goal, passable))
+        .map(|waypoints| waypoints.len())
 }
 
 fn approach_work_rect(state: &mut State, id: UnitId, anchor: TilePos, size: (i32, i32)) -> bool {
@@ -1055,7 +1109,7 @@ fn approach_authoritative_source(
             state
                 .unit_mut(id)
                 .expect("caller checked")
-                .clear_danger_hold();
+                .clear_danger_retry();
             return true;
         }
         // Only danger defers a search, and only after one already failed: a
@@ -1089,7 +1143,7 @@ fn approach_authoritative_source(
     state
         .unit_mut(id)
         .expect("caller checked")
-        .clear_danger_hold();
+        .clear_danger_retry();
     if let Some(path) = authoritative_source_route(state, index, danger, id, source) {
         state.unit_mut(id).expect("caller checked").path = Some(path);
         return true;
@@ -1298,28 +1352,24 @@ struct DropOffScan {
     flood_exhausted: bool,
 }
 
-/// Walks the worker toward the nearest safely approachable drop-off. The
+/// Walks the worker toward the nearest safely approachable drop-off, or,
+/// when known danger blocks every safe way, along the nearest way that
+/// ignores it: a worker never stands waiting for danger to pass. The
 /// retained path is honored until the first failed safe route clears it,
-/// and the danger-ignoring classification that decides waiting versus
-/// stalling runs only after every safe attempt failed. Splitting the passes
-/// lets one exhausted flood answer every remaining foundry, so a fully
-/// sealed worker floods twice per tick, not twice per foundry. Returns
-/// false only when no drop-off is reachable at all: the caller's stall.
+/// and the danger-ignoring search runs only after every safe attempt
+/// failed. Splitting the passes lets one exhausted flood answer every
+/// remaining foundry, so a fully sealed worker floods twice per tick, not
+/// twice per foundry. A route through danger is kept until the retry
+/// period ends before the safe search runs again. Returns false only when
+/// no drop-off is reachable at all: the caller's stall.
 fn try_drop_offs(
     state: &mut State,
     index: &UnitIndex,
     danger: &GroundSalvageDanger,
     id: UnitId,
     drop_offs: &[BuildingId],
-    events: &mut Vec<Event>,
 ) -> bool {
-    let unit = state.unit(id).expect("caller checked");
-    if unit.path.is_none()
-        && unit
-            .danger_retry_at()
-            .is_some_and(|retry| state.tick < retry)
-    {
-        report_danger_hold(state, id, events);
+    if keeps_route_through_danger(state, danger, id, drop_offs) {
         return true;
     }
     let mut scan = DropOffScan::default();
@@ -1353,7 +1403,7 @@ fn try_drop_offs(
                 state
                     .unit_mut(id)
                     .expect("caller checked")
-                    .clear_danger_hold();
+                    .clear_danger_retry();
                 return true;
             }
         }
@@ -1369,7 +1419,7 @@ fn try_drop_offs(
         ) {
             let worker = state.unit_mut(id).expect("caller checked");
             worker.path = Some(path);
-            worker.clear_danger_hold();
+            worker.clear_danger_retry();
             return true;
         }
         if !path_cleared {
@@ -1381,7 +1431,7 @@ fn try_drop_offs(
     for &foundry_id in drop_offs {
         let foundry = state.building(foundry_id).expect("collected live drop-off");
         let (anchor, size) = (foundry.anchor, foundry.kind.size());
-        if known_rect_route(
+        if let Some(path) = known_rect_route(
             state,
             index,
             danger,
@@ -1390,43 +1440,49 @@ fn try_drop_offs(
             size,
             false,
             Some(&mut scan),
-        )
-        .is_some()
-        {
-            // Danger-blocked, not sealed: stand and wait for the window,
-            // checking again only after the retry period.
+        ) {
+            // Danger-blocked, not sealed: go anyway, and look for a safe way
+            // again only after the retry period.
             let tick = state.tick;
-            state
-                .unit_mut(id)
-                .expect("caller checked")
-                .worker_mut()
-                .danger_retry_at = Some(tick + crate::stats::HARVEST_DANGER_RETRY_TICKS);
-            report_danger_hold(state, id, events);
+            let worker = state.unit_mut(id).expect("caller checked");
+            worker.path = Some(path);
+            worker.worker_mut().danger_retry_at =
+                Some(tick + crate::stats::HARVEST_DANGER_RETRY_TICKS);
             return true;
         }
     }
     state
         .unit_mut(id)
         .expect("caller checked")
-        .clear_danger_hold();
+        .clear_danger_retry();
     false
 }
 
-/// A danger hold waits visibly: a silent wait would count as an employed
-/// worker to every observer, including bot recovery logic.
-fn report_danger_hold(state: &State, id: UnitId, events: &mut Vec<Event>) {
-    if state
-        .current_tick()
-        .is_multiple_of(crate::stats::DANGER_HOLD_REPORT_PERIOD)
-    {
-        let unit = state.unit(id).expect("caller checked");
-        events.push(Event::OrderStalled {
-            unit: id,
-            player: unit.player,
-            pos: unit.pos,
-            reason: StallReason::DangerHold,
-        });
-    }
+/// Whether the worker keeps the route through known danger it took to a
+/// drop-off when no safe one existed: until the retry period ends, while
+/// nothing but danger flags it and no standing hull now lies across it.
+fn keeps_route_through_danger(
+    state: &State,
+    danger: &GroundSalvageDanger,
+    id: UnitId,
+    drop_offs: &[BuildingId],
+) -> bool {
+    let unit = state.unit(id).expect("caller checked");
+    let player = unit.player;
+    let Some(path) = unit.path.as_ref() else {
+        return false;
+    };
+    let passable = |tile| known_ground_passable(state, danger, player, tile);
+    unit.danger_retry_at()
+        .is_some_and(|retry| state.tick < retry)
+        && drop_offs.iter().any(|foundry_id| {
+            let foundry = state
+                .building(*foundry_id)
+                .expect("collected live drop-off");
+            tile_adjacent_to_rect(path.goal, foundry.anchor, foundry.kind.size())
+        })
+        && first_flagged_waypoint(path, passable).is_none()
+        && !round_hull_now(state, id, path, passable)
 }
 
 /// Approach one rectangle using only the worker's shared battlefield
@@ -1552,8 +1608,12 @@ fn begin_withdrawal(state: &mut State, id: UnitId, node: TilePos, anchor: TilePo
 }
 
 /// Moves a worker whose source has run dry, turned dangerous or become
-/// unreachable on to another source in its zone, or else home: it delivers
-/// any load first, then withdraws.
+/// unreachable on to another source in its zone. One that left a source
+/// still holding scrap, which only danger makes it leave, then takes the
+/// nearest safe source around it, crossing danger to reach it if it must,
+/// and failing that keeps at the one it had as if it had been clicked:
+/// danger never idles a worker. A worker with nowhere left to work goes
+/// home: it delivers any load first, then withdraws.
 #[allow(clippy::too_many_arguments)]
 fn leave_source(
     state: &mut State,
@@ -1567,6 +1627,23 @@ fn leave_source(
 ) {
     if let Some(next) = replacement_source(state, index, danger, id, anchor, Some(node)) {
         switch_source(state, id, next.pos, anchor);
+        return;
+    }
+    let unit = state.unit(id).expect("caller checked");
+    let (player, from) = (unit.player, unit.tile());
+    if node != anchor && known_source(state, player, node).is_some() {
+        // The new source anchors its own zone, so the worker may cross
+        // danger to reach it as it would a clicked one.
+        let next = safe_source_near(
+            state,
+            danger,
+            id,
+            (from, HARVEST_ESCAPE_RADIUS),
+            |pos| pos == node,
+            |source| crossing_route_len(state, danger, id, source),
+        )
+        .map_or(node, |source| source.pos);
+        switch_source(state, id, next, next);
         return;
     }
     let carrying = state.unit(id).expect("caller checked").carrying();
@@ -1768,7 +1845,7 @@ pub(super) fn return_cargo(
             return;
         }
         state.unit_mut(id).expect("caller checked").end_release();
-        if try_drop_offs(state, index, danger, id, &[foundry], events) {
+        if try_drop_offs(state, index, danger, id, &[foundry]) {
             return;
         }
     }
@@ -1810,7 +1887,7 @@ fn deliver(
     }
     state.unit_mut(id).expect("caller checked").end_release();
 
-    if try_drop_offs(state, index, danger, id, &drop_offs, events) {
+    if try_drop_offs(state, index, danger, id, &drop_offs) {
         return;
     }
 
@@ -1845,7 +1922,7 @@ fn withdraw(
         finish_delivery(state, id, foundry);
         return;
     }
-    if try_drop_offs(state, index, danger, id, &drop_offs, events) {
+    if try_drop_offs(state, index, danger, id, &drop_offs) {
         return;
     }
     stall(state, id, Stall::Advance, StallReason::NoRoute, events);

@@ -529,11 +529,9 @@ pub enum StallReason {
     /// No open ground within the unload scan around the drop point; the
     /// stranded cargo stays aboard.
     NoOpenGround,
-    /// A loaded worker has a route home but every safe one is blocked by
-    /// known danger, so it is standing and waiting for a window, or a scout
-    /// is waiting for a safe way to see its goal. Reported periodically
-    /// while the wait lasts; the order itself is kept. Own-state only: it
-    /// names no threat.
+    /// A scout is waiting for a safe way to see its goal. Reported
+    /// periodically while the wait lasts; the order itself is kept.
+    /// Own-state only: it names no threat. Workers never wait on danger.
     DangerHold,
     /// A scout stopped short of its goal, at the safest place it could
     /// reach that still sees it. A patrol lap passes silently.

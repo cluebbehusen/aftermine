@@ -2969,34 +2969,13 @@ fn a_crowd_stalled_on_one_order_reports_once() {
 }
 
 #[test]
-fn a_held_worker_warns_once_and_a_new_order_does_not_rearm_it() {
-    let mut game = Game::with_viewport(
-        aftermine_sim::Scenario::skirmish(),
-        Vec2::new(1280.0, 800.0),
-    )
-    .unwrap();
-    let hold = worker_stall(&game, aftermine_sim::StallReason::DangerHold);
-    game.presentation
-        .spawn_fx(&game.state, std::slice::from_ref(&hold));
-    assert_eq!(pings(&game), 1);
-    let toast = &game.presentation.toasts[0];
-    assert_eq!(toast.text, "Worker holding: enemies nearby");
-    assert_eq!(toast.tone, crate::game::ToastTone::Danger);
-
-    game.issue(aftermine_sim::Command::Stop { units: Vec::new() });
-    game.presentation
-        .spawn_fx(&game.state, std::slice::from_ref(&hold));
-    assert_eq!(pings(&game), 1, "a hold outlives orders given elsewhere");
-}
-
-#[test]
 fn a_stall_reason_speaks_again_after_going_unheard() {
     let mut game = Game::with_viewport(
         aftermine_sim::Scenario::skirmish(),
         Vec2::new(1280.0, 800.0),
     )
     .unwrap();
-    let hold = aftermine_sim::StallReason::DangerHold;
+    let hold = aftermine_sim::StallReason::NoRoute;
     assert!(game.presentation.stall_is_news(hold, 1000));
     assert!(!game.presentation.stall_is_news(hold, 1399));
     assert!(
