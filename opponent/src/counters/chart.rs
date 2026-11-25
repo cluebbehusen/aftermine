@@ -2,7 +2,7 @@
 
 /// The fingerprint of the unit and structure stats the chart was
 /// measured with.
-pub(super) const STATS: u64 = 0x1c06_436b_ea3c_1a49;
+pub(super) const STATS: u64 = 0xc0c7_d610_60ce_e9a4;
 
 /// `TRADES[a][b]`: per mille of its value lost, the value `MEASURED[a]`
 /// destroys of `MEASURED[b]` at even prices.

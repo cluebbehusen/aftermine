@@ -52,19 +52,23 @@ impl From<UnitKind> for Piece {
 }
 
 /// A fingerprint of every unit kind's stats and the measured structures',
-/// all of them, so that no change that could decide a fight slips past:
-/// weapons and their projectiles, movement, turning, aiming and bracing
-/// alike. The chart is stale once this differs from the fingerprint it was
-/// measured with.
+/// all of them, with the structures' footprints, which set how they stand in
+/// a block and how far a shot reaches them, so that no change that could
+/// decide a fight slips past: weapons and their projectiles, movement,
+/// turning, aiming and bracing alike. The chart is stale once this differs
+/// from the fingerprint it was measured with.
 #[must_use]
 pub fn fingerprint() -> u64 {
     let stats: Vec<String> = UnitKind::ALL
         .iter()
         .map(|kind| format!("{kind:?} {:?}", kind.stats()))
-        .chain(
-            GUNS.iter()
-                .map(|(gun, tier)| format!("{gun:?} {tier} {:?}", gun.tier_stats(*tier))),
-        )
+        .chain(GUNS.iter().map(|(gun, tier)| {
+            format!(
+                "{gun:?} {tier} {:?} {:?}",
+                gun.tier_stats(*tier),
+                gun.size()
+            )
+        }))
         .collect();
     chassis::hash::state_hash(&stats)
 }
@@ -106,16 +110,30 @@ fn column(gun: BuildingKind, tier: u8) -> Option<usize> {
 /// even prices, from the chart; a thousand when either is not measured, and
 /// between two structures, which never fight. A kind the chart does not
 /// measure against a structure is even, unless it can fire on the structure
-/// and the structure cannot fire on it, when it destroys the structure and
-/// loses nothing, as the chart reads measured kinds; the structure against
-/// it is the inverse.
+/// and either the structure cannot fire on it or it is built to wreck
+/// structures, hitting them harder than anything else, as a Maw is: then it
+/// destroys the structure and loses nothing, as the chart reads measured
+/// kinds. The structure against a kind is the inverse, and destroys none of
+/// a kind it cannot fire on.
 pub(crate) fn pair(piece: impl Into<Piece>, enemy: impl Into<Piece>) -> u64 {
     match (piece.into(), enemy.into()) {
         (Piece::Unit(own), Piece::Unit(other)) => match (row(own), row(other)) {
             (Some(own), Some(other)) => u64::from(chart::TRADES[own][other]),
             _ => 1_000,
         },
-        (Piece::Gun(gun, tier), Piece::Unit(unit)) => inverse(pair(unit, Piece::Gun(gun, tier))),
+        (Piece::Gun(gun, tier), Piece::Unit(unit)) => {
+            let domain = unit.stats().domain;
+            let fires = gun
+                .tier_stats(tier)
+                .weapons
+                .iter()
+                .any(|weapon| weapon.targets.covers(domain));
+            if fires {
+                inverse(pair(unit, Piece::Gun(gun, tier)))
+            } else {
+                125
+            }
+        }
         (Piece::Unit(unit), Piece::Gun(gun, tier)) => {
             let Some(column) = column(gun, tier) else {
                 return 1_000;
@@ -134,7 +152,16 @@ pub(crate) fn pair(piece: impl Into<Piece>, enemy: impl Into<Piece>) -> u64 {
                 .weapons
                 .iter()
                 .any(|weapon| weapon.targets.covers(Domain::Ground));
-            if fires && !fired_on { 8_000 } else { 1_000 }
+            let wrecks = unit.stats().weapons.iter().any(|weapon| {
+                weapon
+                    .building_damage
+                    .is_some_and(|damage| damage > weapon.damage)
+            });
+            if fires && (!fired_on || wrecks) {
+                8_000
+            } else {
+                1_000
+            }
         }
         (Piece::Gun(..), Piece::Gun(..)) => 1_000,
     }

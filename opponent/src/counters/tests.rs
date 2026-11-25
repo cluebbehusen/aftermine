@@ -52,6 +52,15 @@ fn a_gun_reads_as_the_inverse_of_what_its_attackers_trade_against_it() {
         for (g, (gun, tier)) in GUNS.iter().enumerate() {
             let taken = u64::from(chart::AGAINST[a][g]);
             assert_eq!(pair(*kind, Piece::Gun(*gun, *tier)), taken);
+            let domain = kind.stats().domain;
+            let fires = gun
+                .tier_stats(*tier)
+                .weapons
+                .iter()
+                .any(|weapon| weapon.targets.covers(domain));
+            if !fires {
+                continue;
+            }
             let product = pair(Piece::Gun(*gun, *tier), *kind) * taken;
             assert!(
                 product.abs_diff(1_000_000) <= 10_000 || taken == 125 || taken == 8_000,
@@ -77,8 +86,8 @@ fn a_gun_against_a_kind_the_chart_does_not_measure_is_even_if_it_can_fire_on_it(
     );
     assert_eq!(
         pair(gun(BuildingKind::Turret, 0), UnitKind::Kestrel),
-        1_000,
-        "neither can hurt the other"
+        125,
+        "a gun destroys none of what it cannot fire on"
     );
     assert_eq!(
         pair(gun(BuildingKind::Lattice, 0), UnitKind::Lancer),
@@ -102,4 +111,29 @@ fn two_sides_weighed_against_each_other_stand_in_their_measured_ratio() {
         "{own} v {theirs}: {measured}"
     );
     assert_eq!(weigh(&sentinels, &sentinels), 1_100, "a mirror is even");
+}
+
+#[test]
+fn a_gun_destroys_none_of_an_attacker_it_cannot_fire_on() {
+    assert_eq!(
+        pair(Piece::Gun(BuildingKind::FlakTurret, 0), UnitKind::Flakhound),
+        125,
+        "though neither can hurt the other, flak only fires at the air"
+    );
+    assert_eq!(
+        pair(Piece::Gun(BuildingKind::Turret, 0), UnitKind::Buzzard),
+        125
+    );
+}
+
+#[test]
+fn a_gun_destroys_none_of_a_kind_built_to_wreck_structures() {
+    assert_eq!(
+        pair(Piece::Gun(BuildingKind::Turret, 0), UnitKind::Maw),
+        125
+    );
+    assert_eq!(
+        pair(Piece::Gun(BuildingKind::Bastion, 1), UnitKind::Maw),
+        125
+    );
 }
