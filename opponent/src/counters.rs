@@ -35,10 +35,11 @@ pub const GUNS: [BuildingKind; 3] = [
 ];
 
 /// A fingerprint of every unit kind's stats and the measured structures',
-/// all of them, so that no change that could decide a fight slips past:
-/// weapons and their projectiles, movement, turning, aiming and bracing
-/// alike. The chart is stale once this differs from the fingerprint it was
-/// measured with.
+/// all of them, with the structures' footprints, which set how they stand in
+/// a block and how far a shot reaches them, so that no change that could
+/// decide a fight slips past: weapons and their projectiles, movement,
+/// turning, aiming and bracing alike. The chart is stale once this differs
+/// from the fingerprint it was measured with.
 #[must_use]
 pub fn fingerprint() -> u64 {
     let stats: Vec<String> = UnitKind::ALL
@@ -46,7 +47,7 @@ pub fn fingerprint() -> u64 {
         .map(|kind| format!("{kind:?} {:?}", kind.stats()))
         .chain(
             GUNS.iter()
-                .map(|gun| format!("{gun:?} {:?}", gun.base_stats())),
+                .map(|gun| format!("{gun:?} {:?} {:?}", gun.base_stats(), gun.size())),
         )
         .collect();
     chassis::hash::state_hash(&stats)
@@ -91,25 +92,34 @@ pub(crate) fn pair(kind: UnitKind, enemy: UnitKind) -> u64 {
 
 /// Per mille of its value lost, the value a `gun` destroys of an
 /// `attacker`'s at even prices: the inverse of what the attacker destroys of
-/// it, from the chart. Against a kind the chart does not measure it is even
-/// if it can fire on the kind's domain, and destroys none of it if it
-/// cannot, as the chart reads a measured kind it cannot reach; a structure
-/// the chart does not measure is even.
+/// it, from the chart. A gun that cannot fire on the attacker's domain
+/// destroys none of it. Against a kind the chart does not measure it is
+/// even, unless the kind is built to wreck structures, hitting them harder
+/// than anything else, as a Maw is; a structure the chart does not measure
+/// is even.
 pub(crate) fn against(gun: BuildingKind, attacker: UnitKind) -> u64 {
     let Some(column) = GUNS.iter().position(|measured| *measured == gun) else {
         return 1_000;
     };
-    if let Some(own) = row(attacker) {
-        let taken = u64::from(chart::AGAINST[own][column]).max(1);
-        return ((1_000_000 + taken / 2) / taken).clamp(125, 8_000);
-    }
     let domain = attacker.stats().domain;
     let fires = gun
         .base_stats()
         .weapons
         .iter()
         .any(|weapon| weapon.targets.covers(domain));
-    if fires { 1_000 } else { 125 }
+    if !fires {
+        return 125;
+    }
+    if let Some(own) = row(attacker) {
+        let taken = u64::from(chart::AGAINST[own][column]).max(1);
+        return ((1_000_000 + taken / 2) / taken).clamp(125, 8_000);
+    }
+    let wrecks = attacker.stats().weapons.iter().any(|weapon| {
+        weapon
+            .building_damage
+            .is_some_and(|damage| damage > weapon.damage)
+    });
+    if wrecks { 125 } else { 1_000 }
 }
 
 /// Per mille of its value lost, the value `kind` destroys of `enemies`, each
