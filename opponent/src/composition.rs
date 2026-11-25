@@ -1,7 +1,10 @@
 //! What the army needs: deficits by role, from what the seat has seen of the
 //! enemy and what it owns, and the unit that best fills a role at a producer.
-//! Choices use coarse suitability, never a combat simulation.
+//! Units count against the enemy a role answers by the counter chart; the
+//! choice between them adds personality and variety, never a combat
+//! simulation.
 
+use crate::counters::{self, Piece, weigh};
 use crate::memory::{Memory, SeenUnit};
 use crate::profile::PersonalityTraits;
 use crate::trace::{ArmyReasons, Candidate, EnemyArmy, RoleNeed};
@@ -114,18 +117,16 @@ pub enum Reach {
 pub struct Factors {
     /// The personality's weight for the role; the product starts here.
     pub preference: u64,
-    /// Outranging the enemy's usual reach, or being outranged by it.
-    pub reach: u64,
-    /// A siege or anti-heavy unit's firepower per scrap, any other's health
-    /// per scrap.
-    pub worth: u64,
+    /// What the kind trades against the enemy the role answers, by the
+    /// counter chart: even while that enemy is unknown.
+    pub trades: u64,
+    /// A siege unit the chart does not measure: its firepower per scrap.
+    pub firepower: u64,
     /// Hitting both air and ground while the enemy fields armed aircraft and
     /// ground units.
     pub coverage: u64,
     /// Splash against clustered enemies, or a lifted seat's bomber blast.
     pub splash: u64,
-    /// Flying anti-air against enemy air that fires only at the ground.
-    pub immune: u64,
     /// The unit's price against the seat's income.
     pub affordable: u64,
     /// Fewer of this kind among the role's units.
@@ -136,11 +137,10 @@ impl Factors {
     /// The product, applied in a fixed order so its rounding never varies.
     pub(crate) fn score(&self) -> u64 {
         [
-            self.reach,
-            self.worth,
+            self.trades,
+            self.firepower,
             self.coverage,
             self.splash,
-            self.immune,
             self.affordable,
             self.variety,
         ]
@@ -188,6 +188,20 @@ struct Enemy {
     clustered: bool,
     /// The most recently seen enemy ground units, by tile and full health.
     targets: Vec<(TilePos, u32)>,
+    /// The armed ground units behind `ground`, each kind with its value, and
+    /// those of them that are heavy: what the line and anti-heavy units
+    /// fight.
+    ground_units: Vec<(Piece, u64)>,
+    heavy_units: Vec<(Piece, u64)>,
+    /// The aircraft behind `air`, each kind with its value.
+    air_units: Vec<(Piece, u64)>,
+    /// The guns behind `defenses`, each at its rung.
+    guns: Vec<(Piece, u64)>,
+    /// What `ground`, `heavy` and `air` count beyond those units: known
+    /// producers and cradles, which the chart does not measure.
+    ground_extra: u64,
+    heavy_extra: u64,
+    air_extra: u64,
 }
 
 /// Whether `kind` is an armed flyer whose weapons reach only the ground.
@@ -218,6 +232,13 @@ impl Enemy {
             reach: None,
             clustered: false,
             targets: Vec::new(),
+            ground_units: Vec::new(),
+            heavy_units: Vec::new(),
+            air_units: Vec::new(),
+            guns: Vec::new(),
+            ground_extra: 0,
+            heavy_extra: 0,
+            air_extra: 0,
         };
         let defender = defender();
         let heaviest = heaviest_projectile();
@@ -231,8 +252,10 @@ impl Enemy {
                     enemy.shelling += value;
                 }
             }
+            let piece = Piece::Unit(unit.kind);
             if unit.kind.stats().domain == Domain::Air {
                 enemy.air += value;
+                enemy.air_units.push((piece, value));
                 if unit.kind.stats().can_fight() {
                     enemy.armed_air += value;
                 }
@@ -241,8 +264,10 @@ impl Enemy {
                 }
             } else if unit.kind.stats().can_fight() {
                 enemy.ground += value;
+                enemy.ground_units.push((piece, value));
                 if heavy(unit.kind) {
                     enemy.heavy += value;
+                    enemy.heavy_units.push((piece, value));
                 }
             }
             if let Some(reach) = reach(unit.kind) {
@@ -259,8 +284,14 @@ impl Enemy {
             // against the air, a Fabricator on the ground.
             let price = u64::from(building.kind.base_stats().construction.cost);
             match building.kind {
-                BuildingKind::Airworks => enemy.air += price,
-                BuildingKind::Fabricator => enemy.ground += price,
+                BuildingKind::Airworks => {
+                    enemy.air += price;
+                    enemy.air_extra += price;
+                }
+                BuildingKind::Fabricator => {
+                    enemy.ground += price;
+                    enemy.ground_extra += price;
+                }
                 _ => {}
             }
             // A known cradle counts as the machine it will stand up, before it
@@ -271,6 +302,7 @@ impl Enemy {
                 let value = u64::from(machine.stats().cost);
                 if machine.stats().domain == Domain::Air {
                     enemy.air += value;
+                    enemy.air_extra += value;
                     if machine.stats().can_fight() {
                         enemy.armed_air += value;
                     }
@@ -279,13 +311,19 @@ impl Enemy {
                     }
                 } else {
                     enemy.ground += value;
+                    enemy.ground_extra += value;
                     if heavy(machine) {
                         enemy.heavy += value;
+                        enemy.heavy_extra += value;
                     }
                 }
             }
             if building.kind.fires() {
-                enemy.defenses += crate::missions::building_value(building);
+                let value = crate::missions::building_value(building);
+                enemy.defenses += value;
+                enemy
+                    .guns
+                    .push((Piece::Gun(building.kind, building.tier), value));
             }
             if let Some((_, stats)) = defender
                 && building.built
@@ -443,11 +481,51 @@ pub(crate) struct Needs {
     /// Whether ground units reach an enemy only by lift.
     lifted: bool,
     enemy: Enemy,
+    /// The known enemy each role answers, each piece with its value: what a
+    /// unit for the role is weighed against.
+    foes: [Vec<(Piece, u64)>; ROLES.len()],
     traits: PersonalityTraits,
+    stance: BotStance,
     income: u32,
     /// Units the seat has of each kind, alive, carried or queued, in
     /// `UnitKind::ALL` order.
     kinds: [u32; UnitKind::ALL.len()],
+}
+
+/// Per mille a kind counts toward its role's choice while the seat has none
+/// of it among the role's units, and how much of that a whole share of the
+/// role takes away: a shape of the choice that has a role's kinds take
+/// turns, not a count.
+const VARIETY_ABSENT: u64 = 1_500;
+const VARIETY_SPREAD: u64 = 1_000;
+
+/// Per-mille weight a 0..=100 trait gives the role it favours: three times
+/// as wide as [`weight`], so a seat's army shows its personality. A
+/// personality limit.
+fn role_weight(trait_value: u8) -> u64 {
+    250 + 15 * u64::from(trait_value)
+}
+
+/// Per mille by which a stance leans a role of the army: a Turtle toward
+/// siege and anti-air and away from strikes from the air, an Aggressive seat
+/// toward its line and the air and away from slow siege. A stance limit.
+fn stance_lean(stance: BotStance, role: Role) -> u64 {
+    match (stance, role) {
+        (BotStance::Turtle, Role::Siege | Role::AntiAir)
+        | (BotStance::Aggressive, Role::Line | Role::AirStrike) => 1_250,
+        (BotStance::Turtle, Role::AirStrike) | (BotStance::Aggressive, Role::Siege) => 800,
+        _ => 1_000,
+    }
+}
+
+/// Per mille of the air share a stance would have strike from the air: a
+/// stance limit.
+fn stance_air(stance: BotStance) -> i64 {
+    match stance {
+        BotStance::Turtle => 500,
+        BotStance::Balanced => 1_000,
+        BotStance::Aggressive => 1_500,
+    }
 }
 
 /// Per-mille weight of a 0..=100 trait.
@@ -468,11 +546,17 @@ fn siege_share(stance: BotStance) -> i64 {
 
 /// Per mille of the army each point of the siege trait away from 50 moves
 /// the siege share: a personality limit.
-const SIEGE_SHARE_PER_TRAIT: i64 = 3;
+const SIEGE_SHARE_PER_TRAIT: i64 = 9;
 
-/// How much of the army a seat's air trait would have strike from the air: the
-/// trait over this. A personality limit.
-const AIR_SHARE_DIVISOR: i64 = 400;
+/// Per ten thousand of the army each point of the air trait would have strike
+/// from the air, at a Balanced stance: a personality limit.
+const AIR_SHARE_PER_TRAIT: i64 = 75;
+
+/// What of `army` a seat's air trait and stance would have strike from the
+/// air.
+fn air_share(army: i64, traits: PersonalityTraits, stance: BotStance) -> i64 {
+    army * i64::from(traits.air) * AIR_SHARE_PER_TRAIT / 10_000 * stance_air(stance) / 1_000
+}
 
 /// Where the seat's army can go.
 #[derive(Clone, Copy)]
@@ -510,6 +594,7 @@ pub(crate) fn needs(
 ) -> Needs {
     let enemy = Enemy::of(observation, memory);
     let mut own = [0_i64; ROLES.len()];
+    let mut units: [Vec<(Piece, u64)>; ROLES.len()] = Default::default();
     let mut kinds = [0_u32; UnitKind::ALL.len()];
     let owned = observation
         .my_units
@@ -520,35 +605,53 @@ pub(crate) fn needs(
     for kind in owned {
         if let Some(role) = role(kind) {
             own[role as usize] += i64::from(kind.stats().cost);
+            units[role as usize].push((Piece::Unit(kind), u64::from(kind.stats().cost)));
         }
         kinds[index(kind)] += 1;
     }
+    // Once the seat can train anti-heavy units they answer the heavies and
+    // the line the rest; until then the line answers everything.
+    let anti_heavy = trainable(observation, Role::AntiHeavy);
+    let foes = foes(&enemy, anti_heavy);
+    // A role's enemy is weighed against the seat's units in the role, or,
+    // with none yet, against the kinds it can train for it; its own units
+    // against that enemy.
+    let met = |role: Role| {
+        let index = role as usize;
+        let against = if units[index].is_empty() {
+            trainable_kinds(observation, role)
+        } else {
+            units[index].clone()
+        };
+        i64::try_from(weigh(&foes[index], &against)).unwrap_or(i64::MAX)
+    };
+    let held = |role: Role| {
+        let index = role as usize;
+        i64::try_from(weigh(&units[index], &foes[index])).unwrap_or(i64::MAX)
+    };
+    let extra = |value: u64| i64::try_from(value).unwrap_or(i64::MAX);
     // Point defenders shield the army rather than make it bigger.
     let army: i64 = own.iter().sum::<i64>() - own[Role::Screen as usize];
-    let air = i64::try_from(enemy.air).unwrap_or(i64::MAX);
-    let ground = i64::try_from(enemy.ground).unwrap_or(i64::MAX);
-    let heavy = i64::try_from(enemy.heavy).unwrap_or(i64::MAX);
-    let defenses = i64::try_from(enemy.defenses).unwrap_or(i64::MAX);
     let mut need = [0_i64; ROLES.len()];
     let answered =
         i64::try_from(enemy.shelling * 1_000 / enemy.shells.max(1_000)).unwrap_or(i64::MAX);
     if outlet.ground {
-        // Once the seat can train anti-heavy units they answer the heavies
-        // and the line the rest; until then the line answers everything.
-        let fought = if trainable(observation, Role::AntiHeavy) {
-            ground - heavy
-        } else {
-            ground
-        };
-        need[Role::Line as usize] = (3 * fought / 4).max(2 * army / 5) - own[Role::Line as usize];
+        let fought = met(Role::Line) + extra(enemy.ground_extra)
+            - if anti_heavy {
+                extra(enemy.heavy_extra)
+            } else {
+                0
+            };
+        need[Role::Line as usize] = (3 * fought / 4).max(2 * army / 5) - held(Role::Line);
         let share = if outlet.lifted {
             0
         } else {
             siege_share(stance) + SIEGE_SHARE_PER_TRAIT * (i64::from(traits.siege) - 50)
         };
         need[Role::Siege as usize] =
-            defenses / 2 + army * share / 1_000 - own[Role::Siege as usize];
-        need[Role::AntiHeavy as usize] = 3 * heavy / 4 - own[Role::AntiHeavy as usize];
+            met(Role::Siege) / 2 + army * share / 1_000 - held(Role::Siege);
+        need[Role::AntiHeavy as usize] =
+            3 * (met(Role::AntiHeavy) + extra(enemy.heavy_extra)) / 4 - held(Role::AntiHeavy);
         // Defenders walk with the army, which a lifted army leaves behind.
         if !outlet.lifted
             && let Some((cost, _)) = defender()
@@ -571,36 +674,80 @@ pub(crate) fn needs(
         let invaders = i64::try_from(outlet.invaders).unwrap_or(i64::MAX);
         need[Role::Line as usize] = 3 * invaders / 4 - own[Role::Line as usize];
     }
-    need[Role::AntiAir as usize] = 3 * air / 4 - own[Role::AntiAir as usize];
+    need[Role::AntiAir as usize] =
+        3 * (met(Role::AntiAir) + extra(enemy.air_extra)) / 4 - held(Role::AntiAir);
     if outlet.air_strikes {
         let strike = i64::try_from(outlet.strike).unwrap_or(i64::MAX);
         // A gunship does the air's work without being one of the army's roles.
         let gunships = i64::try_from(crate::breach::fielded(observation, crate::gunship::gunship))
             .unwrap_or(i64::MAX);
-        need[Role::AirStrike as usize] = (army * i64::from(traits.air) / AIR_SHARE_DIVISOR)
-            .max(strike)
+        need[Role::AirStrike as usize] = (air_share(army, traits, stance)).max(strike)
             - own[Role::AirStrike as usize]
             - gunships;
     }
     Needs {
         need,
-        air_share: u64::try_from(army * i64::from(traits.air) / AIR_SHARE_DIVISOR).unwrap_or(0),
+        air_share: u64::try_from(air_share(army, traits, stance)).unwrap_or(0),
         ground: outlet.ground || outlet.invaders > 0,
         lifted: outlet.lifted,
         weight: [
-            1_000,
-            weight(traits.siege),
-            weight(traits.fortification),
-            weight(traits.air),
-            weight(traits.support),
+            stance_lean(stance, Role::Line),
+            role_weight(traits.siege) * stance_lean(stance, Role::Siege) / 1_000,
+            role_weight(traits.fortification) * stance_lean(stance, Role::AntiAir) / 1_000,
+            role_weight(traits.air) * stance_lean(stance, Role::AirStrike) / 1_000,
+            role_weight(traits.support),
             1_000,
         ],
+        stance,
         answered,
         enemy,
+        foes,
         traits,
         income,
         kinds,
     }
+}
+
+/// The known enemy each role answers: the line the ground units, less the
+/// heavies once anti-heavy units can answer them; siege the guns;
+/// anti-heavy the heavies; anti-air the aircraft; strike aircraft all of it,
+/// what they hit and what shoots them down alike.
+fn foes(enemy: &Enemy, anti_heavy: bool) -> [Vec<(Piece, u64)>; ROLES.len()] {
+    let mut foes: [Vec<(Piece, u64)>; ROLES.len()] = Default::default();
+    foes[Role::Line as usize] = enemy
+        .ground_units
+        .iter()
+        .copied()
+        .filter(|(piece, _)| !anti_heavy || !matches!(piece, Piece::Unit(kind) if heavy(*kind)))
+        .collect();
+    foes[Role::Siege as usize].clone_from(&enemy.guns);
+    foes[Role::AntiHeavy as usize].clone_from(&enemy.heavy_units);
+    foes[Role::AntiAir as usize].clone_from(&enemy.air_units);
+    foes[Role::AirStrike as usize] = enemy
+        .ground_units
+        .iter()
+        .chain(&enemy.guns)
+        .chain(&enemy.air_units)
+        .copied()
+        .collect();
+    foes
+}
+
+/// Every kind the seat's built producers train for `role`, at even value:
+/// what a role's enemy is weighed against before the seat has any of it.
+fn trainable_kinds(observation: &ObservationData, role: Role) -> Vec<(Piece, u64)> {
+    let mut kinds: Vec<UnitKind> = BuildingKind::ALL
+        .into_iter()
+        .filter(|building| crate::investments::built(observation, *building))
+        .flat_map(|building| producible(observation, building))
+        .filter(|kind| self::role(*kind) == Some(role))
+        .collect();
+    kinds.sort_by_key(|kind| index(*kind));
+    kinds.dedup();
+    kinds
+        .into_iter()
+        .map(|kind| (Piece::Unit(kind), 1_000))
+        .collect()
 }
 
 /// What answers a short defense: a unit, or a structure that cannot move.
@@ -924,28 +1071,42 @@ impl Needs {
     /// by how much of two of it the role lacks.
     fn worth(&self, role: Role, kind: UnitKind) -> u32 {
         let lacking = u64::try_from(self.need[role as usize].max(0)).unwrap_or(0);
+        // Two of it at price: a strong counter is no less wanted for filling
+        // the deficit sooner.
         let pair = 2 * u64::from(kind.stats().cost.max(1));
         let score = self.weight[role as usize] * lacking.min(pair) / pair;
         u32::try_from(score).unwrap_or(u32::MAX)
+    }
+
+    /// What a unit of `kind` fills of `role`'s deficit: its price weighed by
+    /// what it trades against the enemy the role answers. Strike aircraft
+    /// count at their price, as their need is sized.
+    fn counted(&self, kind: UnitKind, role: Role) -> u64 {
+        let cost = u64::from(kind.stats().cost);
+        if role == Role::AirStrike {
+            return cost;
+        }
+        cost * counters::weight(kind, &self.foes[role as usize]) / 1_000
     }
 
     /// Counts a unit queued this decision against its role's deficit.
     pub(crate) fn queued(&mut self, kind: UnitKind) {
         match role(kind) {
             Some(Role::Screen) => self.need[Role::Screen as usize] -= self.answered,
-            Some(role) => self.need[role as usize] -= i64::from(kind.stats().cost),
+            Some(role) => {
+                self.need[role as usize] -=
+                    i64::try_from(self.counted(kind, role)).unwrap_or(i64::MAX);
+            }
             None => {}
         }
         self.kinds[index(kind)] += 1;
     }
 
-    /// A product of coarse per-mille factors: reach against the enemy's
-    /// usual reach, what the role is for at the price (a siege unit's
-    /// firepower; any other's health, which keeps it fighting), covering
-    /// both of the enemy's domains, splash against clustered enemies, anti-air
-    /// that flies against enemy air that fires only at the ground,
-    /// affordability at the seat's income, variety within the role, and
-    /// personality.
+    /// A product of per-mille factors: what the kind trades against the
+    /// enemy the role answers, by the counter chart; a siege unit the chart
+    /// does not measure, its firepower per scrap; covering both of the
+    /// enemy's domains; splash against clustered enemies; affordability at
+    /// the seat's income; variety within the role; and personality.
     pub(crate) fn suitability(&self, kind: UnitKind, role: Role) -> u64 {
         self.factors(kind, role).score()
     }
@@ -953,17 +1114,11 @@ impl Needs {
     /// The factors of [`Self::suitability`].
     fn factors(&self, kind: UnitKind, role: Role) -> Factors {
         let stats = kind.stats();
-        let reach = match (reach(kind), self.enemy.reach) {
-            (Some(own), Some(enemy)) if own > enemy => 1_250,
-            (Some(own), Some(enemy)) if own < enemy => 750,
-            _ => 1_000,
-        };
-        let worth = match role {
-            Role::Siege | Role::AntiHeavy => firepower(kind),
-            Role::Line | Role::AntiAir | Role::AirStrike | Role::Screen => (750
-                + 5 * (i64::from(stats.max_hp) * 100 / i64::from(stats.cost) - 50))
-                .clamp(750, 1_250)
-                .cast_unsigned(),
+        let trades = counters::weight(kind, &self.foes[role as usize]);
+        let firepower = if role == Role::Siege && !counters::MEASURED.contains(&kind) {
+            firepower(kind)
+        } else {
+            1_000
         };
         let hits = |air: bool| {
             stats.weapons.iter().any(|weapon| {
@@ -986,29 +1141,23 @@ impl Needs {
         } else {
             1_000
         };
-        // Anti-air that flies is out of reach of enemy air that fires only at
-        // the ground, so it leans that way as much of the enemy's air does.
-        let immune = if role == Role::AntiAir && stats.domain == Domain::Air && self.enemy.air > 0 {
-            1_000 + 1_000 * self.enemy.grounders / self.enemy.air
-        } else {
-            1_000
-        };
         let price = u64::from(stats.cost);
         let affordable = (500 * u64::from(self.income) / price).clamp(500, 1_000);
-        let preference = match role {
-            Role::Line | Role::AntiHeavy => 1_000,
-            Role::Siege => weight(self.traits.siege),
-            Role::AntiAir => weight(self.traits.fortification),
-            Role::AirStrike => weight(self.traits.air),
-            Role::Screen => weight(self.traits.support),
-        };
+        let preference = stance_lean(self.stance, role)
+            * match role {
+                Role::Line | Role::AntiHeavy => 1_000,
+                Role::Siege => role_weight(self.traits.siege),
+                Role::AntiAir => role_weight(self.traits.fortification),
+                Role::AirStrike => role_weight(self.traits.air),
+                Role::Screen => role_weight(self.traits.support),
+            }
+            / 1_000;
         Factors {
             preference,
-            reach,
-            worth,
+            trades,
+            firepower,
             coverage,
             splash,
-            immune,
             affordable,
             variety: self.variety(kind, role),
         }
@@ -1027,7 +1176,7 @@ impl Needs {
             return 1_000;
         }
         let share = u64::from(self.kinds[index(kind)]) * 1_000 / in_role;
-        1_200 - 400 * share / 1_000
+        VARIETY_ABSENT - VARIETY_SPREAD * share / 1_000
     }
 
     /// For each role the seat needs but cannot train at all, the cheapest

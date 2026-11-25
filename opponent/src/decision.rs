@@ -1418,7 +1418,10 @@ fn produce(
 
 /// Ready producers left with no wanted role and no small stock train ground
 /// units while ground units can reach an enemy, unless another producer
-/// serves a wanted role: the scrap waits for it.
+/// serves a wanted role: the scrap waits for it. A producer trains only a
+/// unit within [`WAIT_FOR_BETTER`] of the best any of the seat's producers
+/// trains for the role: a Foundry's Sentinels do not pad a line a
+/// Fabricator's Wardens fill far better.
 fn fill(
     observation: &ObservationData,
     producers: &[Producer<'_>],
@@ -1441,6 +1444,8 @@ fn fill(
         }
         if let Some(role) = needs.fallback_role(observation, kind)
             && let Some(unit) = needs.unit(observation, kind, role, ledger.spendable())
+            && needs.suitability(unit, role) * 1_000
+                >= best_for(observation, producers, needs, role) * WAIT_FOR_BETTER
             && !instead(saving, unit)
             && ledger.train(producer.building.id, unit)
         {
@@ -1453,6 +1458,21 @@ fn fill(
             needs.queued(unit);
         }
     }
+}
+
+/// How well the best unit any of `producers` trains suits `role`.
+fn best_for(
+    observation: &ObservationData,
+    producers: &[Producer<'_>],
+    needs: &Needs,
+    role: composition::Role,
+) -> u64 {
+    producers
+        .iter()
+        .filter_map(|producer| needs.unit(observation, producer.building.kind, role, u32::MAX))
+        .map(|unit| needs.suitability(unit, role))
+        .max()
+        .unwrap_or(0)
 }
 
 /// The ready producers nothing queued at this decision, less those that wait

@@ -1100,3 +1100,48 @@ fn a_lone_enemy_builder_draws_the_cheapest_unit_before_general_production() {
         "a Flak Turret cannot hurt what goes after the builder"
     );
 }
+
+#[test]
+fn a_line_facing_lancers_waits_for_a_warden_rather_than_add_a_sentinel() {
+    // Sentinels die to Lancers' reach where Wardens outlast them: once
+    // Lancers are known, a line mostly of Wardens no longer tops up with a
+    // Sentinel while the Fabricator is busy.
+    let scenario = lined(1, 2, 12);
+    assert_eq!(
+        foundry_trains_beside_a_busy_fabricator(&scenario),
+        [UnitKind::Sentinel],
+        "premise: with no enemy known it does"
+    );
+    let lancers = (0..6_u32).map(|index| {
+        let tile = TilePos::new(
+            20 + i32::try_from(index % 2).unwrap(),
+            1 + i32::try_from(index / 2).unwrap(),
+        );
+        (1_000 + index, UnitKind::Lancer, tile, 0)
+    });
+    let trained = beside_a_busy_fabricator(&scenario, |state| {
+        restored_with(&seat(&scenario, 0), &scenario, state, |json| {
+            json["memory"]["units"] = remembered(lancers);
+        })
+    });
+    assert_eq!(trained, []);
+}
+
+#[test]
+fn a_foundry_does_not_pad_a_full_army_with_sentinels_a_fabricator_outdoes() {
+    // No role wants more, so idle producers spend on the line; the
+    // Fabricator's Warden suits it far better than another Sentinel.
+    let mut scenario = lined(10, 0, 10);
+    scenario.players[0].scrap = 1_000;
+    let state = scenario.build().unwrap();
+    let trained = trains(&seat(&scenario, 0).act(&state, &mut OwnEvents::default()));
+    let foundry = foundries(&state, PlayerId(0))[0];
+    assert!(
+        trained.contains(&(fabricator(&state), UnitKind::Warden)),
+        "premise: the army is padded: {trained:?}"
+    );
+    assert!(
+        !trained.contains(&(foundry, UnitKind::Sentinel)),
+        "{trained:?}"
+    );
+}
