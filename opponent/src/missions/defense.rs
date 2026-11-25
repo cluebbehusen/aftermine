@@ -16,7 +16,7 @@ use super::{
     AttackPhase, DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, against_machines,
     fill, force, hits, hunt, insert, meeting, mine, reached, run, value, worth,
 };
-use crate::composition::traded;
+use crate::counters::weight;
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, gap, ring};
 use crate::map::MapModel;
@@ -185,12 +185,17 @@ impl Missions {
             // it, not only the enemies that came near the buildings: a line
             // held a few tiles behind them joins in. Going at an escorted
             // gun, they meet what stands near it too.
-            let meets = grounded
-                .filter(|_| gathering)
-                .map_or(0, |goal| meeting::opposed(observation, memory, goal))
-                .max(shelling.filter(|_| escorted).map_or(0, |threat| {
-                    meeting::opposed(observation, memory, threat.tile)
-                }));
+            let meet = |place: TilePos| -> u64 {
+                meeting::joiners(observation, memory, place)
+                    .into_iter()
+                    .map(|(kind, worth)| siege.trades.enemy(kind, worth))
+                    .sum()
+            };
+            let meets = grounded.filter(|_| gathering).map_or(0, meet).max(
+                shelling
+                    .filter(|_| escorted)
+                    .map_or(0, |threat| meet(threat.tile)),
+            );
             let pressing = siege.pressing_value(meets);
             let besides: Vec<TilePos> = siege.batteries.iter().map(|(_, beside)| *beside).collect();
             // An escort beside a battery is pressing already: it counts once.
@@ -487,8 +492,8 @@ impl Missions {
         groups: &mut [(&BuildingObs, Siege<'_>, bool)],
         difficulty: BotDifficulty,
     ) {
+        let now = observation.tick;
         for (foundry, siege, _) in groups {
-            siege.trades = Trades::of(siege, difficulty);
             let component = map.component(foundry.anchor);
             let defenders = self
                 .list
@@ -501,14 +506,47 @@ impl Missions {
             let mut pool: Vec<UnitId> = lendable.iter().copied().chain(defenders).collect();
             pool.sort_unstable();
             pool.dedup();
-            let pool: Vec<&UnitObs> = pool
+            let armed: Vec<&UnitObs> = pool
                 .into_iter()
                 .filter(|id| !ledger.stuck(*id))
                 .filter_map(|id| mine(observation, id))
-                .filter(|unit| hits(unit, Domain::Ground))
+                .filter(|unit| !unit.kind.stats().weapons.is_empty())
                 .filter(|unit| {
                     unit.kind.stats().domain == Domain::Air || map.component(unit.tile) == component
                 })
+                .collect();
+            let own: Vec<(UnitKind, u64)> =
+                armed.iter().map(|unit| (unit.kind, value(unit))).collect();
+            let recalled: Vec<_> = memory
+                .units()
+                .iter()
+                .filter(|seen| siege.recalled.contains(&seen.id))
+                .collect();
+            let attackers: Vec<(UnitKind, u64)> = siege
+                .units
+                .iter()
+                .map(|threat| (threat.kind, value(threat)))
+                .chain(recalled.iter().map(|seen| {
+                    let value = seen.value(now) * against_machines(seen.kind) / 1_000;
+                    (seen.kind, value)
+                }))
+                .collect();
+            siege.trades = Trades::of(&attackers, &own, difficulty);
+            // Remembered attackers press by what they trade against the seat,
+            // as those in sight do.
+            siege.remembered = [Domain::Ground, Domain::Air].map(|domain| {
+                recalled
+                    .iter()
+                    .filter(|seen| seen.kind.stats().domain == domain)
+                    .map(|seen| {
+                        let value = seen.value(now) * against_machines(seen.kind) / 1_000;
+                        siege.trades.enemy(seen.kind, value)
+                    })
+                    .sum()
+            });
+            let pool: Vec<&UnitObs> = armed
+                .into_iter()
+                .filter(|unit| hits(unit, Domain::Ground))
                 .collect();
             // Batteries are guns, not the units the trades read.
             let force: u64 = pool.iter().map(|unit| value(unit)).sum();
@@ -1201,40 +1239,75 @@ pub(super) fn home_post(
     waiting_post(map, frame, home, toward)
 }
 
-/// What the seat's units trade against the armed ground enemies in sight of
-/// one Foundry, at the rungs that read threats: each counts at the attacker
-/// value it would destroy per scrap of its price, by [`traded`]. A unit cheaper than the attackers but
-/// trading poorly against them would only feed them.
+/// What the seat's units and their attackers are worth against each other
+/// at one Foundry, at the rungs that read threats: each counts at its price
+/// weighed by what its kind trades against the other side's, by the counter
+/// chart. Lancers are worth more against Sentinels than their scrap says,
+/// Sentinels far less against Lancers; kinds the chart does not measure
+/// count at their price.
 #[derive(Default)]
 struct Trades {
-    /// Per mille of its price each kind brings; empty when every kind
-    /// counts in full.
-    shares: Vec<(UnitKind, u64)>,
+    /// Per mille of its price each of the seat's kinds is worth against the
+    /// ground attackers and against the air ones; empty when every kind
+    /// counts at its price.
+    own: Vec<(UnitKind, [u64; 2])>,
+    /// The seat's units, each kind with its value: what an enemy is weighed
+    /// against. None when every kind counts at its price.
+    against: Option<Vec<(UnitKind, u64)>>,
 }
 
 impl Trades {
-    fn of(siege: &Siege<'_>, difficulty: BotDifficulty) -> Self {
-        let attackers: Vec<(UnitKind, u64)> = siege
-            .units
-            .iter()
-            .filter(|threat| threat.body_domain() == Domain::Ground)
-            .map(|threat| (threat.kind, value(threat)))
-            .collect();
+    /// The trades between `attackers` and the seat's `own` units, each kind
+    /// with its value, at `difficulty`.
+    fn of(
+        attackers: &[(UnitKind, u64)],
+        own: &[(UnitKind, u64)],
+        difficulty: BotDifficulty,
+    ) -> Self {
         if !crate::reads_threats(difficulty) || attackers.is_empty() {
             return Self::default();
         }
-        let shares = UnitKind::ALL
-            .iter()
-            .map(|kind| (*kind, traded(*kind, &attackers)))
-            .collect();
-        Self { shares }
+        let flying = |domain: Domain| -> Vec<(UnitKind, u64)> {
+            attackers
+                .iter()
+                .copied()
+                .filter(|(kind, _)| kind.stats().domain == domain)
+                .collect()
+        };
+        let (ground, air) = (flying(Domain::Ground), flying(Domain::Air));
+        Self {
+            own: UnitKind::ALL
+                .iter()
+                .map(|kind| (*kind, [weight(*kind, &ground), weight(*kind, &air)]))
+                .collect(),
+            against: Some(own.to_vec()),
+        }
     }
 
-    /// `unit`'s [`force`] against ground and air, on the ground cut to what
-    /// it trades against the attackers.
+    /// Per mille of its price a unit of the seat's `kind` is worth against
+    /// the ground and the air attackers.
+    fn own(&self, kind: UnitKind) -> [u64; 2] {
+        self.own
+            .iter()
+            .find(|(own, _)| *own == kind)
+            .map_or([1_000; 2], |(_, weights)| *weights)
+    }
+
+    /// What an enemy worth `value` at its price is worth against the seat's
+    /// units, those that cannot fire on it included: Buzzards over Lancers
+    /// destroy them freely, and that is the threat an air defense answers.
+    fn enemy(&self, kind: UnitKind, value: u64) -> u64 {
+        self.against
+            .as_ref()
+            .map_or(value, |against| value * weight(kind, against) / 1_000)
+    }
+
+    /// `unit`'s [`force`] against ground and air, each weighed by what it
+    /// trades against the attackers there.
     fn force(&self, unit: &UnitObs) -> [u64; 2] {
         let [ground, air] = force(unit.kind, unit.hp);
-        [ground.min(self.ground(unit)), air]
+        let [on_ground, in_air] = self.own(unit.kind);
+        [ground * on_ground / 1_000, air * in_air / 1_000]
     }
 
     /// What `units` that can hit ground are worth against the ground attackers
@@ -1260,16 +1333,10 @@ impl Trades {
             .sum()
     }
 
-    /// `unit`'s strength against the ground attackers: its [`value`], cut to
-    /// what it trades against them.
+    /// `unit`'s strength against the ground attackers: its [`value`],
+    /// weighed by what it trades against them.
     fn ground(&self, unit: &UnitObs) -> u64 {
-        let value = value(unit);
-        self.shares
-            .iter()
-            .find(|(kind, _)| *kind == unit.kind)
-            .map_or(value, |(_, share)| {
-                value.min(worth(unit.kind, unit.hp) * share / 1_000)
-            })
+        value(unit) * self.own(unit.kind)[0] / 1_000
     }
 }
 
@@ -1389,15 +1456,16 @@ impl Siege<'_> {
     }
 
     /// What its armed attackers are worth against ground and air, by half
-    /// again: those in sight and remembered near the buildings, or on the
-    /// ground what the defenders would `meet` where they fight, if more.
+    /// again, each weighed by what it trades against the seat's units: those
+    /// in sight and remembered near the buildings, or on the ground what the
+    /// defenders would `meet` where they fight, if more.
     fn pressing_value(&self, meet: u64) -> [u64; 2] {
         [Domain::Ground, Domain::Air].map(|domain| {
             let near = self
                 .units
                 .iter()
                 .filter(|threat| threat.body_domain() == domain)
-                .map(|threat| value(threat))
+                .map(|threat| self.trades.enemy(threat.kind, value(threat)))
                 .sum::<u64>()
                 + self.remembered[usize::from(domain == Domain::Air)];
             let met = if domain == Domain::Ground { meet } else { 0 };

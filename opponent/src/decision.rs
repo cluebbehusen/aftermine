@@ -1530,7 +1530,15 @@ pub(crate) fn answer(fighter: Fighter, short: &Shortfall) -> u64 {
     }
     pressing
         .iter()
-        .map(|(attacker, value)| composition::matchup(fighter, *attacker) * value)
+        .map(|(attacker, value)| {
+            // Units trade as the counter chart measured them; structures,
+            // which it does not measure, by the duel estimate.
+            let trades = match fighter {
+                Fighter::Unit(kind) => crate::counters::pair(kind, *attacker),
+                Fighter::Structure(_) => composition::matchup(fighter, *attacker),
+            };
+            trades * value
+        })
         .sum::<u64>()
         / total
 }
@@ -1642,9 +1650,9 @@ fn awaited(
 /// bought, and one worth less than half the best answer the bank reaches
 /// soon, a unit or an emergency structure this decision put up, waits for
 /// it: units that die before they pay only feed the attackers. With
-/// `traded`, a unit queued makes up a ground shortfall at what it trades
-/// against the attackers, as a defense counts its own units; a guard counts
-/// its own at price, and so does what is queued for it.
+/// `traded`, a unit queued makes up a shortfall at what it trades against
+/// the attackers, as a defense counts its own units; a guard counts its own
+/// at price, and so does what is queued for it.
 #[expect(
     clippy::too_many_arguments,
     reason = "a defense's answer reads the seat's producers, income and ledger"
@@ -1665,18 +1673,18 @@ fn arm(
     let cover = |shortfalls: &mut [Shortfall], kind: UnitKind, at: Option<u32>| {
         if let Some(short) = shortfalls.iter_mut().find(|short| helps(kind, at, short)) {
             let cost = u64::from(kind.stats().cost);
-            let ground = if traded {
-                let grounded: Vec<(UnitKind, u64)> = short
+            let made = [Domain::Ground, Domain::Air].map(|domain| {
+                if !traded {
+                    return cost;
+                }
+                let there: Vec<(UnitKind, u64)> = short
                     .attackers
                     .iter()
                     .copied()
-                    .filter(|(attacker, _)| attacker.stats().domain == Domain::Ground)
+                    .filter(|(attacker, _)| attacker.stats().domain == domain)
                     .collect();
-                cost * composition::traded(kind, &grounded) / 1_000
-            } else {
-                cost
-            };
-            let made = [ground, cost];
+                cost * crate::counters::weight(kind, &there) / 1_000
+            });
             for (index, domain) in [Domain::Ground, Domain::Air].into_iter().enumerate() {
                 if hits(kind, domain) {
                     short.gap[index] = short.gap[index].saturating_sub(made[index]);

@@ -36,3 +36,9 @@ fn an_unknown_kind_is_refused() {
     let error = refused(driver().args(["fight-lab", "--kinds", "lancer,dragon"]));
     assert!(error.contains("\"dragon\" is not a unit kind"), "{error}");
 }
+
+#[test]
+fn the_checked_in_counter_chart_is_what_the_lab_measures() {
+    let report = succeeded(driver().args(["fight-lab", "--check"]));
+    assert!(report.contains("the counter chart is current"), "{report}");
+}

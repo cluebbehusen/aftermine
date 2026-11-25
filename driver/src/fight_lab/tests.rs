@@ -110,6 +110,50 @@ fn the_report_shows_each_budget_and_the_mixed_fights() {
 }
 
 #[test]
+fn a_fight_s_ratio_is_held_within_an_eighth_and_eight_times() {
+    let ratio_of = |killed, lost| ratio(Trade { killed, lost });
+    assert_eq!(ratio_of(0, 0), 1_000, "neither touched the other");
+    assert_eq!(ratio_of(30, 0), 8_000);
+    assert_eq!(ratio_of(0, 30), 125);
+    assert_eq!(ratio_of(300, 200), 1_500);
+    assert_eq!(ratio_of(100, 1), 8_000);
+}
+
+#[test]
+fn the_geometric_mean_is_the_root_of_the_product() {
+    assert_eq!(geometric_mean(&[1_000, 4_000]), 2_000);
+    assert_eq!(geometric_mean(&[125, 8_000]), 1_000);
+    assert_eq!(geometric_mean(&[1_500]), 1_500);
+}
+
+#[test]
+fn the_chart_source_carries_the_fingerprint_and_every_row() {
+    let (_, chart) = aftermine_opponent::chart();
+    let trades: Vec<Vec<u16>> = chart.iter().map(|row| row.to_vec()).collect();
+    let source = chart_source(&trades);
+    let stats = format!("{:016x}", aftermine_opponent::fingerprint());
+    assert!(
+        source.contains(&format!("0x{}_{}", &stats[..4], &stats[4..8])),
+        "{source}"
+    );
+    let rows = source
+        .lines()
+        .filter(|line| line.starts_with("    ["))
+        .count();
+    assert_eq!(rows, aftermine_opponent::MEASURED.len(), "{source}");
+}
+
+#[test]
+fn the_check_accepts_the_checked_in_chart_and_refuses_another() {
+    let (_, chart) = aftermine_opponent::chart();
+    let mut trades: Vec<Vec<u16>> = chart.iter().map(|row| row.to_vec()).collect();
+    check(&trades).unwrap();
+    trades[0][1] += 1;
+    let error = check(&trades).unwrap_err();
+    assert!(error.to_string().contains("Scuttler row"), "{error}");
+}
+
+#[test]
 fn a_unit_already_attacking_keeps_its_attack() {
     let mut state = field(&even(UnitKind::Lancer, 440), &even(UnitKind::Warden, 440))
         .unwrap()

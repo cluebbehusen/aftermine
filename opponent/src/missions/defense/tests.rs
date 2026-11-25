@@ -577,3 +577,19 @@ fn a_defense_whose_order_home_finds_no_room_stays_engaged() {
     ));
     assert_eq!(gone.goal, TilePos::new(5, 6));
 }
+
+#[test]
+fn an_attacker_the_seat_cannot_fire_on_is_worth_more_than_its_price() {
+    // Buzzards over Lancers destroy them freely; a Flakhound among them
+    // makes the Buzzards worth less.
+    let buzzards = [(UnitKind::Buzzard, 300)];
+    let prime = BotDifficulty::Prime;
+    let lancers = Trades::of(&buzzards, &[(UnitKind::Lancer, 330)], prime);
+    assert!(lancers.enemy(UnitKind::Buzzard, 300) > 600);
+    let flak = Trades::of(
+        &buzzards,
+        &[(UnitKind::Lancer, 330), (UnitKind::Flakhound, 330)],
+        prime,
+    );
+    assert!(flak.enemy(UnitKind::Buzzard, 300) < lancers.enemy(UnitKind::Buzzard, 300));
+}

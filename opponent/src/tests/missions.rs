@@ -160,7 +160,12 @@ fn a_mixed_raid_draws_defenders_for_each_domain_it_comes_from() {
                 .any(|unit| unit.id == **id && unit.kind == UnitKind::Lancer)
         })
         .count();
-    assert_eq!(lancers, 2, "and only the Lancers the ground raid needs");
+    // A Lancer outtrades a Sentinel many times over, so the raid needs fewer
+    // than all three.
+    assert!(
+        (1..3).contains(&lancers),
+        "only the Lancers the ground raid needs: {lancers}"
+    );
 }
 
 #[test]
@@ -341,10 +346,11 @@ fn defense_outranks_workers_under_a_small_allowance() {
 
 #[test]
 fn a_short_defense_nothing_pays_back_against_keeps_its_savings() {
-    // Lancers outrange a Turret and outfight what the seat could train: no
-    // answer pays back against them, so the scrap kept for the saving target
-    // stays kept rather than feed the attackers. A seat that judges the threat
-    // by its size answers with its cheapest unit, as before.
+    // Lancers outrange a Turret, and with Wardens beside them they outfight
+    // what the seat could train: no answer pays back against them, so the
+    // scrap kept for the saving target stays kept rather than feed the
+    // attackers. A seat that judges the threat by its size answers with its
+    // cheapest unit, as before.
     let threatened = |lancers: bool| {
         let mut scenario = arena(100);
         scenario.units.extend(workforce(0));
@@ -358,6 +364,8 @@ fn a_short_defense_nothing_pays_back_against_keeps_its_savings() {
             scenario.units.extend([
                 unit(1, UnitKind::Lancer, 9, 5),
                 unit(1, UnitKind::Lancer, 9, 6),
+                unit(1, UnitKind::Warden, 10, 5),
+                unit(1, UnitKind::Warden, 10, 6),
             ]);
         }
         scenario
@@ -1122,18 +1130,19 @@ fn defenders_short_of_an_escorted_gun_gather_beside_the_foundry_first() {
     // the gun one by one would die to them on the way, so a seat that
     // gathers waits beside the Foundry until it matches them and the gun,
     // then goes at the gun; Scrapheap, which defends piecemeal, goes at once.
-    let staged = |sentinels: &[(i32, i32)]| {
+    // Wardens, which trade with Lancers rather than feed them.
+    let staged = |defenders: &[(i32, i32)]| {
         let mut scenario = shelling(&[0]);
         escort(&mut scenario, &[0]);
         // Defenders closed up beside the picket rather than spread over the
         // garrison's spots, which would first send them to close up.
-        if !sentinels.is_empty() {
+        if !defenders.is_empty() {
             scenario.units.retain(|spec| {
                 spec.player != 0 || !GARRISON.contains(&turned(0, (spec.x, spec.y)))
             });
         }
-        for (x, y) in sentinels {
-            scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
+        for (x, y) in defenders {
+            scenario.units.push(unit(0, UnitKind::Warden, *x, *y));
         }
         let mut state = scenario.build().unwrap();
         open_fire(&mut state, &[0]);
@@ -2684,8 +2693,8 @@ fn only_a_defense_out_at_its_fight_holds_on_and_only_where_it_can_fall_back() {
 fn a_guard_short_of_known_enemies_is_answered_with_what_beats_them() {
     // Lancers stand near a bare expansion, not near enough to attack it, in a
     // West scout's sight. Its guard is short; a seat that reads threats trains
-    // what beats them, not Scuttlers, while Standard, which judges the threat
-    // by its size, still answers with the cheapest unit.
+    // the Warden that beats them, while Standard, which judges the threat by
+    // its size, answers with the cheapest unit.
     let trained = |difficulty: BotDifficulty| {
         let mut scenario = widened(arena(400), 12, 20);
         scenario.players[0].bot_config = Some(rung(difficulty));
@@ -2717,7 +2726,7 @@ fn a_guard_short_of_known_enemies_is_answered_with_what_beats_them() {
     };
     let prime = trained(BotDifficulty::Prime);
     assert!(!prime.is_empty(), "premise: the short guard trains");
-    assert!(!prime.contains(&UnitKind::Scuttler), "{prime:?}");
+    assert!(prime.contains(&UnitKind::Warden), "{prime:?}");
     let standard = trained(BotDifficulty::Standard);
     assert!(standard.contains(&UnitKind::Scuttler), "{standard:?}");
 }
@@ -3587,6 +3596,12 @@ fn an_armed_aircraft_in_sight_comes_before_a_search() {
 /// The field with a West Fabricator far out east of its Foundry, three East
 /// Lancers at it, and West's `defenders` at home.
 fn lancers_far_out(defenders: &[UnitKind]) -> Scenario {
+    raiders_far_out(defenders, &[UnitKind::Lancer; 3])
+}
+
+/// The field with a West Fabricator far out east of its Foundry, East
+/// `raiders` beside it, and West's `defenders` at home.
+fn raiders_far_out(defenders: &[UnitKind], raiders: &[UnitKind]) -> Scenario {
     let mut scenario = field();
     scenario
         .buildings
@@ -3595,8 +3610,9 @@ fn lancers_far_out(defenders: &[UnitKind]) -> Scenario {
     for (kind, (x, y)) in defenders.iter().zip(home) {
         scenario.units.push(unit(0, *kind, x, y));
     }
-    for y in 10..=12 {
-        scenario.units.push(unit(1, UnitKind::Lancer, 22, y));
+    let beside = (22..=23).flat_map(|x| (10..=12).map(move |y| (x, y)));
+    for (kind, (x, y)) in raiders.iter().zip(beside) {
+        scenario.units.push(unit(1, *kind, x, y));
     }
     scenario
 }
@@ -3709,5 +3725,37 @@ fn a_defender_chasing_past_an_expansion_the_start_cannot_walk_to_runs_back() {
             .iter()
             .any(|(units, _)| units.contains(&chaser)),
         "{commands:?}"
+    );
+}
+
+#[test]
+fn lancers_go_out_against_sentinels_they_outtrade_though_they_cost_less() {
+    // Three Lancers cost less than five Sentinels, but trade far above their
+    // price against them: the rungs that read threats go out; one that
+    // judges by price waits for more.
+    let scenario = raiders_far_out(&[UnitKind::Lancer; 3], &[UnitKind::Sentinel; 5]);
+    assert!(
+        !goes_at_the_lancers(&scenario, BotDifficulty::Standard),
+        "premise: by price the Lancers are short"
+    );
+    assert!(goes_at_the_lancers(&scenario, BotDifficulty::Prime));
+}
+
+#[test]
+fn sentinels_weak_anti_air_leaves_a_shortfall_against_buzzards() {
+    // Four Sentinels cost what two Buzzards press for, but their guns barely
+    // touch aircraft: Prime finds its defense short and trains anti-air.
+    let mut scenario = raiders_far_out(&[UnitKind::Sentinel; 4], &[UnitKind::Buzzard; 2]);
+    scenario.players[0].scrap = 600;
+    let state = scenario.build().unwrap();
+    let (_, trace) = seat_with(&scenario, 0, rung(BotDifficulty::Prime))
+        .act_traced(&state, &mut OwnEvents::default());
+    let picks = trace.unwrap().army.picks;
+    assert!(
+        picks.iter().any(|pick| {
+            pick.unit == UnitKind::Flakhound
+                && matches!(pick.path, crate::trace::PickPath::Shortfall)
+        }),
+        "{picks:?}"
     );
 }

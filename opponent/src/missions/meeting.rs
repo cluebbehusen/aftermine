@@ -81,6 +81,21 @@ pub(super) fn opposed(observation: &ObservationData, memory: &Memory, place: Til
     joining(&foes(observation, memory), place)
 }
 
+/// The known armed enemy ground units that could join a fight at `place`,
+/// each kind with what it is worth against the seat's units: what
+/// [`opposed`] sums.
+pub(super) fn joiners(
+    observation: &ObservationData,
+    memory: &Memory,
+    place: TilePos,
+) -> Vec<(UnitKind, u64)> {
+    foes(observation, memory)
+        .into_iter()
+        .filter(|foe| foe.tile.chebyshev(place) <= foe.reach)
+        .map(|foe| (foe.kind, foe.worth))
+        .collect()
+}
+
 /// What the known armed enemy ground units other than the gun standing at
 /// `place` that could join a fight at it are worth: its escort, which
 /// defenders going at the gun meet on the way. Another gun beside it is

@@ -1061,7 +1061,7 @@ fn attackers_in_a_domain_already_covered_do_not_set_the_answer() {
     // a Flakhound is worth against the Buzzard.
     assert_eq!(
         crate::decision::answer(flakhound, &both([0, 120])),
-        crate::composition::matchup(flakhound, UnitKind::Buzzard)
+        crate::counters::pair(UnitKind::Flakhound, UnitKind::Buzzard)
     );
     assert!(
         crate::decision::answer(flakhound, &both([200, 120]))

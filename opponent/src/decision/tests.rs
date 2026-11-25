@@ -98,3 +98,22 @@ fn a_bastion_frees_no_savings_against_bombards_that_outrange_it() {
     // scrap kept for the saving target stays kept.
     assert_eq!(kept_against(UnitKind::Bombard, true), None);
 }
+
+#[test]
+fn against_sentinels_the_answer_is_the_lancer_that_outtrades_them() {
+    // A Lancer one-shots a Sentinel; a Warden takes two shots and is slow to
+    // reach them. Per scrap the Lancer destroys far more.
+    let short = Shortfall {
+        ground: None,
+        gap: [450, 0],
+        attackers: vec![(UnitKind::Sentinel, 450)],
+        read: true,
+    };
+    let worth = |kind| answer(Fighter::Unit(kind), &short);
+    assert!(
+        worth(UnitKind::Lancer) > worth(UnitKind::Warden),
+        "Lancer {} v Warden {}",
+        worth(UnitKind::Lancer),
+        worth(UnitKind::Warden)
+    );
+}
