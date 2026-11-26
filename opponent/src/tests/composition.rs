@@ -950,7 +950,7 @@ fn a_short_defense_trains_its_answer_before_general_production_takes_the_produce
     assert!(
         matches!(
             picks.iter().find(|pick| pick.building == fabricator),
-            Some(pick) if pick.path == PickPath::Shortfall
+            Some(pick) if matches!(pick.path, PickPath::Answer { .. })
         ),
         "{picks:?}"
     );
@@ -985,7 +985,8 @@ fn a_flak_turret_the_emergency_passes_over_does_not_hold_back_the_answer() {
     assert!(
         picks
             .iter()
-            .any(|pick| pick.path == PickPath::Shortfall && pick.unit == UnitKind::Flakhound),
+            .any(|pick| matches!(pick.path, PickPath::Answer { .. })
+                && pick.unit == UnitKind::Flakhound),
         "{picks:?}"
     );
 }

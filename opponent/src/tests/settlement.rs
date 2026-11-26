@@ -1229,11 +1229,13 @@ fn a_funded_island_raises_escort_capability_without_owning_future_units() {
         ),
         "{trace:?}"
     );
+    // Anti-air for the escort, whichever kind the army's variety prefers:
+    // a Skyhook lifts a Flakhound as well as a Talon flies.
     assert!(
         commands.iter().any(|c| matches!(
             c.command,
             Command::Train {
-                kind: UnitKind::Talon,
+                kind: UnitKind::Talon | UnitKind::Flakhound,
                 ..
             }
         )),

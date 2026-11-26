@@ -29,6 +29,7 @@ fn needs(reach: Option<Reach>, clustered: bool) -> Needs {
             air_extra: 0,
         },
         foes: Default::default(),
+        raised: [false; ROLES.len()],
         traits: crate::tests::middling(),
         stance: BotStance::Balanced,
         income: 1_000,
