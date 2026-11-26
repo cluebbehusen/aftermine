@@ -1,35 +1,45 @@
 use super::guns::{raises, sites_at};
 use super::*;
+use crate::counters::Piece;
 use crate::frame::doubled;
 
+/// A way in whose threat is `kind` alone, worth a thousand.
+fn facing(kind: UnitKind) -> Approach {
+    Approach {
+        edge: 0,
+        cut: None,
+        samples: Vec::new(),
+        gate_of: Vec::new(),
+        open: Vec::new(),
+        spotted: Vec::new(),
+        far: Vec::new(),
+        evidence: Evidence::Current,
+        source: (0, 0),
+        need: 0,
+        threat: Threat {
+            value: 1_000,
+            reaches: Vec::new(),
+            force: vec![(Piece::Unit(kind), 1_000)],
+        },
+    }
+}
+
 #[test]
-fn a_gun_holds_off_what_its_firepower_and_health_match_not_its_price() {
-    let [spread, clumped] = SPLASH_TARGETS;
-    let gun = |kind: BuildingKind, tier: u8, targets: u64| strength(kind.tier_stats(tier), targets);
-    let turret = gun(BuildingKind::Turret, 0, spread);
-    assert_eq!(
-        turret,
-        gun(BuildingKind::Turret, 0, clumped),
-        "one hit a shot"
-    );
-    assert!(turret < gun(BuildingKind::Turret, 1, spread));
-    assert!(gun(BuildingKind::Turret, 1, spread) < gun(BuildingKind::Turret, 2, spread));
-    // Per scrap, a lone Bastion holds off fewer spread Sentinels than a
-    // Turret, and a clump lifts it.
-    let per_scrap = |strength: u64, kind: BuildingKind| strength * 1_000 / price(kind.base_stats());
-    let turret = per_scrap(turret, BuildingKind::Turret);
-    let bastion = |targets| {
-        per_scrap(
-            gun(BuildingKind::Bastion, 0, targets),
-            BuildingKind::Bastion,
-        )
+fn a_gun_holds_off_what_it_trades_against_the_threat_not_a_fixed_strength() {
+    let per_scrap = |kind: BuildingKind, enemy: UnitKind| {
+        let cover = Cover::of(kind, 0, TilePos::new(10, 10)).unwrap();
+        facing(enemy).held(&cover) * 1_000 / cover.price
     };
     assert!(
-        bastion(spread) < turret,
-        "{} against {turret}",
-        bastion(spread)
+        per_scrap(BuildingKind::Bastion, UnitKind::Lancer)
+            > per_scrap(BuildingKind::Turret, UnitKind::Lancer),
+        "a Bastion holds Lancers, which beat a Turret"
     );
-    assert!(bastion(clumped) > bastion(spread) * 3 / 2);
+    assert!(
+        per_scrap(BuildingKind::Turret, UnitKind::Sentinel)
+            > per_scrap(BuildingKind::Turret, UnitKind::Lancer),
+        "a Turret holds off more of Sentinels than of Lancers"
+    );
 }
 
 #[test]
@@ -72,13 +82,11 @@ fn an_upgrade_adds_its_whole_strength_where_the_gun_did_not_reach() {
     let covers = |cover: Cover, point| cover.covers(&map, Domain::Ground, point);
     assert!(covers(turret, near) && !covers(turret, edge));
     assert!(covers(heavy, edge) && !covers(heavy, far));
-    let raised = |point| {
-        raises(&map, turret, heavy, Domain::Ground, point, |cover| {
-            cover.value[0]
-        })
-    };
-    assert_eq!(raised(near), heavy.value[0] - turret.value[0]);
-    assert_eq!(raised(edge), heavy.value[0]);
+    let approach = facing(UnitKind::Sentinel);
+    let held = |cover: &Cover| approach.held(cover);
+    let raised = |point| raises(&map, turret, heavy, Domain::Ground, point, held);
+    assert_eq!(raised(near), held(&heavy).saturating_sub(held(&turret)));
+    assert_eq!(raised(edge), held(&heavy));
     assert_eq!(raised(far), 0);
 }
 

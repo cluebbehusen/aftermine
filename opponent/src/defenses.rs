@@ -15,6 +15,7 @@ pub(crate) use lattice::autofill;
 mod obstacles;
 
 use crate::composition;
+use crate::counters::{Piece, trade};
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_of, footprint_centre, gap, tiles_of};
 use crate::investments::Investment;
@@ -29,7 +30,7 @@ use aftermine_sim::{BuildingId, BuildingKind, UnitKind};
 pub(crate) use bay::Span;
 use chassis::fx::Fx;
 use chassis::grid::TilePos;
-use guns::{SPLASH_TARGETS, strength, upgrade};
+use guns::upgrade;
 
 /// Tiles a built mast of `kind` at `tier` reaches by radar; zero without one.
 fn radar(kind: BuildingKind, tier: u8) -> i64 {
@@ -136,7 +137,7 @@ struct Approach {
     /// The cover that holds the threat off at a sample, in army scrap.
     need: u64,
     /// The threat along the way, in army scrap, how its known enemies reach
-    /// buildings, and whether they gather in clumps.
+    /// buildings, and those enemies as the counter chart weighs them.
     threat: Threat,
 }
 
@@ -151,13 +152,13 @@ struct Held {
 
 /// The value of the armed enemies the seat remembers near a source, at least
 /// an army at the stance's minimum, their reach against buildings with each
-/// one's value, and whether they gather in clumps a shell's splash hits
-/// several of.
+/// one's value, and the same enemies as the counter chart weighs them, made
+/// up to the minimum with Sentinels, or Buzzards in the air.
 #[derive(Clone, Default)]
 struct Threat {
     value: u64,
     reaches: Vec<(Fx, u64)>,
-    clustered: bool,
+    force: Vec<(Piece, u64)>,
 }
 
 impl Approach {
@@ -182,18 +183,13 @@ impl Approach {
             .sum()
     }
 
-    /// What `cover` holds off along this way in: its strength, less the
-    /// share of the threat it cannot fire back at.
+    /// What `cover` holds off along this way in, in army scrap: the gun's
+    /// price times what it trades against the threat by the counter chart,
+    /// which already counts the attackers that outrange it. Against one kind
+    /// this is where the gun and the threat, each weighed against the other,
+    /// stand even.
     fn held(&self, cover: &Cover) -> u64 {
-        let unanswered: u64 = self
-            .threat
-            .reaches
-            .iter()
-            .filter(|(reach, _)| !cover.answers(*reach))
-            .map(|(_, value)| value)
-            .sum();
-        let value = self.threat.value.max(1);
-        cover.value[usize::from(self.threat.clustered)] * (value - unanswered.min(value)) / value
+        cover.price * trade(cover.piece, &self.threat.force) / 1_000
     }
 }
 
@@ -245,9 +241,10 @@ impl Asset {
 #[derive(Clone, Copy)]
 struct Cover {
     centre: (i64, i64),
-    /// What the weapon holds off, in army scrap, against a spread enemy and
-    /// a clustered one: see [`strength`].
-    value: [u64; 2],
+    /// The gun at its tier, as the counter chart knows it, and the scrap
+    /// paid for it through that tier.
+    piece: Piece,
+    price: u64,
     /// Squared doubled reach, and squared doubled minimum range.
     reach2: i64,
     min2: i64,
@@ -271,7 +268,8 @@ impl Cover {
         let stats = kind.tier_stats(tier);
         let mut cover = Cover {
             centre: footprint_centre(kind, anchor),
-            value: SPLASH_TARGETS.map(|targets| strength(stats, targets)),
+            piece: Piece::Gun(kind, tier),
+            price: u64::from(kind.invested_cost(tier)),
             reach2: 0,
             min2: i64::MAX,
             range: Fx::ZERO,
@@ -382,7 +380,7 @@ impl Guard<'_> {
 
     /// What a defense of `kind` at `anchor` adds to `asset`'s approach: for a
     /// gun, the army scrap it closes of the shortfall against the threat
-    /// along the way at each sample it covers, at most its strength. A gun
+    /// along the way at each sample it covers, at most what it holds off. A gun
     /// firing indirect shells counts only samples its owner's or an ally's
     /// buildings see, since it fires no further than something spots for it.
     /// An Array adds
@@ -654,15 +652,36 @@ pub(crate) fn emergency(
             {
                 continue;
             }
-            // A new gun of each kind, or a tier more for a gun beside the
-            // building that holds off none of the attackers today.
-            let sites = kinds.iter().filter_map(|&kind| {
-                let (anchor, worth) = guard.best_where(
-                    kind,
-                    |other| other.anchor == asset.anchor,
-                    |anchor| {
-                        !crate::missions::meeting::overruns(observation, memory, map, kind, anchor)
-                            && placement::stands(
+            // A new gun of each kind that fires back at every attacker on
+            // the way in, or a tier more for a gun beside the building that
+            // holds off none of the attackers today. One they outrange only
+            // gives them a target.
+            let answers = |kind: BuildingKind| {
+                asset.approach(domain).is_some_and(|approach| {
+                    Cover::of(kind, 0, asset.anchor).is_some_and(|cover| {
+                        approach
+                            .threat
+                            .reaches
+                            .iter()
+                            .all(|(reach, _)| cover.answers(*reach))
+                    })
+                })
+            };
+            let sites = kinds
+                .iter()
+                .filter(|kind| answers(**kind))
+                .filter_map(|&kind| {
+                    let (anchor, worth) = guard.best_where(
+                        kind,
+                        |other| other.anchor == asset.anchor,
+                        |anchor| {
+                            !crate::missions::meeting::overruns(
+                                observation,
+                                memory,
+                                map,
+                                kind,
+                                anchor,
+                            ) && placement::stands(
                                 observation,
                                 map,
                                 memory,
@@ -670,11 +689,11 @@ pub(crate) fn emergency(
                                 &[],
                                 builder(kind, anchor).as_slice(),
                             )
-                    },
-                )?;
-                let price = kind.base_stats().construction.cost;
-                Some((worth, price, Answer::Site(kind, anchor)))
-            });
+                        },
+                    )?;
+                    let price = kind.base_stats().construction.cost;
+                    Some((worth, price, Answer::Site(kind, anchor)))
+                });
             let raises = observation
                 .my_buildings
                 .iter()

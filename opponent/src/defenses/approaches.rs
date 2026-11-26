@@ -6,7 +6,7 @@ use super::{
     ATTACKER_MARGIN, Approach, Asset, Cover, Evidence, Guard, Held, Scope, Stakes, Threat,
     chebyshev, distance2, radar, reach,
 };
-use crate::composition;
+use crate::counters::Piece;
 use crate::frame::{HomeFrame, doubled, footprint_centre, gap, ring, tiles_of};
 use crate::investments::built_foundries;
 use crate::map::{MapModel, UNREACHABLE};
@@ -316,10 +316,22 @@ fn threat(
         .map(|unit| (reach(unit.kind), unit.value(now)))
         .collect();
     let near: u64 = reaches.iter().map(|(_, value)| value).sum();
+    let mut force: Vec<(Piece, u64)> = units
+        .iter()
+        .map(|unit| (Piece::Unit(unit.kind), unit.value(now)))
+        .collect();
+    // What the minimum presumes: the first armed unit of the domain.
+    let presumed = match domain {
+        Domain::Ground => UnitKind::Sentinel,
+        Domain::Air => UnitKind::Buzzard,
+    };
+    if near < stakes.minimum {
+        force.push((Piece::Unit(presumed), stakes.minimum - near));
+    }
     Threat {
         value: near.max(stakes.minimum),
         reaches,
-        clustered: composition::clustered(units),
+        force,
     }
 }
 

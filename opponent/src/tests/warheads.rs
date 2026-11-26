@@ -696,10 +696,13 @@ fn a_saved_for_round_is_ordered_and_a_resumed_seat_orders_it_alike() {
 /// so what it protects outlasts the decision.
 fn after_a_round_order(accepted: bool) -> (Vec<PlayerCommand>, Trace) {
     let mut scenario = strikes(&[(6, 14)], &PAIR, &[], &[(31, 4)]);
+    // A Turret already covers the way in, so the seat's next target is the
+    // round, not a defense.
     scenario.buildings.extend([
         building(0, BuildingKind::Crucible, 6, 17),
         building(0, BuildingKind::Fabricator, 9, 17),
         building(0, BuildingKind::Airworks, 9, 14),
+        building(0, BuildingKind::Turret, 14, 10),
     ]);
     scenario.units.extend(workforce(0));
     scenario.players[0].scrap = 1_000;

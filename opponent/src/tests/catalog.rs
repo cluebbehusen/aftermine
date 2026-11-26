@@ -222,17 +222,19 @@ fn every_building_and_upgrade_is_bought_somewhere() {
     // Reclaimers, Refineries, a Barricade in front of the Turret, Scuttle
     // Charges, and the base-tier upgrades once a Fabricator stands, with an
     // army and aircraft in sight beyond the defenses' reach that outweigh
-    // the guns standing.
+    // the guns standing: Breakers, against which a heavier Turret holds more
+    // per scrap than another one, and more aircraft than the Flak Turret
+    // holds.
     let mut built = home.clone();
     built.units.extend([
         unit(1, UnitKind::Sentinel, 18, 8),
         unit(0, UnitKind::Kestrel, 17, 8),
     ]);
-    for (x, y) in [(19, 8), (20, 8), (21, 8), (19, 9), (20, 9), (21, 9)] {
-        built.units.push(unit(1, UnitKind::Warden, x, y));
+    for (x, y) in [(19, 8), (20, 9)] {
+        built.units.push(unit(1, UnitKind::Breaker, x, y));
     }
     for x in 18..=21 {
-        for y in 1..=3 {
+        for y in 1..=5 {
             built.units.push(unit(1, UnitKind::Buzzard, x, y));
         }
     }
@@ -262,9 +264,18 @@ fn every_building_and_upgrade_is_bought_somewhere() {
     let state = tiered(&crucible.build().unwrap(), BuildingKind::Turret, 1);
     offer(&crucible, &state, 3_000);
 
-    // A Citadel once a Crucible stands, its longer reach covering more of
-    // the way in, from a corner clear of the aircraft.
+    // A Citadel once a Crucible stands, from a corner clear of the aircraft,
+    // against Scuttlers: the one army a Citadel holds more of than a
+    // Bastion per scrap.
     let mut citadel = crucible.clone();
+    citadel.units.retain(|spec| {
+        spec.player == 0 || !matches!(spec.kind, UnitKind::Breaker | UnitKind::Sentinel)
+    });
+    for x in 18..=21 {
+        for y in 7..=10 {
+            citadel.units.push(unit(1, UnitKind::Scuttler, x, y));
+        }
+    }
     citadel
         .buildings
         .push(building(0, BuildingKind::Bastion, 1, 1));
