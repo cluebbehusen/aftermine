@@ -1145,7 +1145,7 @@ impl Scratch {
         traits: PersonalityTraits,
         missions: &Missions,
     ) -> Self {
-        let mut reserve = reserve::Keep::home(observation, map, memory, stance);
+        let mut reserve = reserve::Keep::home(observation, map, (memory, missions), stance);
         let objectives = objectives(observation, map);
         let severed = !objectives.is_empty()
             && objectives.iter().all(|objective| {

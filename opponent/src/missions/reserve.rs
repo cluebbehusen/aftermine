@@ -64,7 +64,7 @@ impl Keep {
     pub(super) fn home(
         observation: &ObservationData,
         map: &MapModel,
-        memory: &Memory,
+        (memory, missions): (&Memory, &Missions),
         stance: BotStance,
     ) -> Self {
         let Some(anchor) = map.start(observation.me) else {
@@ -78,16 +78,11 @@ impl Keep {
             BuildingKind::Foundry,
             anchor,
         );
-        // Weighed once a decision, against every armed unit at home, rather
-        // than against whatever is still free each time a mission asks.
-        let home = map.component(anchor);
-        let army = force_of(
-            observation
-                .my_units
-                .iter()
-                .filter(|unit| unit.kind.stats().can_fight() && at_home(map, home, unit)),
-            value,
-        );
+        // Weighed once a decision, against the units that hold home as the
+        // decision begins: those free there and those out defending it, as
+        // [`Missions::spare`] counts them.
+        let (_, free, defending) = missions.at_home(observation, map);
+        let army = force_of(free.into_iter().chain(defending), value);
         keep.held = keep.weighed(&army);
         keep
     }
@@ -263,14 +258,28 @@ impl Keep {
     }
 
     /// The price of units of `mix`'s kinds that would hold `gap` against each
-    /// domain: what a gap in held strength costs to close.
+    /// domain, of those that hit it: what a gap in held strength costs to
+    /// close. With none that hit it, the gap at its price.
     pub(super) fn scrap(&self, gap: [u64; 2], mix: &[(Piece, u64)]) -> [u64; 2] {
-        let total: u64 = mix.iter().map(|(_, value)| value).sum();
         [0, 1].map(|index| {
+            // Only the kinds that hit the domain close a gap in it.
+            let hitting: Vec<(Piece, u64)> = mix
+                .iter()
+                .filter(|(piece, _)| match piece {
+                    Piece::Unit(kind) => kind
+                        .stats()
+                        .weapons
+                        .iter()
+                        .any(|weapon| weapon.targets.covers(DOMAINS[index])),
+                    Piece::Gun(..) => true,
+                })
+                .copied()
+                .collect();
+            let total: u64 = hitting.iter().map(|(_, value)| value).sum();
             if total == 0 {
                 return gap[index];
             }
-            let quality = mix
+            let quality = hitting
                 .iter()
                 .map(|(piece, value)| value * weight(*piece, &self.threat[index]))
                 .sum::<u64>()
