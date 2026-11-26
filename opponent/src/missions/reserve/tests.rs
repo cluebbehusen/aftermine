@@ -93,3 +93,20 @@ fn a_guard_s_need_against_each_domain_weighs_only_the_units_that_hit_it() {
         "Talons hold nothing against Sentinels, which they cannot hit"
     );
 }
+
+#[test]
+fn an_escort_gap_is_priced_only_with_the_kinds_that_hit_its_domain() {
+    let mut keep = guarding(Vec::new(), Vec::new());
+    keep.threat[1] = vec![(Piece::Unit(UnitKind::Buzzard), 600)];
+    let wardens = [(Piece::Unit(UnitKind::Warden), 1_000)];
+    assert_eq!(
+        keep.scrap([0, 300], &wardens),
+        [0, 300],
+        "Wardens cannot hit aircraft, so the air gap stands at its price"
+    );
+    let talons = [(Piece::Unit(UnitKind::Talon), 1_000)];
+    assert!(
+        keep.scrap([0, 300], &talons)[1] < 300,
+        "Talons, which beat Buzzards, close it for less"
+    );
+}

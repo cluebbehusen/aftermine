@@ -813,7 +813,13 @@ pub(crate) fn decide(
     // Local guards rank ahead of lifts, so their gaps train before a lift
     // holds production for carriers.
     let reach = u64::from(ledger.available()) + soon(income);
-    let guard_gaps = by_role(observation, map, &producers, guard_gaps, reach, &mut needs);
+    let guard_gaps = by_role(
+        (observation, map, &producers),
+        guard_gaps,
+        reach,
+        &emergency_raised(&ledger),
+        &mut needs,
+    );
     arm(
         observation,
         map,
@@ -829,7 +835,13 @@ pub(crate) fn decide(
     if short {
         let before = ledger.available();
         let reach = u64::from(before) + soon(income);
-        let shortfalls = by_role(observation, map, &producers, shortfalls, reach, &mut needs);
+        let shortfalls = by_role(
+            (observation, map, &producers),
+            shortfalls,
+            reach,
+            &emergency_raised(&ledger),
+            &mut needs,
+        );
         arm(
             observation,
             map,
@@ -1386,9 +1398,14 @@ fn produce(
     ledger: &mut Ledger,
     saving: Option<UnitKind>,
 ) {
-    let mut idle = idle(observation, producers, ledger, saving);
+    // A role a short defense or guard raised answers it: it may take a
+    // producer held for the saved unit, the saved unit's role and the scrap
+    // kept for it, as the defense's own answer always could. Other roles
+    // keep to those holds.
+    let mut idle = idle(observation, producers, ledger, None);
     while let Some((index, kind, role, bar)) = needs.wanted().into_iter().find_map(|role| {
-        let budget = if needs.urgent() {
+        let raised = needs.raised(role);
+        let budget = if raised {
             ledger.available()
         } else {
             ledger.spendable()
@@ -1401,17 +1418,20 @@ fn produce(
             .map_or(0, |best| best * WAIT_FOR_BETTER / 1_000);
         idle.iter()
             .enumerate()
+            .filter(|(_, producer)| raised || !saved_for(observation, producer, saving))
             .filter_map(|(index, producer)| {
                 needs
                     .unit(observation, producer.building.kind, role, budget)
-                    .filter(|kind| !instead(saving, *kind) && needs.suitability(*kind, role) >= bar)
+                    .filter(|kind| {
+                        (raised || !instead(saving, *kind)) && needs.suitability(*kind, role) >= bar
+                    })
                     .map(|kind| (index, kind))
             })
             .max_by_key(|(index, kind)| (needs.rank(*kind, role), Reverse(*index)))
             .map(|(index, kind)| (index, kind, role, bar))
     }) {
         let producer = idle.remove(index);
-        let trained = if needs.urgent() {
+        let trained = if needs.raised(role) {
             ledger.train_urgently(producer.building.id, kind)
         } else {
             ledger.train(producer.building.id, kind)
@@ -1609,26 +1629,34 @@ const EMERGENCY_KINDS: [BuildingKind; 3] = [
     BuildingKind::FlakTurret,
 ];
 
-/// Those of `shortfalls` the army's roles do not answer. Each one whose best
-/// answer within `reach` is a unit with a role raises that role's need by its
-/// gap in the domains the unit hits, so the role's units are picked as any of
-/// its units are, by what they trade against the enemy, the army's variety and
-/// the seat's personality, and not only the best unit the bank buys this
-/// moment. One answered best by a unit with no role, such as a Scuttler while
-/// the seat trains nothing better, or by a structure, is left to [`arm`].
+/// Those of `shortfalls` the army's roles do not answer. Each one on the
+/// start's ground whose best answer within `reach`, the emergency
+/// `structures` raised this decision among them, is a unit with a role
+/// raises that role's need by its gap in the domains the unit hits, so the
+/// role's units are picked as any of its units are, by what they trade
+/// against the enemy, the army's variety and the seat's personality, and not
+/// only the best unit the bank buys this moment. One answered best by a unit
+/// with no role, such as a Scuttler while the seat trains nothing better, or
+/// by a structure, is left to [`arm`], and so is one on other ground, where
+/// only a producer standing there helps.
 fn by_role(
-    observation: &ObservationData,
-    map: &MapModel,
-    producers: &[Producer<'_>],
+    (observation, map, producers): (&ObservationData, &MapModel, &[Producer<'_>]),
     shortfalls: Vec<Shortfall>,
     reach: u64,
+    structures: &[BuildingKind],
     needs: &mut Needs,
 ) -> Vec<Shortfall> {
+    let home = map
+        .start(observation.me)
+        .and_then(|start| map.component(start));
     shortfalls
         .into_iter()
         .filter(|short| {
+            if short.ground != home {
+                return true;
+            }
             let Some((Fighter::Unit(kind), _)) =
-                best_answer(observation, map, producers, short, reach, &[])
+                best_answer(observation, map, producers, short, reach, structures)
             else {
                 return true;
             };
@@ -1643,6 +1671,18 @@ fn by_role(
                 .sum();
             needs.raise(role, by);
             false
+        })
+        .collect()
+}
+
+/// The emergency structures this decision put up.
+fn emergency_raised(ledger: &Ledger) -> Vec<BuildingKind> {
+    EMERGENCY_KINDS
+        .into_iter()
+        .filter(|kind| {
+            ledger.decision.purchases.iter().any(
+                |purchase| matches!(purchase, Purchase::Build { building, .. } if building == kind),
+            )
         })
         .collect()
 }
@@ -1794,14 +1834,7 @@ fn arm(
     // A structure answers only once the emergency has put one up: one it
     // passed over, its approach already covered or no site found, is no
     // reason to hold back a unit.
-    let raised: Vec<BuildingKind> = EMERGENCY_KINDS
-        .into_iter()
-        .filter(|kind| {
-            ledger.decision.purchases.iter().any(
-                |purchase| matches!(purchase, Purchase::Build { building, .. } if building == kind),
-            )
-        })
-        .collect();
+    let raised = emergency_raised(ledger);
     let idle: Vec<&Producer<'_>> = producers
         .iter()
         .filter(|producer| producer.ready && !ledger.queued_at(producer.building.id))
@@ -1900,17 +1933,24 @@ fn workforce(observation: &ObservationData) -> u64 {
 
 /// What the seat's armed units cost.
 pub(crate) fn army(observation: &ObservationData) -> u64 {
-    army_force(observation).iter().map(|(_, value)| value).sum()
+    armed(observation)
+        .map(|unit| u64::from(unit.kind.stats().cost))
+        .sum()
+}
+
+/// The seat's armed machines. A drone comes and goes from its host's bay, so
+/// only machines count.
+fn armed(observation: &ObservationData) -> impl Iterator<Item = &UnitObs> {
+    observation
+        .my_units
+        .iter()
+        .filter(|unit| !unit.kind.stats().weapons.is_empty() && !unit.kind.stats().docks())
 }
 
 /// The seat's armed machines, each at its price: the army [`army`] prices,
 /// as the counter chart weighs it.
 pub(crate) fn army_force(observation: &ObservationData) -> Vec<(Piece, u64)> {
-    // A drone comes and goes from its host's bay, so only machines count.
-    observation
-        .my_units
-        .iter()
-        .filter(|unit| !unit.kind.stats().weapons.is_empty() && !unit.kind.stats().docks())
+    armed(observation)
         .map(|unit| (Piece::Unit(unit.kind), u64::from(unit.kind.stats().cost)))
         .collect()
 }
