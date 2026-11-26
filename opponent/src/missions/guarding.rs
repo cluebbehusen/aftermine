@@ -6,8 +6,8 @@ use super::attack::{force_of, priced};
 use super::defense::at_home;
 use super::reserve::{self, LOCAL_REACH};
 use super::{
-    DefendPhase, MISSION_CAP, Mission, Missions, Shortfall, Task, UNIT_CAP, fill, force, hits,
-    hunt, meeting, mine, value,
+    DefendPhase, MISSION_CAP, Mission, Missions, Shortfall, Task, UNIT_CAP, fill, hits, hunt,
+    meeting, mine, value,
 };
 use crate::counters::weigh;
 use crate::decision::Ledger;
@@ -128,14 +128,15 @@ impl Missions {
             if index.is_some_and(|index| !self.list[index].guarding()) {
                 continue;
             }
-            let need = reserve::need(observation, map, memory, stance, asset.kind, asset.anchor);
+            let keep =
+                reserve::Keep::of(observation, map, memory, stance, asset.kind, asset.anchor);
             let ground = map.component(asset.anchor);
             let goal = ring(asset.anchor, asset.kind.size())
                 .filter(|tile| map.component(*tile) == ground)
                 .min_by_key(|tile| {
                     frame.rank(footprint_centre(asset.kind, asset.anchor), doubled(*tile))
                 });
-            let (Some(goal), true) = (goal, need != [0; 2]) else {
+            let (Some(goal), true) = (goal, keep.need(&[]) != [0; 2]) else {
                 if let Some(index) = index {
                     self.list.remove(index);
                 }
@@ -149,7 +150,7 @@ impl Missions {
                 .filter(|u| reaches(u, map, ground))
                 .collect();
             let mut pool = self
-                .spare(observation, map, scratch.reserve)
+                .spare(observation, map, &scratch.reserve)
                 .outermost(map, frame, free);
             pool.extend(
                 members
@@ -168,9 +169,13 @@ impl Missions {
                 pool.iter().copied().filter(|u| hits(u, Domain::Ground)),
                 value,
             );
+            // The guard is sized and filled by what each side trades against
+            // the other: the known enemies near the building against the
+            // units it could take.
+            let need = keep.need(&force_of(pool.iter().copied(), value));
             let mut have = [0_u64; 2];
             let mut kept = fill(pool, need, &mut have, UNIT_CAP, |unit| {
-                force(unit.kind, unit.hp)
+                keep.force(unit.kind, unit.hp)
             });
             for (producer, queue) in observation.my_buildings.iter().zip(&observation.my_queues) {
                 if map.component(producer.anchor) == ground
@@ -182,7 +187,7 @@ impl Missions {
                     ) <= LOCAL_REACH
                 {
                     for kind in queue {
-                        let added = force(*kind, kind.stats().max_hp);
+                        let added = keep.force(*kind, kind.stats().max_hp);
                         have = [have[0] + added[0], have[1] + added[1]];
                     }
                 }

@@ -606,12 +606,17 @@ fn reinforcements_gather_before_the_attack_sets_out() {
 /// East Sentinels seen now in the middle of the field, free to walk to West's
 /// home.
 fn remembering(scenario: &Scenario, state: &State, count: i32) -> Opponent {
+    remembering_as(scenario, state, UnitKind::Sentinel, count)
+}
+
+/// [`remembering`] East units of `kind`.
+fn remembering_as(scenario: &Scenario, state: &State, kind: UnitKind, count: i32) -> Opponent {
     let config = scenario.players[0].bot_config.unwrap();
     restored_with(&seat_with(scenario, 0, config), scenario, state, |json| {
         json["memory"]["units"] = remembered((0..count).map(|index| {
             let tile = TilePos::new(24 + index % 4, 8 + index / 4);
             let id = 1_000 + u32::try_from(index).unwrap();
-            (id, UnitKind::Sentinel, tile, state.current_tick())
+            (id, kind, tile, state.current_tick())
         }));
     })
 }
@@ -643,6 +648,48 @@ fn a_turtle_keeps_more_at_home_than_an_aggressive_seat() {
         hunts(&commands).iter().map(|(units, _)| units.len()).sum()
     };
     assert!(sent(BotStance::Turtle) < sent(BotStance::Aggressive));
+}
+
+#[test]
+fn home_lets_less_leave_against_enemies_that_beat_its_army() {
+    // West's army is Sentinels. Lancers beat them, so home lets less of it
+    // go while Lancers in sight could come than while Sentinels worth more
+    // could.
+    let leaves = |kind: UnitKind, count: i32| {
+        let east: Vec<_> = (0..count).map(|i| (kind, 14 + i % 2, 9 + i / 2)).collect();
+        let scenario = armed(8, &east);
+        let state = scenario.build().unwrap();
+        let observation =
+            aftermine_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
+        let model = map(&scenario);
+        let mut memory = crate::memory::Memory::default();
+        memory.observe(&observation);
+        assert_eq!(
+            memory.units().len(),
+            usize::try_from(count).unwrap(),
+            "premise: West sees them"
+        );
+        let frame = crate::frame::HomeFrame::of(&observation, &model).unwrap();
+        crate::missions::Scratch::new(
+            &observation,
+            &model,
+            frame,
+            &memory,
+            BotStance::Balanced,
+            middling(),
+            &crate::missions::Missions::default(),
+        )
+        .payload
+    };
+    assert!(
+        4 * UnitKind::Lancer.stats().cost < 5 * UnitKind::Sentinel.stats().cost,
+        "premise: the Lancers are worth less"
+    );
+    let (lancers, sentinels) = (leaves(UnitKind::Lancer, 4), leaves(UnitKind::Sentinel, 5));
+    assert!(
+        lancers < sentinels,
+        "{lancers} against Lancers, {sentinels} against Sentinels"
+    );
 }
 
 #[test]

@@ -815,7 +815,6 @@ pub(crate) fn decide(
         map,
         &producers,
         guard_gaps,
-        (true, false),
         income,
         &mut needs,
         &mut ledger,
@@ -830,7 +829,6 @@ pub(crate) fn decide(
             map,
             &producers,
             shortfalls,
-            (true, true),
             income,
             &mut needs,
             &mut ledger,
@@ -881,7 +879,7 @@ pub(crate) fn decide(
                 settlement.capabilities(&persistent.missions, investment, &ledger)
             })
         {
-            needs.coverage(gap, by_air);
+            needs.coverage(observation, gap, by_air);
         }
         if let Some(army) = ledger.decision.army.as_mut() {
             needs.describe_roles(army);
@@ -1679,20 +1677,14 @@ fn awaited(
 /// that would not pay back half its price against the attackers is never
 /// bought, and one worth less than half the best answer the bank reaches
 /// soon, a unit or an emergency structure this decision put up, waits for
-/// it: units that die before they pay only feed the attackers. With
-/// `traded`, a unit queued makes up a shortfall at what it trades against
-/// the attackers, as a defense counts its own units; a guard counts its own
-/// at price, and so does what is queued for it.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "a defense's answer reads the seat's producers, income and ledger"
-)]
+/// it: units that die before they pay only feed the attackers. A unit
+/// queued makes up a shortfall at what it trades against the attackers, as
+/// defenses and guards count their own units.
 fn arm(
     observation: &ObservationData,
     map: &MapModel,
     producers: &[Producer<'_>],
     mut shortfalls: Vec<Shortfall>,
-    (urgent, traded): (bool, bool),
     income: u32,
     needs: &mut Needs,
     ledger: &mut Ledger,
@@ -1704,9 +1696,6 @@ fn arm(
         if let Some(short) = shortfalls.iter_mut().find(|short| helps(kind, at, short)) {
             let cost = u64::from(kind.stats().cost);
             let made = [Domain::Ground, Domain::Air].map(|domain| {
-                if !traded {
-                    return cost;
-                }
                 let there: Vec<(UnitKind, u64)> = short
                     .attackers
                     .iter()
@@ -1761,11 +1750,7 @@ fn arm(
         // local guards: a guard at a raided expansion that waited for free
         // scrap lost more games to harass and raids (280-game gauntlets at
         // Prime) than the scrap it took from a defense elsewhere cost.
-        let budget = if urgent {
-            ledger.available()
-        } else {
-            ledger.spendable()
-        };
+        let budget = ledger.available();
         let at = map.component(producer.building.anchor);
         let kind = shortfalls.iter().find_map(|short| {
             let best = best_answer(
@@ -1787,13 +1772,7 @@ fn arm(
                 })
                 .max_by_key(|kind| (worth(*kind), kind.stats().cost))
         });
-        let trained = kind.is_some_and(|kind| {
-            if urgent {
-                ledger.train_urgently(producer.building.id, kind)
-            } else {
-                ledger.train(producer.building.id, kind)
-            }
-        });
+        let trained = kind.is_some_and(|kind| ledger.train_urgently(producer.building.id, kind));
         if let Some(kind) = kind.filter(|_| trained) {
             ledger.explain(|| Pick {
                 unit: kind,

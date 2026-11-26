@@ -5,8 +5,9 @@
 //! hands over to the site's local guard.
 
 use super::air::Legs;
-use super::{MISSION_CAP, Mission, Missions, Phase, Task, carrier, fill, force, hunt, mine};
-use super::{air, lift, reserve, strength};
+use super::attack::{fitting, force_of};
+use super::{MISSION_CAP, Mission, Missions, Phase, Task, carrier, fill, hunt, mine};
+use super::{air, held_force, lift, reserve, strength, value};
 use crate::decision::{Ledger, Site, site};
 use crate::frame::{doubled, footprint_centre};
 use crate::investments::{self, Investment, Step};
@@ -236,7 +237,7 @@ impl<'a> Settlement<'a> {
             .max()
             .expect("the source's ground is manned");
         let escort: usize = self
-            .escorts(missions, target, source, ledger)
+            .escorts(missions, (target, &self.keep(target)), source, ledger)
             .into_iter()
             .filter_map(|id| mine(self.observation, id))
             .filter(|u| u.kind.stats().domain == Domain::Ground)
@@ -277,12 +278,11 @@ impl<'a> Settlement<'a> {
     fn escorts(
         &self,
         missions: &Missions,
-        target: Target,
+        (target, keep): (Target, &reserve::Keep),
         source: TilePos,
         ledger: &Ledger,
     ) -> Vec<UnitId> {
-        let need = self.need(target);
-        if need == [0, 0] {
+        if keep.need(&[]) == [0, 0] {
             return Vec::new();
         }
         let units: Vec<_> = missions
@@ -296,7 +296,7 @@ impl<'a> Settlement<'a> {
             })
             .collect();
         let mut units = missions
-            .spare(self.observation, self.map, self.scratch.reserve)
+            .spare(self.observation, self.map, &self.scratch.reserve)
             .outermost(self.map, self.scratch.frame, units);
         let by_air = self.by_air(source, target);
         units.sort_by_key(|u| {
@@ -306,9 +306,15 @@ impl<'a> Settlement<'a> {
                 u.id,
             )
         });
-        let mut have = strength(self.observation, missions.members(target));
+        // Sized and filled by what each side trades against the other.
+        let mut against = held_force(self.observation, missions.members(target));
+        against.extend(force_of(units.iter().copied(), value));
+        let need = keep.need(&against);
+        let mut have = strength(self.observation, missions.members(target), |kind, hp| {
+            keep.force(kind, hp)
+        });
         fill(units, need, &mut have, usize::MAX, |unit| {
-            force(unit.kind, unit.hp)
+            keep.force(unit.kind, unit.hp)
         })
     }
 
@@ -324,15 +330,19 @@ impl<'a> Settlement<'a> {
         let target = self.target(missions, investment)?;
         let source = self.source(target)?;
         let by_air = self.by_air(source, target);
+        let keep = self.keep(target);
         let escorts = self
-            .escorts(missions, target, source, ledger)
+            .escorts(missions, (target, &keep), source, ledger)
             .into_iter()
             .filter(|id| {
                 !by_air
                     || mine(self.observation, *id)
                         .is_some_and(|u| u.kind.stats().domain == Domain::Air)
             });
-        let mut have = strength(self.observation, escorts.chain(missions.members(target)));
+        let escorts: Vec<UnitId> = escorts.chain(missions.members(target)).collect();
+        let mut have = strength(self.observation, escorts.iter().copied(), |kind, hp| {
+            keep.force(kind, hp)
+        });
         for (producer, queue) in self
             .observation
             .my_buildings
@@ -345,24 +355,21 @@ impl<'a> Settlement<'a> {
                         && self.map.component(producer.anchor) == self.map.component(source))
             };
             for kind in queue.iter().filter(joins) {
-                let added = force(*kind, kind.stats().max_hp);
+                let added = keep.force(*kind, kind.stats().max_hp);
                 have = [have[0] + added[0], have[1] + added[1]];
             }
         }
-        let need = self.need(target);
-        Some((
-            [
-                need[0].saturating_sub(have[0]),
-                need[1].saturating_sub(have[1]),
-            ],
-            by_air,
-        ))
+        let need = keep.need(&held_force(self.observation, escorts));
+        let gap = [0, 1].map(|index| need[index].saturating_sub(have[index]));
+        // Production counts what it trains in scrap, so the gap goes to it as
+        // the price of fighters that would close it.
+        Some((keep.scrap(gap, &fitting(self.observation, fighter)), by_air))
     }
 
     /// The escort a settlement brings: what the site's local guard will
-    /// need once it stands, so the escort can stay on as that guard.
-    fn need(&self, target: Target) -> [u64; 2] {
-        reserve::need(
+    /// keep once it stands, so the escort can stay on as that guard.
+    fn keep(&self, target: Target) -> reserve::Keep {
+        reserve::Keep::of(
             self.observation,
             self.map,
             self.memory,
@@ -469,9 +476,12 @@ impl Missions {
         };
         // Only escorts that already exist are taken: a site whose need the
         // free army cannot meet waits for production instead of a promise.
-        let escorts = context.escorts(self, target, source, ledger);
-        let need = context.need(target);
-        let have = strength(context.observation, escorts.iter().copied());
+        let keep = context.keep(target);
+        let escorts = context.escorts(self, (target, &keep), source, ledger);
+        let need = keep.need(&held_force(context.observation, escorts.iter().copied()));
+        let have = strength(context.observation, escorts.iter().copied(), |kind, hp| {
+            keep.force(kind, hp)
+        });
         if have[0] < need[0] || have[1] < need[1] {
             return;
         }
@@ -614,7 +624,7 @@ impl Missions {
             .my_buildings
             .iter()
             .any(|b| b.kind == target.kind() && context.map.component(b.anchor) == ground);
-        if placed || self.list[index].units.is_empty() || context.need(target) == [0, 0] {
+        if placed || self.list[index].units.is_empty() || context.keep(target).need(&[]) == [0, 0] {
             self.list.remove(index);
             return;
         }
@@ -662,7 +672,7 @@ impl Missions {
             .or_else(|| context.source(target));
         if let Some(source) = source {
             let (mut payload, air): (Vec<_>, Vec<_>) = context
-                .escorts(self, target, source, ledger)
+                .escorts(self, (target, &context.keep(target)), source, ledger)
                 .into_iter()
                 .partition(|id| {
                     mine(observation, *id).is_some_and(|u| u.kind.stats().domain == Domain::Ground)
@@ -704,15 +714,15 @@ impl Missions {
             }
             return None;
         }
-        let need = context.need(target);
-        let force = strength(
-            observation,
-            manifest
-                .escorts
-                .iter()
-                .map(|u| u.id)
-                .chain(manifest.aboard.iter().map(|u| u.id)),
-        );
+        let keep = context.keep(target);
+        let going: Vec<UnitId> = manifest
+            .escorts
+            .iter()
+            .map(|u| u.id)
+            .chain(manifest.aboard.iter().map(|u| u.id))
+            .collect();
+        let need = keep.need(&held_force(observation, going.iter().copied()));
+        let force = strength(observation, going, |kind, hp| keep.force(kind, hp));
         if carrying && riders.is_empty() && force[0] >= need[0] && force[1] >= need[1] {
             let mut flying: Vec<_> = manifest
                 .carriers
@@ -804,4 +814,10 @@ impl Missions {
         let returned = context.delivery().return_empty(&manifest.carriers, ledger);
         self.list[index].units.retain(|id| !returned.contains(id));
     }
+}
+
+/// Whether a unit of `kind` could escort a settlement: an armed unit that
+/// neither carries others nor works.
+fn fighter(kind: UnitKind) -> bool {
+    !carrier(kind) && !workers::worker(kind) && kind.stats().can_fight()
 }

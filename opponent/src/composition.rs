@@ -795,11 +795,34 @@ fn index(kind: UnitKind) -> usize {
 }
 
 impl Needs {
-    pub(crate) fn coverage(&mut self, gap: [u64; 2], by_air: bool) {
+    /// Raises the line, or strike aircraft when the escort must fly, and
+    /// anti-air to at least the escort's `gap`, the scrap of fighters that
+    /// would close it, counted the way the role counts what it trains: at
+    /// what the kinds the seat can train for it trade against its enemy, on
+    /// average.
+    pub(crate) fn coverage(&mut self, observation: &ObservationData, gap: [u64; 2], by_air: bool) {
         let ground = if by_air { Role::AirStrike } else { Role::Line };
         for (role, value) in [(ground, gap[0]), (Role::AntiAir, gap[1])] {
+            if value == 0 {
+                continue;
+            }
+            let counted = if role == Role::AirStrike {
+                value
+            } else {
+                let kinds = trainable_kinds(observation, role);
+                let total: u64 = kinds.iter().map(|(_, value)| value).sum();
+                let quality = kinds
+                    .iter()
+                    .map(|(piece, value)| {
+                        value * counters::weight(*piece, &self.foes[role as usize])
+                    })
+                    .sum::<u64>()
+                    .checked_div(total)
+                    .unwrap_or(1_000);
+                value * quality / 1_000
+            };
             self.need[role as usize] =
-                self.need[role as usize].max(i64::try_from(value).unwrap_or(i64::MAX));
+                self.need[role as usize].max(i64::try_from(counted).unwrap_or(i64::MAX));
         }
     }
 
