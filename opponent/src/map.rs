@@ -948,6 +948,17 @@ impl MapModel {
         }
     }
 
+    /// The tiles of the bounding box of ground component `ground`, row by
+    /// row: every tile on that ground, among others.
+    pub(crate) fn extent(&self, ground: u32) -> impl Iterator<Item = TilePos> + '_ {
+        let (low, high) = ground
+            .checked_sub(1)
+            .and_then(|index| self.extents.get(index as usize))
+            .copied()
+            .unwrap_or((TilePos::new(0, 0), TilePos::new(-1, -1)));
+        (low.y..=high.y).flat_map(move |y| (low.x..=high.x).map(move |x| TilePos::new(x, y)))
+    }
+
     /// Whether `tile` is a ramp, which holds no building but a wall or a
     /// mine.
     pub(crate) fn ramp(&self, tile: TilePos) -> bool {
