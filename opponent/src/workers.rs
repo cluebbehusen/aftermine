@@ -1447,26 +1447,41 @@ pub(crate) fn seek(
     if seekers.is_empty() {
         return;
     }
-    let (width, height) = map.size();
-    let frontier: Vec<(u32, TilePos)> = (0..height)
-        .flat_map(|y| (0..width).map(move |x| TilePos::new(x, y)))
-        .filter(|tile| !observation.explored(*tile))
-        .filter_map(|tile| {
-            let ground = map.component(tile)?;
-            barren.binary_search(&ground).ok()?;
-            (!exposed(hazards, tile)).then_some((ground, tile))
+    // Each barren ground's unexplored tiles, row by row, read from its own
+    // bounding box rather than the whole map.
+    let frontier: Vec<Vec<TilePos>> = barren
+        .iter()
+        .map(|ground| {
+            map.extent(*ground)
+                .filter(|tile| map.component(*tile) == Some(*ground))
+                .filter(|tile| !observation.explored(*tile))
+                .collect()
         })
+        .collect();
+    // Whether known fire covers each frontier tile, worked out only for
+    // tiles that would beat a seeker's best so far: most never could.
+    let mut covered: Vec<Vec<Option<bool>>> = frontier
+        .iter()
+        .map(|tiles| vec![None; tiles.len()])
         .collect();
     let mut goals: Vec<(TilePos, UnitId)> = seekers
         .iter()
         .filter_map(|(unit, ground)| {
             let from = doubled(unit.tile);
-            frontier
-                .iter()
-                .filter(|(own, _)| own == ground)
-                .map(|(_, tile)| *tile)
-                .min_by_key(|tile| frame.rank(from, doubled(*tile)))
-                .map(|goal| (goal, unit.id))
+            let at = barren.binary_search(ground).ok()?;
+            let covered = &mut covered[at];
+            let mut best: Option<(TilePos, _)> = None;
+            for (index, tile) in frontier[at].iter().enumerate() {
+                let rank = frame.rank(from, doubled(*tile));
+                if best.as_ref().is_some_and(|(_, best)| rank >= *best) {
+                    continue;
+                }
+                if *covered[index].get_or_insert_with(|| exposed(hazards, *tile)) {
+                    continue;
+                }
+                best = Some((*tile, rank));
+            }
+            best.map(|(goal, _)| (goal, unit.id))
         })
         .collect();
     goals.sort_by_key(|(goal, unit)| (frame.rank(frame.home, doubled(*goal)), *unit));
