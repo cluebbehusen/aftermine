@@ -532,8 +532,16 @@ fn a_seat_with_no_deep_bore_in_reach_spends_what_it_held_for_a_cradle() {
     );
     let (commands, trace) = saving_for_a_cradle(false);
     assert_ne!(trace.target.map(|target| target.investment), cradle);
+    // The held scrap goes to the army: production now, or saving for the
+    // unit that answers the fortress, such as an Avalanche that outranges
+    // its Bastions.
+    let army = matches!(
+        trace.target.map(|target| target.investment),
+        Some(Investment::Unit(_))
+    );
     assert!(
-        trace.spent > 100 && !trains(&commands).is_empty(),
-        "the held scrap goes to production: {commands:?}"
+        army || (trace.spent > 100 && !trains(&commands).is_empty()),
+        "the held scrap goes to the army: {commands:?} {:?}",
+        trace.target
     );
 }

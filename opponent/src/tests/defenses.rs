@@ -1644,6 +1644,31 @@ fn a_citadel_waits_for_a_crucible_and_answers_what_outranges_the_bastion() {
 }
 
 #[test]
+fn against_bombards_a_citadel_outscores_more_guns_they_outrange() {
+    // Spotted Bombards shell a Bastion from its own range and a Turret from
+    // well past it; a Citadel outranges them. With a Crucible standing, the
+    // raise is worth more than another Bastion, and a Turret least.
+    let far = [(18, 2), (18, 8), (19, 2), (19, 8), (20, 2), (20, 8)];
+    let mut scenario = watched(UnitKind::Bombard, &far, &[]);
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Bastion, 3, 2));
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Crucible, 5, 8));
+    let offered = offers(&scenario);
+    let citadel = offered
+        .iter()
+        .find(|(investment, _)| matches!(investment, Investment::Upgrade { tier: 1, .. }))
+        .map(|(_, score)| *score)
+        .expect("a Citadel is offered");
+    let score = |kind| offer(&offered, kind).map_or(0, |(_, score)| score);
+    let (bastion, turret) = (score(BuildingKind::Bastion), score(BuildingKind::Turret));
+    assert!(citadel > bastion, "{citadel} against {bastion}");
+    assert!(bastion > turret, "{bastion} against {turret}");
+}
+
+#[test]
 fn an_upgrade_firing_indirect_shells_counts_only_ground_something_sees() {
     let watched = citadel_offer(UnitKind::Bombard, true, true).expect("the Array spots the way in");
     let blind = citadel_offer(UnitKind::Bombard, true, false).unwrap_or(0);

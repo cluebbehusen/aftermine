@@ -73,16 +73,11 @@ fn a_gun_reads_as_the_inverse_of_what_its_attackers_trade_against_it() {
 #[test]
 fn a_gun_against_a_kind_the_chart_does_not_measure_is_even_if_it_can_fire_on_it() {
     let gun = |kind, tier| Piece::Gun(kind, tier);
-    assert_eq!(pair(gun(BuildingKind::Turret, 0), UnitKind::Bombard), 1_000);
+    assert_eq!(pair(gun(BuildingKind::Turret, 0), UnitKind::Mantle), 1_000);
     assert_eq!(
-        pair(gun(BuildingKind::FlakTurret, 1), UnitKind::Bombard),
+        pair(gun(BuildingKind::FlakTurret, 1), UnitKind::Mantle),
         125,
         "flak cannot fire on the ground"
-    );
-    assert_eq!(
-        pair(UnitKind::Bombard, gun(BuildingKind::FlakTurret, 0)),
-        8_000,
-        "and the Bombard destroys it for nothing"
     );
     assert_eq!(
         pair(gun(BuildingKind::Turret, 0), UnitKind::Kestrel),
@@ -180,5 +175,22 @@ fn a_force_bought_to_the_price_to_beat_meets_its_margin() {
         price_to_beat(&[(Piece::Unit(UnitKind::Lancer), 330)], &nothing, 2_000),
         660,
         "with nothing to weigh, the enemy's price by the margin"
+    );
+}
+
+#[test]
+fn spotted_artillery_against_a_gun_reads_the_siege_table_and_the_gun_its_inverse() {
+    let citadel = Piece::Gun(BuildingKind::Bastion, 1);
+    let bastion = Piece::Gun(BuildingKind::Bastion, 0);
+    assert!(
+        pair(UnitKind::Bombard, citadel) < pair(UnitKind::Bombard, bastion),
+        "the Citadel outranges Bombards the Bastion only matches"
+    );
+    let product = pair(citadel, UnitKind::Bombard) * pair(UnitKind::Bombard, citadel);
+    assert!(product.abs_diff(1_000_000) <= 10_000, "{product}");
+    assert_eq!(
+        pair(Piece::Gun(BuildingKind::FlakTurret, 0), UnitKind::Bombard),
+        125,
+        "flak cannot fire on the ground"
     );
 }

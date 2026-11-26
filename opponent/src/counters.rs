@@ -38,6 +38,15 @@ pub const GUNS: [(BuildingKind, u8); 7] = [
     (BuildingKind::Bastion, 1),
 ];
 
+/// The artillery the chart measures against the structures, each with a
+/// spotter, in its row order. Alone a gun that fires past its own sight
+/// shoots at what it sees; against structures, which hold still, a spotter
+/// shows it everything in reach, as it would in a siege. The Avalanche
+/// outranges every structure, so its siege would read at the chart's cap
+/// against all of them and rate it above every other way to break guns; it
+/// stays unmeasured and reads even.
+pub const ARTILLERY: [UnitKind; 1] = [UnitKind::Bombard];
+
 /// What fights: a unit of a kind, or a structure of a kind at a rung.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Piece {
@@ -84,6 +93,9 @@ pub struct Chart {
     /// `against[a][g]`, per mille of its own value lost, the value
     /// `MEASURED[a]` destroys of `GUNS[g]`.
     pub against: [[u16; GUNS.len()]; MEASURED.len()],
+    /// `siege[a][g]`, per mille of its own value lost, the value
+    /// `ARTILLERY[a]`, spotted, destroys of `GUNS[g]`.
+    pub siege: [[u16; GUNS.len()]; ARTILLERY.len()],
 }
 
 /// The chart as checked in.
@@ -93,6 +105,7 @@ pub fn chart() -> Chart {
         stats: chart::STATS,
         trades: chart::TRADES,
         against: chart::AGAINST,
+        siege: chart::SIEGE,
     }
 }
 
@@ -143,6 +156,9 @@ pub(crate) fn pair(piece: impl Into<Piece>, enemy: impl Into<Piece>) -> u64 {
             };
             if let Some(own) = row(unit) {
                 return u64::from(chart::AGAINST[own][column]);
+            }
+            if let Some(own) = ARTILLERY.iter().position(|artillery| *artillery == unit) {
+                return u64::from(chart::SIEGE[own][column]);
             }
             let domain = unit.stats().domain;
             let fired_on = gun

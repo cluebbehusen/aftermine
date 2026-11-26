@@ -33,3 +33,7 @@ pub(super) const AGAINST: [[u16; 7]; 10] = [
     [1000, 1000, 1000, 125, 125, 1000, 1000],
     [8000, 8000, 8000, 125, 134, 8000, 8000],
 ];
+
+/// `SIEGE[a][g]`: per mille of its value lost, the value `ARTILLERY[a]`,
+/// spotted, destroys of `GUNS[g]` at even prices.
+pub(super) const SIEGE: [[u16; 7]; 1] = [[8000, 8000, 8000, 8000, 8000, 2181, 335]];
