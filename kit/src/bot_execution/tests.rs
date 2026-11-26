@@ -63,8 +63,8 @@ fn mixed_cadences_and_post_result_preserve_commands_and_state() {
             let report = state.tick(&commands);
             let expected_report = expected.tick(&serial);
             assert_eq!(report.events, expected_report.events);
-            record_events(&mut bots, &report);
-            record_events(&mut expected_bots, &expected_report);
+            record_events(&mut bots, &state, &report);
+            record_events(&mut expected_bots, &state, &expected_report);
             assert_eq!(saved(&bots), saved(&expected_bots));
             assert_eq!(
                 serde_json::to_vec(&state).unwrap(),

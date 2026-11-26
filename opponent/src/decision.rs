@@ -424,6 +424,7 @@ pub(crate) fn decide(
     persistent.memory.assembled(observation, events, |owner| {
         map.hostile(observation.me, owner)
     });
+    persistent.memory.died(events);
     persistent.memory.observe_stranded(observation, |unit| {
         crate::missions::stranded(unit, map, home)
     });

@@ -144,7 +144,7 @@ impl Machine {
     /// machine hosts.
     fn execute(&mut self, batch: &[PlayerCommand]) -> TickReport {
         let report = runner::record_and_tick(&mut self.state, batch, Some(&mut self.replay));
-        record_events(std::slice::from_mut(&mut self.player), &report);
+        record_events(std::slice::from_mut(&mut self.player), &self.state, &report);
         let tick = self.state.current_tick();
         if reports_hash(tick) {
             self.hashes.push((tick, self.state.hash()));
@@ -344,7 +344,7 @@ impl Net {
                     batch.extend(bot_execution::commands(&host.machine.state, &mut host.bots));
                     host.session.publish(&batch);
                     let report = host.machine.execute(&batch);
-                    record_events(&mut host.bots, &report);
+                    record_events(&mut host.bots, &host.machine.state, &report);
                     let state = &host.machine.state;
                     host.session.executed(|| state.hash());
                     host.next_due = now + TICK;
@@ -937,7 +937,7 @@ fn a_match_starts_and_stays_in_sync_over_tcp() {
                 batch.extend(bot_execution::commands(&host.state, &mut bots));
                 session.publish(&batch);
                 let report = host.execute(&batch);
-                record_events(&mut bots, &report);
+                record_events(&mut bots, &host.state, &report);
                 let state = &host.state;
                 session.executed(|| state.hash());
             }

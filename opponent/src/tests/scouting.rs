@@ -146,6 +146,7 @@ fn a_seen_point_waits_until_stale() {
             if armed {
                 json["memory"]["units"] =
                     remembered([(900, UnitKind::Lancer, TilePos::new(40, 20), 3_600 - 12)]);
+                json["memory"]["census"] = counted(&json["memory"]["units"]);
             }
         });
         looks(&opponent.act(&state, &mut OwnEvents::default()))
@@ -542,7 +543,7 @@ fn a_scout_kept_off_a_guarded_point_still_sees_it_and_moves_on() {
             matches!(event, Event::OrderStalled { unit, reason: StallReason::SafeVantage, .. }
                 if *unit == surveyor)
         });
-        events.record(PlayerId(0), &report.events);
+        events.record(PlayerId(0), &state, &report.events);
     }
     assert!(done, "the Surveyor stopped short or turned for home");
     let (width, height) = BuildingKind::Foundry.size();
@@ -719,6 +720,7 @@ fn an_air_scout_flies_around_remembered_anti_air() {
                     let id = at(&state, 24, y).0;
                     (id, UnitKind::Flakhound, TilePos::new(24, y), STALE)
                 }));
+                json["memory"]["census"] = counted(&json["memory"]["units"]);
             }
         });
         let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
@@ -852,7 +854,7 @@ fn a_scout_with_nothing_left_to_see_comes_home() {
             }
         }
         let report = state.tick(&commands);
-        events.record(PlayerId(0), &report.events);
+        events.record(PlayerId(0), &state, &report.events);
     }
     assert!(looked, "premise: the Surveyor went to look");
     assert!(home, "the Surveyor is sent home");
@@ -880,6 +882,7 @@ fn a_scout_that_finds_no_safe_view_counts_its_point_as_seen() {
     let pos = state.unit(surveyor).unwrap().pos;
     events.record(
         PlayerId(0),
+        &state,
         &[Event::OrderStalled {
             unit: surveyor,
             player: PlayerId(0),

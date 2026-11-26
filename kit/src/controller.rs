@@ -122,12 +122,14 @@ impl SeatController {
     }
 }
 
-/// Hands each seat its own order failures from a completed tick. Hosts call
-/// this after every tick that runs with these controllers, including
-/// fast-forwards whose bot commands they discard.
-pub fn record_events(bots: &mut [SeatController], report: &TickReport) {
+/// Hands each seat its own events from a completed tick, with `state` the
+/// world that tick left. Hosts call this after every tick that runs with
+/// these controllers, including fast-forwards whose bot commands they
+/// discard.
+pub fn record_events(bots: &mut [SeatController], state: &State, report: &TickReport) {
     for bot in bots {
-        bot.events.record(bot.controller.player(), &report.events);
+        bot.events
+            .record(bot.controller.player(), state, &report.events);
     }
 }
 

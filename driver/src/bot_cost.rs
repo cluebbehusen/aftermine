@@ -305,7 +305,7 @@ pub fn measure(
         let start = Instant::now();
         let report = state.tick(&commands);
         simulation.push(nanos(start.elapsed()));
-        record_events(&mut seats, &report);
+        record_events(&mut seats, &state, &report);
     }
     if let Some(replay) = replay {
         replay.meta.ticks = Some(state.current_tick());

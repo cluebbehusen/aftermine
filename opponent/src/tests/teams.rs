@@ -296,3 +296,35 @@ fn a_rival_with_an_attack_under_way_stays_the_rival_until_another_clearly_leads(
         "an enemy at the gate outweighs staying put"
     );
 }
+
+#[test]
+fn a_seat_hears_of_an_enemy_death_its_ally_saw() {
+    // West and South against East: a death South sees beside its Foundry
+    // reaches West, which shares its sight; one of South's own units does
+    // not.
+    let beside_south = TilePos::new(3, 13);
+    let staged = |teams| {
+        let mut scenario = trio(teams);
+        scenario.units.clear();
+        scenario.build().unwrap()
+    };
+    let alone = staged([None, None, Some(1)]);
+    assert!(
+        !alone.vision(PlayerId(0)).visible(beside_south),
+        "premise: out of West's own sight"
+    );
+    let state = staged([Some(0), Some(0), Some(1)]);
+    let died = |player: u8, unit: u32| aftermine_sim::Event::UnitDied {
+        unit: UnitId(unit),
+        kind: UnitKind::Lancer,
+        player: PlayerId(player),
+        pos: beside_south.center(),
+        grounded: true,
+    };
+    let mut events = OwnEvents::default();
+    events.record(PlayerId(0), &state, &[died(2, 1), died(1, 2)]);
+    assert_eq!(
+        events.take(),
+        [crate::events::OwnEvent::EnemyDied { unit: UnitId(1) }]
+    );
+}

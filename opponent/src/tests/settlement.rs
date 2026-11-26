@@ -108,7 +108,7 @@ fn a_connected_enemy_does_not_prevent_a_resource_island_foundry() {
         }
         let report = state.tick(&commands);
         state.validate_invariants().unwrap();
-        events.record(PlayerId(0), &report.events);
+        events.record(PlayerId(0), &state, &report.events);
         if own_island_foundry(&state).is_some() && harvested {
             break;
         }
@@ -146,7 +146,8 @@ fn a_landed_builder_can_build_an_island_frame() {
     let frame = TilePos::new(30, 24);
     while state.current_tick() < 900 {
         let commands = bot.act(&state, &mut events);
-        events.record(PlayerId(0), &state.tick(&commands).events);
+        let ticked = state.tick(&commands);
+        events.record(PlayerId(0), &state, &ticked.events);
         if state
             .buildings()
             .iter()
@@ -259,11 +260,12 @@ fn settlement_checkpoints_keep_exact_ownership_during_delivery() {
                 let commands = original.act(&world, &mut original_events);
                 assert_eq!(commands, resumed.act(&world, &mut resumed_events));
                 let report = world.tick(&commands);
-                original_events.record(PlayerId(0), &report.events);
-                resumed_events.record(PlayerId(0), &report.events);
+                original_events.record(PlayerId(0), &state, &report.events);
+                resumed_events.record(PlayerId(0), &state, &report.events);
             }
         }
-        events.record(PlayerId(0), &state.tick(&commands).events);
+        let ticked = state.tick(&commands);
+        events.record(PlayerId(0), &state, &ticked.events);
         if own_island_foundry(&state).is_some() {
             break;
         }
@@ -343,7 +345,8 @@ fn a_late_flight_turns_home(covered: bool) {
         }) {
             return;
         }
-        events.record(PlayerId(0), &state.tick(&commands).events);
+        let ticked = state.tick(&commands);
+        events.record(PlayerId(0), &state, &ticked.events);
     }
     panic!(
         "the late flight kept going (covered {covered}): {:?}",
@@ -397,6 +400,7 @@ fn an_air_escort_brings_ground_attack_and_anti_air_without_loading_them() {
                 .filter(|u| u.player == PlayerId(1))
                 .map(|u| (u.id.0, u.kind, u.tile(), 0)),
         );
+        json["memory"]["census"] = counted(&json["memory"]["units"]);
     });
     let (commands, trace) = bot.act_traced(&state, &mut OwnEvents::default());
     let trace = trace.unwrap();
@@ -432,7 +436,8 @@ fn an_air_escort_brings_ground_attack_and_anti_air_without_loading_them() {
         _ => true,
     }));
     let mut events = OwnEvents::default();
-    events.record(PlayerId(0), &state.tick(&commands).events);
+    let ticked = state.tick(&commands);
+    events.record(PlayerId(0), &state, &ticked.events);
     while state.current_tick() < 1_000 {
         let commands = bot.act(&state, &mut events);
         if commands.iter().any(|c| match &c.command {
@@ -453,7 +458,8 @@ fn an_air_escort_brings_ground_attack_and_anti_air_without_loading_them() {
         }) {
             return;
         }
-        events.record(PlayerId(0), &state.tick(&commands).events);
+        let ticked = state.tick(&commands);
+        events.record(PlayerId(0), &state, &ticked.events);
     }
     panic!("escorts never protected the loaded flight");
 }
@@ -495,6 +501,7 @@ fn an_escort_leaves_a_unit_healing_at_a_bay() {
                         .filter(|u| u.player == PlayerId(1))
                         .map(|u| (u.id.0, u.kind, u.tile(), 0)),
                 );
+                json["memory"]["census"] = counted(&json["memory"]["units"]);
             },
         );
         bot.act(&state, &mut OwnEvents::default());
@@ -558,6 +565,7 @@ fn escort_carriers(breaker: bool, bay: bool) -> (Option<Step>, bool, Option<u32>
                     .filter(|u| u.player == PlayerId(1))
                     .map(|u| (u.id.0, u.kind, u.tile(), 0)),
             );
+            json["memory"]["census"] = counted(&json["memory"]["units"]);
         },
     );
     let (commands, trace) = bot.act_traced(&state, &mut OwnEvents::default());
@@ -612,7 +620,8 @@ fn low_attention_can_deliver_a_crew_across_several_decisions() {
     let mut events = OwnEvents::default();
     while state.current_tick() < 6_000 {
         let commands = bot.act(&state, &mut events);
-        events.record(PlayerId(0), &state.tick(&commands).events);
+        let ticked = state.tick(&commands);
+        events.record(PlayerId(0), &state, &ticked.events);
         if own_island_foundry(&state).is_some() {
             return;
         }
@@ -816,7 +825,8 @@ fn settlement_and_military_lift_can_own_distinct_crews_at_the_same_time() {
             Opponent::restore(&bot.checkpoint(), &scenario, &state, map(&scenario)).unwrap();
             return;
         }
-        events.record(PlayerId(0), &state.tick(&commands).events);
+        let ticked = state.tick(&commands);
+        events.record(PlayerId(0), &state, &ticked.events);
     }
     panic!("delivery missions never overlapped: {:?}", bot.missions());
 }
@@ -852,7 +862,8 @@ fn a_later_island_expansion_reuses_carriers_from_another_component() {
     while state.current_tick() < 4_000 {
         let commands = bot.act(&state, &mut events);
         reused |= commands.iter().any(|c| matches!(&c.command, Command::Run { units, goal, .. } if goal.y >= 18 && goal.x < 44 && units.iter().any(|id| state.units().iter().any(|u| u.id == *id && u.kind == UnitKind::Skyhook && u.tile().y < 12))));
-        events.record(PlayerId(0), &state.tick(&commands).events);
+        let ticked = state.tick(&commands);
+        events.record(PlayerId(0), &state, &ticked.events);
         if state.buildings().iter().any(|b| {
             b.player == PlayerId(0)
                 && b.kind == BuildingKind::Foundry
@@ -958,7 +969,8 @@ fn a_builder_already_on_an_island_needs_no_carrier_to_start_its_foundry() {
                 } | Command::Load { .. }
             )));
         }
-        events.record(PlayerId(0), &state.tick(&commands).events);
+        let ticked = state.tick(&commands);
+        events.record(PlayerId(0), &state, &ticked.events);
         if own_island_foundry(&state).is_some() {
             return;
         }
@@ -1294,7 +1306,8 @@ fn a_seat_without_a_worker_at_any_foundry_trains_one_before_settling() {
         {
             return;
         }
-        events.record(PlayerId(0), &state.tick(&commands).events);
+        let ticked = state.tick(&commands);
+        events.record(PlayerId(0), &state, &ticked.events);
     }
     panic!("no builder was trained: {:?}", bot.missions());
 }
@@ -1539,6 +1552,7 @@ fn landed(threat: bool) -> (Vec<PlayerCommand>, Vec<UnitId>, bool) {
                 .filter(|u| u.player == PlayerId(1))
                 .map(|u| (u.id.0, u.kind, u.tile(), 0)),
         );
+        json["memory"]["census"] = counted(&json["memory"]["units"]);
     });
     let commands = bot.act(&state, &mut OwnEvents::default());
     let settling = bot

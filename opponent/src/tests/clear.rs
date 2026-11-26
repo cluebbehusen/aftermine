@@ -20,6 +20,7 @@ fn bombing(scenario: &Scenario, flak: &[(i32, i32)]) -> (State, Opponent) {
                 .zip(flak)
                 .map(|(id, &(x, y))| (id, UnitKind::Flakhound, TilePos::new(x, y), 0)),
         );
+        json["memory"]["census"] = counted(&json["memory"]["units"]);
     });
     (state, opponent)
 }
@@ -229,6 +230,7 @@ fn mirrored_seats_clear_alike() {
                     .zip(flak)
                     .map(|(id, (x, y))| (id, UnitKind::Flakhound, TilePos::new(x, y), 0)),
             );
+            json["memory"]["census"] = counted(&json["memory"]["units"]);
         })
     };
     let mut seats = [
@@ -533,6 +535,7 @@ fn mirrored_seats_send_their_rocs_alike() {
                     .zip(flak)
                     .map(|(id, (x, y))| (id, UnitKind::Flakhound, TilePos::new(x, y), 0)),
             );
+            json["memory"]["census"] = counted(&json["memory"]["units"]);
         })
     };
     let mut seats = [

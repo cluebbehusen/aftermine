@@ -1,4 +1,11 @@
 use super::*;
+use aftermine_sim::State;
+
+/// The field with both seats, which only a death's visibility and owner
+/// are read from.
+fn world() -> State {
+    crate::tests::field().build().unwrap()
+}
 
 fn stalled(player: u8, unit: u32) -> Event {
     Event::OrderStalled {
@@ -29,8 +36,10 @@ fn assembled(player: u8, unit: u32) -> Event {
 #[test]
 fn a_buffer_keeps_the_seats_own_failures_and_other_seats_rollouts_in_order() {
     let mut events = OwnEvents::default();
+    let state = world();
     events.record(
         PlayerId(1),
+        &state,
         &[
             rejected(0, RejectReason::NotEnoughScrap),
             stalled(1, 7),
@@ -46,7 +55,7 @@ fn a_buffer_keeps_the_seats_own_failures_and_other_seats_rollouts_in_order() {
             assembled(0, 5),
         ],
     );
-    events.record(PlayerId(1), &[rejected(1, RejectReason::BadSite)]);
+    events.record(PlayerId(1), &state, &[rejected(1, RejectReason::BadSite)]);
     assert_eq!(
         events.take(),
         [
@@ -82,14 +91,17 @@ fn repeats_of_one_failure_keep_its_first_place() {
         rejected(0, RejectReason::QueueFull),
         rejected(0, RejectReason::BadSite),
     ]);
-    events.record(PlayerId(0), &tick);
+    let state = world();
+    events.record(PlayerId(0), &state, &tick);
     let wide: Vec<Event> = (100..200).map(|unit| stalled(0, unit)).collect();
-    events.record(PlayerId(0), &wide);
+    events.record(PlayerId(0), &state, &wide);
     let kept = events.take();
     assert_eq!(kept.len(), 4 + wide.len(), "{kept:?}");
     let stalled_unit = |event: &OwnEvent| match event {
         OwnEvent::OrderStalled { unit, .. } => Some(unit.0),
-        OwnEvent::CommandRejected { .. } | OwnEvent::MachineAssembled { .. } => None,
+        OwnEvent::CommandRejected { .. }
+        | OwnEvent::MachineAssembled { .. }
+        | OwnEvent::EnemyDied { .. } => None,
     };
     assert_eq!(stalled_unit(&kept[0]), Some(7));
     assert_eq!(stalled_unit(&kept[1]), Some(8));
@@ -112,14 +124,16 @@ fn a_full_buffer_drops_its_oldest_events_and_refuses_to_load_over_its_cap() {
     let tick: Vec<Event> = (0..u32::try_from(CAP).unwrap() + 6)
         .map(|unit| stalled(0, unit))
         .collect();
-    events.record(PlayerId(0), &tick);
+    events.record(PlayerId(0), &world(), &tick);
     let json = serde_json::to_value(&events).unwrap();
     let kept: Vec<u32> = events
         .take()
         .into_iter()
         .map(|event| match event {
             OwnEvent::OrderStalled { unit, .. } => unit.0,
-            OwnEvent::CommandRejected { .. } | OwnEvent::MachineAssembled { .. } => unreachable!(),
+            OwnEvent::CommandRejected { .. }
+            | OwnEvent::MachineAssembled { .. }
+            | OwnEvent::EnemyDied { .. } => unreachable!(),
         })
         .collect();
     assert_eq!(
@@ -143,4 +157,55 @@ fn a_full_buffer_drops_its_oldest_events_and_refuses_to_load_over_its_cap() {
         .unwrap()
         .push(serde_json::json!({"event": "command_rejected", "reason": "bad_site"}));
     assert!(serde_json::from_value::<OwnEvents>(over).is_err());
+}
+
+fn died(player: u8, unit: u32, kind: UnitKind, tile: TilePos) -> Event {
+    Event::UnitDied {
+        unit: UnitId(unit),
+        kind,
+        player: PlayerId(player),
+        pos: tile.center(),
+        grounded: true,
+    }
+}
+
+#[test]
+fn a_seat_hears_of_the_hostile_deaths_it_could_see_and_no_others() {
+    let state = world();
+    let (seen, dark) = (TilePos::new(5, 11), TilePos::new(24, 11));
+    let vision = state.vision(PlayerId(0));
+    assert!(vision.visible(seen) && !vision.visible(dark), "premise");
+    let mut events = OwnEvents::default();
+    events.record(
+        PlayerId(0),
+        &state,
+        &[
+            died(1, 1, UnitKind::Lancer, seen),
+            died(1, 2, UnitKind::Lancer, dark),
+            died(0, 3, UnitKind::Sentinel, seen),
+            died(1, 4, UnitKind::Drone, seen),
+            Event::UnitRetired {
+                unit: UnitId(5),
+                kind: UnitKind::Maw,
+                player: PlayerId(1),
+                pos: seen.center(),
+                crucible: aftermine_sim::BuildingId(9),
+                hp: 1,
+                refund: 0,
+                cargo: 0,
+            },
+        ],
+    );
+    let json = serde_json::to_value(&events).unwrap();
+    assert_eq!(
+        events.take(),
+        [
+            OwnEvent::EnemyDied { unit: UnitId(1) },
+            OwnEvent::EnemyDied { unit: UnitId(5) },
+        ]
+    );
+    assert_eq!(
+        json[0],
+        serde_json::json!({"event": "enemy_died", "unit": 1})
+    );
 }

@@ -213,6 +213,7 @@ fn remembering(
                 .iter()
                 .map(|&(id, kind, tile)| (id.0, kind, tile, now)),
         );
+        json["memory"]["census"] = counted(&json["memory"]["units"]);
     })
 }
 
@@ -1522,6 +1523,7 @@ fn recalled(
     let opponent = restored_with(&seat(&scenario, 0), &scenario, state, |json| {
         json["memory"]["scouted"] = scouted(&scenario, looked);
         json["memory"]["units"] = units;
+        json["memory"]["census"] = counted(&json["memory"]["units"]);
     });
     (scenario, opponent)
 }
@@ -1655,6 +1657,7 @@ fn the_upper_rungs_time_a_lift_to_bombers_clearing_its_target() {
         scenario.players[0].bot_config = Some(rung(difficulty));
         let opponent = restored_with(&seat(&scenario, 0), &scenario, state, |json| {
             json["memory"]["units"] = island.clone();
+            json["memory"]["census"] = counted(&json["memory"]["units"]);
             json["missions"] = missions;
         });
         lifts(opponent, state)

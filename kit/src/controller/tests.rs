@@ -101,7 +101,7 @@ fn hosts_read_the_scrap_a_seat_protects() {
             commands.extend(decided);
         }
         let report = state.tick(&commands);
-        record_events(&mut seats, &report);
+        record_events(&mut seats, &state, &report);
     }
     assert!(protected, "premise: a seat saved for something");
 }
@@ -124,7 +124,7 @@ fn seats_hear_only_their_own_failures_at_their_next_decision() {
     let mut commands: Vec<_> = seats.iter_mut().flat_map(|seat| seat.act(&state)).collect();
     commands.push(stop(0));
     let report = state.tick(&commands);
-    record_events(&mut seats, &report);
+    record_events(&mut seats, &state, &report);
     let rejected = serde_json::json!([{"event": "command_rejected", "reason": "no_valid_units"}]);
     let before = saved(&seats);
     assert_eq!(before[0]["events"], rejected);
@@ -139,7 +139,7 @@ fn seats_hear_only_their_own_failures_at_their_next_decision() {
             traces.extend(trace.filter(|trace| trace.player == PlayerId(0)));
         }
         let report = state.tick(&commands);
-        record_events(&mut seats, &report);
+        record_events(&mut seats, &state, &report);
     }
     let [trace] = traces.as_slice() else {
         panic!("one decision of seat zero: {traces:?}");

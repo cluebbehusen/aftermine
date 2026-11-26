@@ -165,7 +165,9 @@ fn reach(kind: UnitKind) -> Option<Reach> {
     })
 }
 
-/// What the seat knows of the enemy army, weighted by confidence.
+/// What the seat knows of the enemy army: every unit it has seen and not
+/// seen die, at full price wherever it now is, and the enemy buildings it
+/// knows.
 struct Enemy {
     air: u64,
     /// The part of `air` that carries a weapon, counting an armed aircraft a
@@ -182,7 +184,7 @@ struct Enemy {
     /// Per mille of one point defender: the known projectile fire its
     /// recharge would answer (see [`shells_per_recharge`]).
     shells: u64,
-    /// What the guns behind that fire are worth, by confidence and health.
+    /// What the units and guns behind that fire are worth, guns by health.
     shelling: u64,
     reach: Option<Reach>,
     clustered: bool,
@@ -219,7 +221,6 @@ const BLAST_TARGETS: usize = 64;
 
 impl Enemy {
     fn of(observation: &ObservationData, memory: &Memory) -> Self {
-        let now = observation.tick;
         let mut enemy = Self {
             air: 0,
             armed_air: 0,
@@ -243,34 +244,34 @@ impl Enemy {
         let defender = defender();
         let heaviest = heaviest_projectile();
         let mut reaches = [0_u64; 3];
-        for unit in memory.units() {
-            let value = unit.value(now);
+        for kind in memory.census() {
+            let value = u64::from(kind.stats().cost);
             if let Some((_, stats)) = defender {
-                let shells = shells_per_recharge(unit.kind.stats().weapons, stats, heaviest);
-                enemy.shells += shells * u64::from(unit.confidence(now)) / 1_000;
+                let shells = shells_per_recharge(kind.stats().weapons, stats, heaviest);
+                enemy.shells += shells;
                 if shells > 0 {
                     enemy.shelling += value;
                 }
             }
-            let piece = Piece::Unit(unit.kind);
-            if unit.kind.stats().domain == Domain::Air {
+            let piece = Piece::Unit(kind);
+            if kind.stats().domain == Domain::Air {
                 enemy.air += value;
                 enemy.air_units.push((piece, value));
-                if unit.kind.stats().can_fight() {
+                if kind.stats().can_fight() {
                     enemy.armed_air += value;
                 }
-                if grounder(unit.kind) {
+                if grounder(kind) {
                     enemy.grounders += value;
                 }
-            } else if unit.kind.stats().can_fight() {
+            } else if kind.stats().can_fight() {
                 enemy.ground += value;
                 enemy.ground_units.push((piece, value));
-                if heavy(unit.kind) {
+                if heavy(kind) {
                     enemy.heavy += value;
                     enemy.heavy_units.push((piece, value));
                 }
             }
-            if let Some(reach) = reach(unit.kind) {
+            if let Some(reach) = reach(kind) {
                 reaches[reach as usize] += value;
             }
         }

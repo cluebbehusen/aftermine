@@ -208,7 +208,8 @@ fn a_free_frame_near_home_gets_an_extractor_at_every_rung() {
                     Command::Build { kind: BuildingKind::Extractor, anchor, .. } if anchor == frame
                 )
             });
-            events.record(PlayerId(0), &state.tick(&commands).events);
+            let ticked = state.tick(&commands);
+            events.record(PlayerId(0), &state, &ticked.events);
         }
         assert!(placed, "{difficulty:?}");
     }
@@ -403,7 +404,7 @@ fn a_lost_extractor_is_rebuilt_a_while_after_its_attacker_is_gone() {
                     }
                 )
             });
-        events.record(PlayerId(0), &report.events);
+        events.record(PlayerId(0), &state, &report.events);
     }
     assert!(lost, "premise: the Extractor falls");
     assert!(held > 0, "premise: the seat acts while the attacker stays");
@@ -527,7 +528,7 @@ fn a_supported_extractor_becomes_a_deep_bore_before_harvesting_saturates_at_ever
                 "{difficulty:?} deepens before its first delivery, tick {}",
                 report.tick
             );
-            events.record(PlayerId(0), &report.events);
+            events.record(PlayerId(0), &state, &report.events);
         }
         assert!(upgraded, "{difficulty:?}");
         assert_eq!(state.building(extractor).unwrap().tier, 1, "{difficulty:?}");
@@ -614,7 +615,7 @@ fn a_deep_bore_wanted_before_its_tech_stands_builds_that_tech_first() {
                 pulled = Some(trace.target.map(|target| target.investment));
             }
             let report = state.tick(&commands);
-            events.record(PlayerId(0), &report.events);
+            events.record(PlayerId(0), &state, &report.events);
         }
         if plans {
             assert_eq!(
@@ -1287,6 +1288,74 @@ fn a_deep_bore_waits_while_a_known_enemy_army_outweighs_the_seat_s() {
     assert!(!bores(3, &[]), "three Lancers outweigh no army");
     assert!(!bores(3, &sentinels), "four Sentinels do not hold them");
     assert!(bores(3, &wardens), "two Wardens hold them");
+}
+
+#[test]
+fn a_known_army_holds_a_deep_bore_back_until_it_is_seen_to_die() {
+    // West has held scrap for a Deep Bore. Three East Lancers it saw at its
+    // Extractor have gone from there since. Unseen, they still outweigh its
+    // empty army, so it lets the bore go; seen to die, they no longer do, and
+    // it saves on, as a seat that never saw them does.
+    let saving = |seen: bool, died: bool| {
+        let mut sighted = bore_arena(12);
+        if seen {
+            sighted
+                .units
+                .extend((0..3).map(|index| unit(1, UnitKind::Lancer, 14, 2 + index)));
+        }
+        let first = sighted.build().unwrap();
+        let mut looked = seat(&sighted, 0);
+        looked.act(&first, &mut OwnEvents::default());
+        let memory = serde_json::to_value(looked.checkpoint()).unwrap()["memory"].clone();
+        let lancers: Vec<(UnitId, TilePos)> = first
+            .units()
+            .iter()
+            .filter(|unit| unit.kind == UnitKind::Lancer)
+            .map(|unit| (unit.id, unit.tile()))
+            .collect();
+
+        let mut scenario = bore_arena(12);
+        // Short of the bore's price, so it is still saved for.
+        scenario.players[0].scrap = 300;
+        let mut state = scenario.build().unwrap();
+        advance_to(&mut state, crate::memory::UNIT_TICKS + 12, &[]);
+        let deep_bore = Investment::Upgrade {
+            building: own_extractor(&state),
+            tier: 1,
+        };
+        let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+            json["memory"] = memory;
+            json["saving"] = serde_json::json!({
+                "protected": 300,
+                "target": {"investment": deep_bore, "attempt": null},
+            });
+        });
+        let mut events = OwnEvents::default();
+        if died {
+            let deaths: Vec<aftermine_sim::Event> = lancers
+                .iter()
+                .map(|&(unit, tile)| {
+                    assert!(state.vision(PlayerId(0)).visible(tile), "premise: in sight");
+                    aftermine_sim::Event::UnitDied {
+                        unit,
+                        kind: UnitKind::Lancer,
+                        player: PlayerId(1),
+                        pos: tile.center(),
+                        grounded: true,
+                    }
+                })
+                .collect();
+            events.record(PlayerId(0), &state, &deaths);
+        }
+        let (_, trace) = opponent.act_traced(&state, &mut events);
+        trace.unwrap().target.map(|target| target.investment) == Some(deep_bore)
+    };
+    assert!(
+        saving(false, false),
+        "premise: with nothing known it saves on"
+    );
+    assert!(!saving(true, false), "gone from sight, they still count");
+    assert!(saving(true, true), "seen to die, they no longer do");
 }
 
 #[test]

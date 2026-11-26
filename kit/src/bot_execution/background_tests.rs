@@ -143,8 +143,8 @@ fn mixed_controllers_background_and_serial_continue_identically() {
             commands.extend([stop(0), stop(1)]);
         }
         let report = Arc::get_mut(&mut state).unwrap().tick(&commands);
-        record_events(&mut bots, &report);
-        record_events(&mut expected, &report);
+        record_events(&mut bots, &state, &report);
+        record_events(&mut expected, &state, &report);
     }
     assert!(empty_decisions > 0);
 }
@@ -161,7 +161,7 @@ fn own_events_are_consumed_only_when_a_decision_is_installed() {
             commands.push(stop(0));
         }
         let report = Arc::get_mut(&mut state).unwrap().tick(&commands);
-        record_events(&mut bots, &report);
+        record_events(&mut bots, &state, &report);
     }
     let events = |bots: &[SeatController]| {
         let saved: serde_json::Value = serde_json::from_slice(&checkpoint(bots)).unwrap();

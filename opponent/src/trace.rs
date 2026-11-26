@@ -54,8 +54,8 @@ pub struct ArmyReasons {
     pub picks: Vec<Pick>,
 }
 
-/// The enemy army as one seat knows it, in scrap weighted by confidence,
-/// plus what known enemy production foretells.
+/// The enemy army as one seat knows it: every unit it has seen and not seen
+/// die, in scrap at full price, plus what known enemy production foretells.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 pub struct EnemyArmy {
     /// Aircraft of every kind, armed or not, plus 200 for each known Airworks

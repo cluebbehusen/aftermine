@@ -94,6 +94,7 @@ fn a_missing_purchase_keeps_the_target_and_tries_another_spot() {
     assert_eq!(first.len(), 1);
     events.record(
         PlayerId(0),
+        &state,
         &[Event::CommandRejected {
             player: PlayerId(0),
             reason: RejectReason::BadSite,
@@ -203,6 +204,7 @@ fn a_site_a_builder_found_no_route_to_waits_for_a_while() {
     let mut events = OwnEvents::default();
     events.record(
         PlayerId(0),
+        &state,
         &[Event::OrderStalled {
             unit: builder,
             player: PlayerId(0),
@@ -697,7 +699,8 @@ fn scrapheap_still_techs() {
     let mut events = OwnEvents::default();
     while state.current_tick() < 3_600 && foundries_of(&state, BuildingKind::Fabricator) == 0 {
         let commands = opponent.act(&state, &mut events);
-        events.record(PlayerId(0), &state.tick(&commands).events);
+        let ticked = state.tick(&commands);
+        events.record(PlayerId(0), &state, &ticked.events);
     }
     assert_eq!(foundries_of(&state, BuildingKind::Fabricator), 1);
 }
@@ -1441,6 +1444,7 @@ fn checkpoints_reject_state_off_the_map_and_survive_extreme_samples() {
             json["memory"]["units"] = serde_json::json!([
                 {"id": 1, "kind": "sentinel", "tile": {"x": i32::MIN, "y": 0}, "seen": 0}
             ]);
+            json["memory"]["census"] = counted(&json["memory"]["units"]);
         })
         .err()
         .unwrap(),

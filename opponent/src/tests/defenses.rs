@@ -1002,7 +1002,9 @@ fn remembered(kind: &str, count: usize) -> Memory {
             })
         })
         .collect();
+    let army = serde_json::Value::from(army);
     serde_json::from_value(serde_json::json!({
+        "census": counted(&army),
         "units": army,
         "failures": [],
         "abandoned": [],

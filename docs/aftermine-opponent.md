@@ -80,14 +80,14 @@ actions affect the running total and mission state.
   until the next decision. Small stocks such as scouts, Scuttlers, Sappers and
   carriers never add a producer. Scuttlers draw on the producers the army
   leaves. A point never seen is stale from the start, so scouting begins at
-  once. While the seat knows no armed enemy unit, a standing scout looks again
-  at a point once what it saw there is forgotten. A stale point draws a new
-  scout only when no scout already out or queued would see it within the time a
-  scout may take to reach a point; that scout joins its producer's queue behind
-  whatever is there, as worker recovery does, rather than wait for an idle
-  producer while workers and the army keep every one busy. Two train ahead of
-  the army: carriers for a seat whose ground reaches no enemy, since they are
-  its army's only way there, and the Sappers attacks want against known
+  once. While the seat knows where no armed enemy unit stands, a standing scout
+  looks again at a point once what it saw there is forgotten. A stale point
+  draws a new scout only when no scout already out or queued would see it within
+  the time a scout may take to reach a point; that scout joins its producer's
+  queue behind whatever is there, as worker recovery does, rather than wait for
+  an idle producer while workers and the army keep every one busy. Two train
+  ahead of the army: carriers for a seat whose ground reaches no enemy, since
+  they are its army's only way there, and the Sappers attacks want against known
   defenses, which cost more than any army unit their producer trains and would
   otherwise never get one.
 - Extractors and Deep Bores score by payback: what each scrap spent on one
@@ -105,7 +105,10 @@ actions affect the running total and mission state.
   whether or not harvesting is saturated; Reclaimers wait until it is and the
   scrap around the start has begun to run down. Growth outranks tech by what it
   pays back, never by a rule that holds tech down. A Deep Bore waits while an
-  enemy army the seat knows of outweighs its own.
+  enemy army the seat knows of outweighs its own. What the army needs and what
+  holds growth back count every enemy unit the seat has seen until it sees that
+  unit die or three minutes pass unseen, wherever it now is; never a unit it has
+  not seen.
 - A site with scrap is taken once the seat's own Foundry, an ally's building or
   an enemy's Foundry stands near its scrap. No other enemy building takes it;
   enemy guns that reach the site count against it as danger instead.
@@ -183,11 +186,11 @@ home; a builder already on the island builds there on the next attempt.
 Checkpoints preserve all non-derivable state that affects future decisions. No
 other non-derivable state persists between decisions:
 
-- memory of enemy units and buildings, of failed objectives, of raided targets,
-  of when each scouting point was last in sight, of own units whose orders
-  stalled for want of a route or a firing position, and of the seat's own
-  Extractors at the last decision, so a frame whose Extractor is gone counts as
-  a failed objective;
+- memory of enemy units and buildings, of which enemy units it has seen and not
+  seen die, of failed objectives, of raided targets, of when each scouting point
+  was last in sight, of own units whose orders stalled for want of a route or a
+  firing position, and of the seat's own Extractors at the last decision, so a
+  frame whose Extractor is gone counts as a failed objective;
 - missions and their phases; what a fighting attack, lift, strike or clearance
   last knew of the enemy's health and when it last made progress, which tell
   whether the fight goes on; and since when a free army that could attack has
@@ -206,15 +209,16 @@ checkpoint field needs a design review.
 ## Own events
 
 The host session keeps each seat's own `OrderStalled` and `CommandRejected`
-events, and every other seat's machine standing up from its cradle, in a
-bounded, ordered buffer and passes it with the observation. A cradle is public
-once its crew starts, so every seat learns where its machine stands. The buffer
-keeps one stall per unit and reason and one rejection per reason; when it is
-full, the oldest event is dropped. The buffer is saved with checkpoints. A
-background decision reads it without draining it; events are consumed when that
-decision's result is installed. A rejection that cannot be tied unambiguously to
-one command triggers a check of the observed outcome; it never marks a
-particular purchase as failed.
+events, every other seat's machine standing up from its cradle, and each hostile
+unit's death on a tile the seat sees as that tick ends, in a bounded, ordered
+buffer and passes it with the observation. A cradle is public once its crew
+starts, so every seat learns where its machine stands. The buffer keeps one
+stall per unit and reason and one rejection per reason; when it is full, the
+oldest event is dropped. The buffer is saved with checkpoints. A background
+decision reads it without draining it; events are consumed when that decision's
+result is installed. A rejection that cannot be tied unambiguously to one
+command triggers a check of the observed outcome; it never marks a particular
+purchase as failed.
 
 ## Map knowledge
 
@@ -336,12 +340,12 @@ kind.
   lowest rung also misjudges the enemy's strength by a deterministic draw from
   its seed. Every rung counts its own defenders and the attackers by what each
   kind trades against the other's, as measured in the simulation, and trains
-  what beats a threat at home. Memory fades at the same rate on every rung.
-  Difficulty also sets how well a seat carries out its repertoire: lower rungs
-  attack and defend piecemeal, pick targets worse, walk into known defenses as a
-  column or gather short of them only briefly, count only the defenses around a
-  target, let a defense call back an army on its way, focus fire on the nearest
-  enemy or by a rough read of its wounds, leave reinforcements at home, and lift
-  without a fresh look or without counting bomber cover. Every rung keeps every
-  capability. Lower rungs make understandable mistakes, and higher rungs beat
-  lower ones.
+  what beats a threat at home. Memory fades, and forgets a seen enemy unit, at
+  the same rate on every rung. Difficulty also sets how well a seat carries out
+  its repertoire: lower rungs attack and defend piecemeal, pick targets worse,
+  walk into known defenses as a column or gather short of them only briefly,
+  count only the defenses around a target, let a defense call back an army on
+  its way, focus fire on the nearest enemy or by a rough read of its wounds,
+  leave reinforcements at home, and lift without a fresh look or without
+  counting bomber cover. Every rung keeps every capability. Lower rungs make
+  understandable mistakes, and higher rungs beat lower ones.

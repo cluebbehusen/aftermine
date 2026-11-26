@@ -88,7 +88,7 @@ pub fn resume(
     for _ in 0..total {
         let _ = crate::bot_execution::commands(&state, &mut bots);
         let report = playback.step(&mut state);
-        crate::controller::record_events(&mut bots, &report);
+        crate::controller::record_events(&mut bots, &state, &report);
         observe(&state, &report);
     }
     Ok(Resumed { state, bots })

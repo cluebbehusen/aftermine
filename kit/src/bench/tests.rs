@@ -31,7 +31,7 @@ fn all_bots_leaves_no_idle_chair() {
         }
         issued += commands.len();
         let report = state.tick(&commands);
-        crate::controller::record_events(&mut bots, &report);
+        crate::controller::record_events(&mut bots, &state, &report);
     }
     assert!(
         issued > 0,
