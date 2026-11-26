@@ -226,7 +226,11 @@ impl Missions {
                 )
             });
             let mut recruits = fill(candidates, need, &mut have, room, |unit| trades.force(unit));
-            let gap = siege.gap(pressing, have);
+            // A defense recruits half again what presses it, but it is short,
+            // and the seat trains for it, only below the attackers at even
+            // odds: a skirmish it holds is no emergency.
+            let even = pressing.map(|value| value * 2 / 3);
+            let gap = siege.gap(even, have);
             if *own && gap != [0, 0] {
                 shortfalls.push(siege.shortfall(component, gap));
             }
@@ -1415,11 +1419,11 @@ impl Siege<'_> {
             && !self.batteries.iter().any(|(building, _)| armed(building))
     }
 
-    /// How far `have` falls short of the armed attackers, `pressing`, and
-    /// the enemy producers and builders among the buildings: a seat with no
-    /// army must train one for them. Scouts don't count, or every look at the
-    /// base would cost the seat its economy.
-    fn gap(&self, pressing: [u64; 2], have: [u64; 2]) -> [u64; 2] {
+    /// How far `have` falls short of the armed attackers at even odds,
+    /// `even`, and the enemy producers and builders among the buildings: a
+    /// seat with no army must train one for them. Scouts don't count, or every
+    /// look at the base would cost the seat its economy.
+    fn gap(&self, even: [u64; 2], have: [u64; 2]) -> [u64; 2] {
         let builders: u64 = self
             .strays
             .iter()
@@ -1428,7 +1432,7 @@ impl Siege<'_> {
             .sum();
         let producers = self.producers() + builders;
         [0, 1].map(|index| {
-            (pressing[index] + if index == 0 { producers } else { 0 }).saturating_sub(have[index])
+            (even[index] + if index == 0 { producers } else { 0 }).saturating_sub(have[index])
         })
     }
 

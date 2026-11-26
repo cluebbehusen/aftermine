@@ -459,6 +459,38 @@ fn a_short_defense_defers_the_saving_target_and_spends_protected_scrap() {
 }
 
 #[test]
+fn a_skirmish_the_defense_holds_at_even_odds_is_no_emergency() {
+    // One enemy Sentinel near home against one of the seat's own: even odds,
+    // so nothing trains as an emergency answer and production goes on as
+    // usual. Against two the defense is short and trains its answer.
+    let answers = |raiders: i32| {
+        let mut scenario = arena(400);
+        scenario.units.extend(workforce(0));
+        scenario.units.push(unit(0, UnitKind::Sentinel, 7, 5));
+        for index in 0..raiders {
+            scenario
+                .units
+                .push(unit(1, UnitKind::Sentinel, 9, 5 + index));
+        }
+        let state = scenario.build().unwrap();
+        let (_, trace) =
+            seat_with(&scenario, 0, thrifty()).act_traced(&state, &mut OwnEvents::default());
+        let picks = trace.unwrap().army.picks;
+        let answered = picks.iter().any(|pick| {
+            matches!(
+                pick.path,
+                crate::trace::PickPath::Shortfall | crate::trace::PickPath::Answer { .. }
+            )
+        });
+        (answered, picks)
+    };
+    let (answered, picks) = answers(1);
+    assert!(!answered, "{picks:?}");
+    let (answered, picks) = answers(2);
+    assert!(answered, "two outnumber it: {picks:?}");
+}
+
+#[test]
 fn a_short_seat_too_poor_for_a_line_unit_or_a_gun_trains_what_it_can_afford() {
     let mut scenario = arena(50);
     scenario.units.extend(workforce(0));
@@ -2819,9 +2851,12 @@ fn a_guard_is_full_by_what_it_trades_against_its_enemies_not_by_its_price() {
         );
         let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
         let picks = trace.unwrap().army.picks;
-        let short = picks
-            .iter()
-            .any(|pick| pick.path == crate::trace::PickPath::Shortfall);
+        let short = picks.iter().any(|pick| {
+            matches!(
+                pick.path,
+                crate::trace::PickPath::Shortfall | crate::trace::PickPath::Answer { .. }
+            )
+        });
         (short, picks)
     };
     let (sentinels, picks) = short(UnitKind::Sentinel, 3);
@@ -3767,7 +3802,11 @@ fn defenders_that_trade_poorly_against_the_attackers_leave_a_shortfall() {
         .act_traced(&state, &mut OwnEvents::default());
     assert!(
         trace.unwrap().army.picks.iter().any(|pick| {
-            pick.building == fabricator && matches!(pick.path, crate::trace::PickPath::Shortfall)
+            pick.building == fabricator
+                && matches!(
+                    pick.path,
+                    crate::trace::PickPath::Shortfall | crate::trace::PickPath::Answer { .. }
+                )
         }),
         "the Fabricator trains an answer to the Lancers"
     );
@@ -3856,7 +3895,7 @@ fn sentinels_weak_anti_air_leaves_a_shortfall_against_buzzards() {
     assert!(
         picks.iter().any(|pick| {
             pick.unit == UnitKind::Flakhound
-                && matches!(pick.path, crate::trace::PickPath::Shortfall)
+                && matches!(pick.path, crate::trace::PickPath::Answer { .. })
         }),
         "{picks:?}"
     );

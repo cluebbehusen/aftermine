@@ -116,6 +116,14 @@ pub enum PickPath {
         /// The score it had to reach.
         bar: u64,
     },
+    /// The best unit for a role a short defense or guard raised, the role
+    /// its best answer belongs to, at no less than `bar`.
+    Answer {
+        /// The role it filled.
+        role: Role,
+        /// The score it had to reach.
+        bar: u64,
+    },
     /// A producer with no wanted role kept training ground units.
     Fallback {
         /// The ground role it trained for.

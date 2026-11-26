@@ -477,6 +477,10 @@ pub(crate) struct Needs {
     answered: i64,
     /// Whether ground units can reach an enemy: a building or start, or
     /// invaders on the seat's own ground.
+    /// The roles a short defense or guard raised this decision. While any is
+    /// raised, production spends the whole bank, the scrap kept for the
+    /// saving target included.
+    raised: [bool; ROLES.len()],
     ground: bool,
     /// Whether ground units reach an enemy only by lift.
     lifted: bool,
@@ -688,6 +692,7 @@ pub(crate) fn needs(
     Needs {
         need,
         air_share: u64::try_from(air_share(army, traits, stance)).unwrap_or(0),
+        raised: [false; ROLES.len()],
         ground: outlet.ground || outlet.invaders > 0,
         lifted: outlet.lifted,
         weight: [
@@ -833,16 +838,46 @@ impl Needs {
     }
 
     /// Roles with a deficit, most wanted first.
+    /// Raises `role`'s need to at least `by` beyond what it already has, for a
+    /// short defense or guard whose best answer is the role's: the role's
+    /// units are then picked as any of its units are, and the bank is spent
+    /// on them at once.
+    pub(crate) fn raise(&mut self, role: Role, by: u64) {
+        if by > 0 {
+            let need = &mut self.need[role as usize];
+            *need = (*need)
+                .max(0)
+                .saturating_add(i64::try_from(by).unwrap_or(i64::MAX));
+            self.raised[role as usize] = true;
+        }
+    }
+
+    /// Whether a short defense or guard raised `role` this decision.
+    pub(crate) fn raised(&self, role: Role) -> bool {
+        self.raised[role as usize]
+    }
+
+    /// Whether a short defense or guard raised any role this decision.
+    pub(crate) fn urgent(&self) -> bool {
+        self.raised.iter().any(|raised| *raised)
+    }
+
+    /// The roles still short, most wanted first: those a short defense or
+    /// guard raised ahead of the rest, so its answer gets a producer before
+    /// general production takes it, then by need times weight.
     pub(crate) fn wanted(&self) -> Vec<Role> {
         let mut wanted: Vec<Role> = ROLES
             .into_iter()
             .filter(|role| self.need[*role as usize] > 0)
             .collect();
         wanted.sort_by_key(|role| {
-            Reverse(
-                self.need[*role as usize]
-                    * i64::try_from(self.weight[*role as usize])
-                        .expect("role weights stay near a thousand"),
+            (
+                !self.raised(*role),
+                Reverse(
+                    self.need[*role as usize]
+                        * i64::try_from(self.weight[*role as usize])
+                            .expect("role weights stay near a thousand"),
+                ),
             )
         });
         wanted
