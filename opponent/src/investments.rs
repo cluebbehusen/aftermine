@@ -2,6 +2,7 @@
 //! purchase toward it. The list is recomputed every decision.
 
 use crate::composition::{self, Role};
+use crate::counters::{Piece, weigh};
 use crate::defenses;
 use crate::expansion;
 use crate::frame::{HomeFrame, footprint_centre};
@@ -230,10 +231,11 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         },
     ));
     // Growth paid back by support only once the army holds what the seat
-    // knows of the enemy's: an earlier Foundry, bought while exposed, is
-    // what an early raid punishes.
+    // knows of the enemy's, each weighed against the other by the counter
+    // chart: an earlier Foundry, bought while exposed, is what an early raid
+    // punishes.
     let now = observation.tick;
-    let known: u64 = situation
+    let known: Vec<(Piece, u64)> = situation
         .memory
         .units()
         .iter()
@@ -242,9 +244,10 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
             // Drones come and go from their host, as the own count leaves them.
             (!stats.weapons.is_empty() || stats.demolition.is_some()) && !stats.docks()
         })
-        .map(|seen| seen.value(now))
-        .sum();
-    let holds = crate::decision::army(observation) >= known;
+        .map(|seen| (Piece::Unit(seen.kind), seen.value(now)))
+        .collect();
+    let army = crate::decision::army_force(observation);
+    let holds = weigh(&army, &known) >= weigh(&known, &army);
     let secure = !situation.exposed && holds;
     let growth = expansion::candidates(
         observation,

@@ -166,9 +166,10 @@ pub(super) fn on_the_way(
 const SITE_TILES: i32 = 8;
 
 /// Whether the known enemy ground force near a defense of `kind` placed at
-/// `anchor` outweighs the site's price and the seat's units near it that hit
-/// ground, aircraft too: a lone Turret raised in front of an army only feeds
-/// it its price and its builder. An enemy counts within its reach of the
+/// `anchor` outweighs the gun and the seat's units near it that hit ground,
+/// aircraft too, each side weighed against the other by the counter chart:
+/// a lone Turret raised in front of an army that beats it only feeds it its
+/// price and its builder. An enemy counts within its reach of the
 /// footprint, or within the site's reach when it can walk there; distances
 /// run from the footprint, so mirrored sites are judged alike. Never at home
 /// or by the seat's last Foundry, where a short defense may raise one as its
@@ -212,26 +213,40 @@ pub(crate) fn overruns(
         .map(|enemy| enemy.id)
         .collect();
     visible.sort_unstable();
-    let seen: u64 = observation
+    let enemy: Force = observation
         .enemy_units
         .iter()
         .filter(|enemy| near(enemy.kind, enemy.tile))
-        .map(value)
-        .sum();
-    let remembered: u64 = memory
-        .units()
-        .iter()
-        .filter(|unit| visible.binary_search(&unit.id).is_err() && near(unit.kind, unit.tile))
-        .map(|unit| unit.value(observation.tick) * against_machines(unit.kind) / 1_000)
-        .sum();
-    let held: u64 = observation
-        .my_units
-        .iter()
-        .filter(|unit| super::hits(unit, Domain::Ground))
-        .filter(|unit| gap(anchor, size, unit.tile, (1, 1)) <= SITE_TILES)
-        .map(value)
-        .sum();
-    seen + remembered > u64::from(kind.base_stats().construction.cost) + held
+        .map(|enemy| (Piece::Unit(enemy.kind), value(enemy)))
+        .chain(
+            memory
+                .units()
+                .iter()
+                .filter(|unit| {
+                    visible.binary_search(&unit.id).is_err() && near(unit.kind, unit.tile)
+                })
+                .map(|unit| {
+                    (
+                        Piece::Unit(unit.kind),
+                        unit.value(observation.tick) * against_machines(unit.kind) / 1_000,
+                    )
+                }),
+        )
+        .collect();
+    let held: Force = std::iter::once((
+        Piece::Gun(kind, 0),
+        u64::from(kind.base_stats().construction.cost),
+    ))
+    .chain(
+        observation
+            .my_units
+            .iter()
+            .filter(|unit| super::hits(unit, Domain::Ground))
+            .filter(|unit| gap(anchor, size, unit.tile, (1, 1)) <= SITE_TILES)
+            .map(|unit| (Piece::Unit(unit.kind), value(unit))),
+    )
+    .collect();
+    weigh(&enemy, &held) > weigh(&held, &enemy)
 }
 
 #[cfg(test)]

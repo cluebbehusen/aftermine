@@ -1530,6 +1530,66 @@ fn drones_out_of_a_bay_move_neither_the_threat_nor_the_army_behind_the_share() {
 }
 
 #[test]
+fn enemies_near_the_base_lower_the_share_by_what_they_trade_against_the_army() {
+    // Two Lancers near the base. Four Sentinels, worth more but beaten by
+    // them, hold no more of the share than no army at all; two Wardens,
+    // which beat them, keep it whole.
+    let mut scenario = saturated(0);
+    scenario.units.push(aftermine_sim::scenario::UnitSpec {
+        player: 0,
+        kind: UnitKind::Sentinel,
+        x: 8,
+        y: 8,
+    });
+    let state = scenario.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let template = observation
+        .my_units
+        .iter()
+        .find(|unit| unit.kind == UnitKind::Sentinel)
+        .unwrap()
+        .clone();
+    let profile = ResolvedProfile::resolve(BotConfig::new(
+        BotDifficulty::Standard,
+        BotStance::Balanced,
+        1,
+    ));
+    let units = |kind: UnitKind, player: PlayerId, count: u32, first: u32| {
+        (0..count)
+            .map(|index| aftermine_sim::observation::UnitObs {
+                id: UnitId(first + index),
+                kind,
+                player,
+                ..template.clone()
+            })
+            .collect::<Vec<_>>()
+    };
+    let share = |army: Option<(UnitKind, u32)>, lancers: u32| {
+        let mut seen = observation.clone();
+        seen.my_units
+            .retain(|unit| unit.kind.stats().weapons.is_empty());
+        if let Some((kind, count)) = army {
+            seen.my_units
+                .extend(units(kind, PlayerId(0), count, 10_000));
+        }
+        seen.enemy_units = units(UnitKind::Lancer, PlayerId(1), lancers, 20_000);
+        crate::decision::share(&seen, &profile)
+    };
+    let calm = share(None, 0);
+    let bare = share(None, 2);
+    assert!(
+        bare < calm,
+        "premise: Lancers with no army to meet them cut the share"
+    );
+    assert!(
+        4 * UnitKind::Sentinel.stats().cost > 2 * UnitKind::Lancer.stats().cost,
+        "premise: the Sentinels are worth more"
+    );
+    assert_eq!(share(Some((UnitKind::Sentinel, 4)), 2), bare);
+    assert_eq!(share(Some((UnitKind::Warden, 2)), 2), calm);
+}
+
+#[test]
 fn a_seat_saving_for_tech_turns_to_a_free_extractor_frame_at_every_rung() {
     // A free frame beside West's Foundry pays for itself within a minute,
     // which no tech building does.
