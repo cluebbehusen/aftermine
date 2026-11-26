@@ -652,15 +652,36 @@ pub(crate) fn emergency(
             {
                 continue;
             }
-            // A new gun of each kind, or a tier more for a gun beside the
-            // building that holds off none of the attackers today.
-            let sites = kinds.iter().filter_map(|&kind| {
-                let (anchor, worth) = guard.best_where(
-                    kind,
-                    |other| other.anchor == asset.anchor,
-                    |anchor| {
-                        !crate::missions::meeting::overruns(observation, memory, map, kind, anchor)
-                            && placement::stands(
+            // A new gun of each kind that fires back at every attacker on
+            // the way in, or a tier more for a gun beside the building that
+            // holds off none of the attackers today. One they outrange only
+            // gives them a target.
+            let answers = |kind: BuildingKind| {
+                asset.approach(domain).is_some_and(|approach| {
+                    Cover::of(kind, 0, asset.anchor).is_some_and(|cover| {
+                        approach
+                            .threat
+                            .reaches
+                            .iter()
+                            .all(|(reach, _)| cover.answers(*reach))
+                    })
+                })
+            };
+            let sites = kinds
+                .iter()
+                .filter(|kind| answers(**kind))
+                .filter_map(|&kind| {
+                    let (anchor, worth) = guard.best_where(
+                        kind,
+                        |other| other.anchor == asset.anchor,
+                        |anchor| {
+                            !crate::missions::meeting::overruns(
+                                observation,
+                                memory,
+                                map,
+                                kind,
+                                anchor,
+                            ) && placement::stands(
                                 observation,
                                 map,
                                 memory,
@@ -668,11 +689,11 @@ pub(crate) fn emergency(
                                 &[],
                                 builder(kind, anchor).as_slice(),
                             )
-                    },
-                )?;
-                let price = kind.base_stats().construction.cost;
-                Some((worth, price, Answer::Site(kind, anchor)))
-            });
+                        },
+                    )?;
+                    let price = kind.base_stats().construction.cost;
+                    Some((worth, price, Answer::Site(kind, anchor)))
+                });
             let raises = observation
                 .my_buildings
                 .iter()
