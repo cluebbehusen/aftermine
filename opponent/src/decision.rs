@@ -3,6 +3,7 @@
 
 use crate::composition::Fighter;
 use crate::composition::{self, Needs};
+use crate::counters::{Piece, weigh};
 use crate::defenses;
 use crate::events::OwnEvent;
 use crate::frame::{HomeFrame, footprint_centre, gap};
@@ -1787,9 +1788,11 @@ fn arm(
 }
 
 /// Per mille of income protected for the saving target. Stance and greed set
-/// it; armed enemy units in sight near the seat's buildings lower it, so the
-/// seat spends on defense when it is threatened. Drones count on neither
-/// side: they come and go from their host's bay.
+/// it; armed enemy units in sight near the seat's buildings lower it when
+/// they outweigh half the seat's army by the counter chart, and more when
+/// they outweigh all of it, so the seat spends on defense when it is
+/// threatened. Drones count on neither side: they come and go from their
+/// host's bay.
 pub(crate) fn share(observation: &ObservationData, profile: &ResolvedProfile) -> u32 {
     let base = match profile.stance {
         BotStance::Turtle => 550,
@@ -1797,7 +1800,7 @@ pub(crate) fn share(observation: &ObservationData, profile: &ResolvedProfile) ->
         BotStance::Aggressive => 400,
     };
     let greed = 3 * (i32::from(profile.traits.greed) - 50);
-    let threat: u64 = observation
+    let threat: Vec<(Piece, u64)> = observation
         .enemy_units
         .iter()
         .filter(|unit| unit.kind.stats().can_fight() && !unit.kind.stats().docks())
@@ -1807,9 +1810,10 @@ pub(crate) fn share(observation: &ObservationData, profile: &ResolvedProfile) ->
                 gap(building.anchor, size, unit.tile, (1, 1)) < 12
             })
         })
-        .map(|unit| u64::from(unit.kind.stats().cost))
-        .sum();
-    let army = army(observation);
+        .map(|unit| (Piece::Unit(unit.kind), u64::from(unit.kind.stats().cost)))
+        .collect();
+    let own = army_force(observation);
+    let (threat, army) = (weigh(&threat, &own), weigh(&own, &threat));
     let cut = if threat == 0 {
         0
     } else if threat >= army {
@@ -1836,13 +1840,26 @@ fn workforce(observation: &ObservationData) -> u64 {
 
 /// What the seat's armed units cost.
 pub(crate) fn army(observation: &ObservationData) -> u64 {
-    // A drone comes and goes from its host's bay, so only machines count.
+    armed(observation)
+        .map(|unit| u64::from(unit.kind.stats().cost))
+        .sum()
+}
+
+/// The seat's armed machines. A drone comes and goes from its host's bay, so
+/// only machines count.
+fn armed(observation: &ObservationData) -> impl Iterator<Item = &UnitObs> {
     observation
         .my_units
         .iter()
         .filter(|unit| !unit.kind.stats().weapons.is_empty() && !unit.kind.stats().docks())
-        .map(|unit| u64::from(unit.kind.stats().cost))
-        .sum()
+}
+
+/// The seat's armed machines, each at its price: the army [`army`] prices,
+/// as the counter chart weighs it.
+pub(crate) fn army_force(observation: &ObservationData) -> Vec<(Piece, u64)> {
+    armed(observation)
+        .map(|unit| (Piece::Unit(unit.kind), u64::from(unit.kind.stats().cost)))
+        .collect()
 }
 
 /// Per mille of the scrap that started around the seat's home already gone.

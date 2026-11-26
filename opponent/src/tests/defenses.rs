@@ -466,6 +466,9 @@ fn an_emergency_turret_guards_the_building_under_attack() {
 
 #[test]
 fn an_air_raid_gets_its_emergency_flak_when_a_turret_is_out_of_reach() {
+    // The raid's Sentinel stands beside the expansion; West's own Sentinels
+    // there hold it, so a Flak Turret, which cannot fire on it, is not raised
+    // only to be torn down.
     let expansion = TilePos::new(14, 8);
     let mut scenario = arena(95);
     scenario
@@ -474,6 +477,8 @@ fn an_air_raid_gets_its_emergency_flak_when_a_turret_is_out_of_reach() {
     scenario.units.extend([
         unit(1, UnitKind::Sentinel, 16, 10),
         unit(1, UnitKind::Buzzard, 16, 9),
+        unit(0, UnitKind::Sentinel, 13, 10),
+        unit(0, UnitKind::Sentinel, 14, 10),
     ]);
     let state = scenario.build().unwrap();
     let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
@@ -1754,17 +1759,18 @@ fn no_emergency_turret_goes_where_the_attackers_would_pull_its_site_down() {
 #[test]
 fn an_outpost_gets_no_turret_in_front_of_an_army_but_home_does() {
     // On an arena drawn out in the middle, a lone Sentinel by the expansion
-    // draws a Turret beyond its reach; with two more standing behind it, out
-    // of reach of every spot but near enough to fight over the site, the
-    // Turret would only feed them its price and builder, so none goes up. The
-    // same group at home still meets home's Turret.
-    let turrets = |raiders: &[(i32, i32)]| {
+    // draws a Turret beyond its reach, and so do three, which a Turret beats.
+    // With two Wardens standing behind it instead, out of reach of every spot
+    // but near enough to fight over the site, the Turret would only feed them
+    // its price and builder, so none goes up. The same group at home still
+    // meets home's Turret.
+    let turrets = |raiders: &[(UnitKind, i32, i32)]| {
         let mut scenario = super::missions::widened(arena(400), 12, 20);
         scenario
             .buildings
             .push(building(0, BuildingKind::Foundry, 24, 8));
-        for (x, y) in raiders {
-            scenario.units.push(unit(1, UnitKind::Sentinel, *x, *y));
+        for (kind, x, y) in raiders {
+            scenario.units.push(unit(1, *kind, *x, *y));
         }
         let state = scenario.build().unwrap();
         let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
@@ -1774,14 +1780,26 @@ fn an_outpost_gets_no_turret_in_front_of_an_army_but_home_does() {
             .map(|(_, anchor)| anchor)
             .collect::<Vec<_>>()
     };
-    let lone = turrets(&[(28, 10)]);
+    let sentinel = UnitKind::Sentinel;
+    let lone = turrets(&[(sentinel, 28, 10)]);
     assert!(
         lone.iter().any(|anchor| anchor.x > 20),
         "premise: a lone raider draws an outpost Turret: {lone:?}"
     );
-    let army = turrets(&[(28, 10), (31, 9), (31, 10)]);
+    let beaten = turrets(&[(sentinel, 28, 10), (sentinel, 31, 9), (sentinel, 31, 10)]);
+    assert!(beaten.iter().any(|anchor| anchor.x > 20), "{beaten:?}");
+    let army = turrets(&[
+        (sentinel, 28, 10),
+        (UnitKind::Warden, 31, 9),
+        (UnitKind::Warden, 31, 10),
+    ]);
     assert!(army.iter().all(|anchor| anchor.x < 20), "{army:?}");
-    let home = turrets(&[(9, 5), (12, 4), (12, 5), (12, 6)]);
+    let home = turrets(&[
+        (sentinel, 9, 5),
+        (UnitKind::Warden, 12, 4),
+        (UnitKind::Warden, 12, 5),
+        (sentinel, 12, 6),
+    ]);
     assert!(!home.is_empty(), "home still raises its Turret");
 }
 
@@ -1827,7 +1845,7 @@ fn mirrored_outposts_are_judged_alike_for_a_turret() {
 
 #[test]
 fn a_site_is_judged_by_its_footprint_on_either_side() {
-    // Three Sentinels seven empty tiles from a Bastion's footprint, once on
+    // Three Wardens seven empty tiles from a Bastion's footprint, once on
     // its west and once on its east, each in a West scout's sight: the same
     // force at the same distance, so the same verdict either way.
     let (bw, _) = BuildingKind::Bastion.size();
@@ -1838,7 +1856,7 @@ fn a_site_is_judged_by_its_footprint_on_either_side() {
             .buildings
             .push(building(0, BuildingKind::Foundry, 24, 8));
         for y in 1..=3 {
-            scenario.units.push(unit(1, UnitKind::Sentinel, x, y));
+            scenario.units.push(unit(1, UnitKind::Warden, x, y));
         }
         scenario.units.push(unit(0, UnitKind::Surveyor, x - 1, 2));
         let state = scenario.build().unwrap();
@@ -1847,10 +1865,10 @@ fn a_site_is_judged_by_its_footprint_on_either_side() {
             observation
                 .enemy_units
                 .iter()
-                .filter(|enemy| enemy.kind == UnitKind::Sentinel)
+                .filter(|enemy| enemy.kind == UnitKind::Warden)
                 .count(),
             3,
-            "premise: West sees the Sentinels"
+            "premise: West sees the Wardens"
         );
         crate::missions::meeting::overruns(
             &observation,
@@ -1865,15 +1883,15 @@ fn a_site_is_judged_by_its_footprint_on_either_side() {
     assert_eq!(verdict(west), verdict(east));
     assert!(
         verdict(west),
-        "premise: three Sentinels outweigh a Bastion alone"
+        "premise: three Wardens outweigh a Bastion alone"
     );
 }
 
 #[test]
 fn aircraft_that_hit_ground_beside_a_site_hold_it() {
-    // Three Sentinels near a Bastion's site away from home, in a West
-    // scout's sight, outweigh it alone; West's Buzzards beside the site hold
-    // them as well as ground units would.
+    // Three Wardens near a Bastion's site away from home, in a West scout's
+    // sight, outweigh it alone; West's Buzzards beside the site hold them as
+    // well as ground units would.
     let anchor = TilePos::new(30, 4);
     let verdict = |buzzards: bool| {
         let mut scenario = super::missions::widened(arena(400), 12, 20);
@@ -1881,7 +1899,7 @@ fn aircraft_that_hit_ground_beside_a_site_hold_it() {
             .buildings
             .push(building(0, BuildingKind::Foundry, 24, 8));
         for y in 1..=3 {
-            scenario.units.push(unit(1, UnitKind::Sentinel, 39, y));
+            scenario.units.push(unit(1, UnitKind::Warden, 39, y));
         }
         scenario.units.push(unit(0, UnitKind::Surveyor, 37, 2));
         if buzzards {
@@ -1899,7 +1917,7 @@ fn aircraft_that_hit_ground_beside_a_site_hold_it() {
             anchor,
         )
     };
-    assert!(verdict(false), "premise: the Sentinels overrun the site");
+    assert!(verdict(false), "premise: the Wardens overrun the site");
     assert!(!verdict(true), "Buzzards beside it hold them");
 }
 

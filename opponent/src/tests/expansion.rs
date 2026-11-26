@@ -1262,17 +1262,16 @@ fn a_plateau_the_seat_holds_with_a_foundry_keeps_its_frames() {
 fn a_deep_bore_waits_while_a_known_enemy_army_outweighs_the_seat_s() {
     // A supported Extractor and a Crucible. With no enemy army known the
     // Deep Bore competes; three Lancers in sight outweigh an empty army and
-    // hold it back; four Sentinels hold the Lancers, and it competes again.
-    let bores = |lancers: i32, sentinels: &[(i32, i32)]| {
+    // hold it back. Four Sentinels, worth more but beaten by them, do not
+    // hold them; two Wardens do, and it competes again.
+    let bores = |lancers: i32, guards: &[(UnitKind, i32, i32)]| {
         let mut scenario = bore_arena(12);
         scenario
             .units
             .extend((0..lancers).map(|index| unit(1, UnitKind::Lancer, 14, 2 + index)));
-        scenario.units.extend(
-            sentinels
-                .iter()
-                .map(|(x, y)| unit(0, UnitKind::Sentinel, *x, *y)),
-        );
+        scenario
+            .units
+            .extend(guards.iter().map(|(kind, x, y)| unit(0, *kind, *x, *y)));
         let state = scenario.build().unwrap();
         let observation = mapped(&state, PlayerId(0));
         let mut memory = Memory::default();
@@ -1282,10 +1281,12 @@ fn a_deep_bore_waits_while_a_known_enemy_army_outweighs_the_seat_s() {
             .iter()
             .any(|candidate| matches!(candidate.investment, Investment::Upgrade { tier: 1, .. }))
     };
-    let four = [(4, 8), (5, 8), (4, 9), (5, 9)];
+    let sentinels = [(4, 8), (5, 8), (4, 9), (5, 9)].map(|(x, y)| (UnitKind::Sentinel, x, y));
+    let wardens = [(4, 8), (5, 8)].map(|(x, y)| (UnitKind::Warden, x, y));
     assert!(bores(0, &[]), "nothing known");
     assert!(!bores(3, &[]), "three Lancers outweigh no army");
-    assert!(bores(3, &four), "four Sentinels hold three Lancers");
+    assert!(!bores(3, &sentinels), "four Sentinels do not hold them");
+    assert!(bores(3, &wardens), "two Wardens hold them");
 }
 
 #[test]
