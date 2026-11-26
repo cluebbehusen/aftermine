@@ -1173,7 +1173,10 @@ impl Needs {
     fn factors(&self, kind: UnitKind, role: Role) -> Factors {
         let stats = kind.stats();
         let trades = counters::weight(kind, &self.foes[role as usize]);
-        let firepower = if role == Role::Siege && !counters::MEASURED.contains(&kind) {
+        // The siege role answers guns, which the chart measures artillery
+        // against too.
+        let measured = counters::MEASURED.contains(&kind) || counters::ARTILLERY.contains(&kind);
+        let firepower = if role == Role::Siege && !measured {
             firepower(kind)
         } else {
             1_000

@@ -28,7 +28,7 @@ mod workers;
 
 pub use checkpoint::Checkpoint;
 pub use composition::{Factors, Reach, Role};
-pub use counters::{Chart, GUNS, MEASURED, chart, fingerprint};
+pub use counters::{ARTILLERY, Chart, GUNS, MEASURED, chart, fingerprint};
 pub use events::{OwnEvent, OwnEvents};
 pub use investments::{Investment, Step};
 pub use map::MapModel;

@@ -156,7 +156,19 @@ fn the_chart_source_carries_the_fingerprint_and_every_row() {
         .lines()
         .filter(|line| line.starts_with("    ["))
         .count();
-    assert_eq!(rows, 2 * aftermine_opponent::MEASURED.len(), "{source}");
+    assert_eq!(
+        rows,
+        2 * aftermine_opponent::MEASURED.len() + aftermine_opponent::ARTILLERY.len(),
+        "{source}"
+    );
+    assert!(
+        source.contains(&format!(
+            "SIEGE: [[u16; {}]; {}]",
+            aftermine_opponent::GUNS.len(),
+            aftermine_opponent::ARTILLERY.len()
+        )),
+        "{source}"
+    );
     assert!(
         source.contains(&format!(
             "AGAINST: [[u16; {}]; {}]",
@@ -173,6 +185,7 @@ fn checked_in() -> Measured {
     Measured {
         trades: chart.trades.iter().map(|row| row.to_vec()).collect(),
         against: chart.against.iter().map(|row| row.to_vec()).collect(),
+        siege: chart.siege.iter().map(|row| row.to_vec()).collect(),
     }
 }
 
@@ -188,6 +201,13 @@ fn the_check_accepts_the_checked_in_chart_and_refuses_another() {
     let error = check(&against).unwrap_err();
     assert!(
         error.to_string().contains("Lancer row against structures"),
+        "{error}"
+    );
+    let mut siege = checked_in();
+    siege.siege[0][5] += 1;
+    let error = check(&siege).unwrap_err();
+    assert!(
+        error.to_string().contains("Bombard row in a siege"),
         "{error}"
     );
 }

@@ -305,7 +305,10 @@ fn a_producer_trains_the_best_unit_it_can_afford() {
         (UnitKind::Harvester, 10, 10),
         (UnitKind::Harvester, 11, 10),
     ];
-    let mut scenario = armed(&clustered, &[(BuildingKind::Turret, 12, 9)]);
+    // A Flak Turret, which no ground unit need outrange: a Lancer stands
+    // against it as well as a Bombard, and the Bombard's splash on the
+    // clustered Harvesters is out of reach.
+    let mut scenario = armed(&clustered, &[(BuildingKind::FlakTurret, 12, 9)]);
     scenario.players[0].scrap = 150 + UnitKind::Sentinel.stats().cost;
     let mut state = scenario.build().unwrap();
     let busy = PlayerCommand {

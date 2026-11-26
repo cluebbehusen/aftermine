@@ -195,6 +195,28 @@ pub fn even(kind: UnitKind, budget: u32) -> Army {
     vec![(kind, ((budget + cost / 2) / cost).max(1))]
 }
 
+/// As many of the artillery `kind` as `budget` buys once a Kestrel to spot
+/// for them is paid for, rounded, and at least one, with that Kestrel.
+#[must_use]
+pub fn spotted(kind: UnitKind, budget: u32) -> Army {
+    let spotter = UnitKind::Kestrel.stats().cost;
+    let cost = kind.stats().cost.max(1);
+    let guns = (budget.saturating_sub(spotter) + cost / 2) / cost;
+    vec![(kind, guns.max(1)), (UnitKind::Kestrel, 1)]
+}
+
+/// As many of the structure `kind` at `tier` as `budget` buys once an Array
+/// to track for them is paid for, rounded, and at least one, with that
+/// Array: guns that fire past their own sight answer artillery only on what
+/// radar tracks, as the artillery shells them only on what its spotter sees.
+#[must_use]
+pub fn watched_guns(kind: BuildingKind, tier: u8, budget: u32) -> Guns {
+    let array = BuildingKind::Array.invested_cost(0);
+    let cost = kind.invested_cost(tier).max(1);
+    let guns = (budget.saturating_sub(array) + cost / 2) / cost;
+    vec![(kind, tier, guns.max(1)), (BuildingKind::Array, 0, 1)]
+}
+
 /// As many of the structure `kind` at `tier` as `budget` buys, rounded, and
 /// at least one, each costing every rung paid for.
 #[must_use]
@@ -426,6 +448,9 @@ pub struct Measured {
     /// `against[a][g]`: per mille of its value lost, the value `MEASURED[a]`
     /// destroys of `GUNS[g]`.
     pub against: Vec<Vec<u16>>,
+    /// `siege[a][g]`: per mille of its value lost, the value `ARTILLERY[a]`,
+    /// with a spotter, destroys of `GUNS[g]`.
+    pub siege: Vec<Vec<u16>>,
 }
 
 /// The bot's counter chart as this build measures it: each measured kind
@@ -462,7 +487,37 @@ pub fn chart(jobs: NonZeroUsize) -> Result<Measured> {
                 .collect()
         })
         .collect();
-    Ok(Measured { trades, against })
+    let artillery = aftermine_opponent::ARTILLERY;
+    let sieges: Vec<(usize, usize, usize)> = (0..BUDGETS.len())
+        .flat_map(|budget| {
+            (0..artillery.len())
+                .flat_map(move |a| (0..aftermine_opponent::GUNS.len()).map(move |g| (budget, a, g)))
+        })
+        .collect();
+    let results = fan_out_bounded(&sieges, jobs, |&(budget, a, g)| {
+        let (gun, tier) = aftermine_opponent::GUNS[g];
+        siege(
+            &spotted(artillery[a], BUDGETS[budget]),
+            &watched_guns(gun, tier, BUDGETS[budget]),
+        )
+    })?;
+    let mut tables = vec![vec![Vec::new(); aftermine_opponent::GUNS.len()]; artillery.len()];
+    for (&(_, a, g), trade) in sieges.iter().zip(results) {
+        tables[a][g].push(trade);
+    }
+    let siege = tables
+        .into_iter()
+        .map(|row| {
+            row.into_iter()
+                .map(|trades| u16::try_from(mean(trades)).unwrap_or(u16::MAX))
+                .collect()
+        })
+        .collect();
+    Ok(Measured {
+        trades,
+        against,
+        siege,
+    })
 }
 
 /// The chart file for `measured`, stamped with this build's stats
@@ -493,6 +548,11 @@ pub fn chart_source(measured: &Measured) -> String {
          /// destroys of `GUNS[g]` at even prices.\n",
     );
     table(&mut out, "AGAINST", &measured.against);
+    out.push_str(
+        "\n/// `SIEGE[a][g]`: per mille of its value lost, the value `ARTILLERY[a]`,\n\
+         /// spotted, destroys of `GUNS[g]` at even prices.\n",
+    );
+    table(&mut out, "SIEGE", &measured.siege);
     out
 }
 
@@ -526,6 +586,7 @@ pub fn check(measured: &Measured) -> Result<()> {
     let tables = [
         (
             "",
+            &aftermine_opponent::MEASURED[..],
             chart
                 .trades
                 .iter()
@@ -535,11 +596,18 @@ pub fn check(measured: &Measured) -> Result<()> {
         ),
         (
             " against structures",
+            &aftermine_opponent::MEASURED[..],
             chart.against.iter().map(|row| row.to_vec()).collect(),
             &measured.against,
         ),
+        (
+            " in a siege",
+            &aftermine_opponent::ARTILLERY[..],
+            chart.siege.iter().map(|row| row.to_vec()).collect(),
+            &measured.siege,
+        ),
     ];
-    for (which, checked, measured) in tables {
+    for (which, kinds, checked, measured) in tables {
         if checked.len() != measured.len() {
             bail!("the counter chart{which} has another shape: run `fight-lab --write`");
         }
@@ -548,7 +616,7 @@ pub fn check(measured: &Measured) -> Result<()> {
                 bail!(
                     "the counter chart's {:?} row{which} is {row:?}, but this build measures \
                      {fresh:?}: run `fight-lab --write`",
-                    aftermine_opponent::MEASURED[a]
+                    kinds[a]
                 );
             }
         }
