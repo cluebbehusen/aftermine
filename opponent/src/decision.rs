@@ -912,11 +912,13 @@ pub(crate) fn decide(
             if lacking > 0 {
                 train_scout(&producers, &mut ledger);
             }
-            let raiding = income.saturating_add(4 * u32::from(profile.traits.guile)) >= RAID_INCOME;
-            let scuttlers = if raiding {
-                Missions::raid_squad(observation, map, profile, &persistent.memory, &scratch)
-            } else {
+            // Scuttlers are an opening's raiders: the seat keeps a stock
+            // until an Airworks stands, when the bombers it trains take
+            // raiding over.
+            let scuttlers = if crate::investments::built(observation, BuildingKind::Airworks) {
                 0
+            } else {
+                Missions::raid_squad(observation, map, profile, &persistent.memory, &scratch)
             };
             train_raiders(
                 observation,
@@ -1638,7 +1640,8 @@ const EMERGENCY_KINDS: [BuildingKind; 3] = [
 /// only the best unit the bank buys this moment. One answered best by a unit
 /// with no role, such as a Scuttler while the seat trains nothing better, or
 /// by a structure, is left to [`arm`], and so is one on other ground, where
-/// only a producer standing there helps.
+/// only a producer standing there helps, and one with nothing armed among
+/// its attackers, which the cheapest unit meets soonest.
 fn by_role(
     (observation, map, producers): (&ObservationData, &MapModel, &[Producer<'_>]),
     shortfalls: Vec<Shortfall>,
@@ -1652,7 +1655,7 @@ fn by_role(
     shortfalls
         .into_iter()
         .filter(|short| {
-            if short.ground != home {
+            if short.ground != home || !short.read {
                 return true;
             }
             let Some((Fighter::Unit(kind), _)) =
@@ -1687,6 +1690,18 @@ fn emergency_raised(ledger: &Ledger) -> Vec<BuildingKind> {
         .collect()
 }
 
+/// Whether a unit of `kind` answers `short` now. Against armed attackers,
+/// Scuttlers do only until a Fabricator stands: from then on a short defense
+/// answers with what the army's roles train, or waits for a producer of it,
+/// rather than feed the attackers the cheapest unit a Foundry has free. A
+/// shortfall left by builders and producers alone is still met with the
+/// cheapest unit.
+fn answers_now(observation: &ObservationData, kind: UnitKind, short: &Shortfall) -> bool {
+    kind != UnitKind::Scuttler
+        || short.attackers.is_empty()
+        || !crate::investments::built(observation, BuildingKind::Fabricator)
+}
+
 /// Scrap the bank gains in [`SAVE_TICKS`] at `income` a minute.
 fn soon(income: u32) -> u64 {
     u64::from(income) * SAVE_TICKS / (60 * u64::from(aftermine_sim::TICKS_PER_SECOND))
@@ -1711,7 +1726,9 @@ fn best_answer(
         .flat_map(|producer| {
             let at = map.component(producer.building.anchor);
             composition::producible(observation, producer.building.kind)
-                .filter(move |kind| helps(*kind, at, short))
+                .filter(move |kind| {
+                    helps(*kind, at, short) && answers_now(observation, *kind, short)
+                })
                 .map(Fighter::Unit)
         });
     // A structure answers only where a worker could put it up, once what it
@@ -1860,6 +1877,7 @@ fn arm(
             composition::producible(observation, producer.building.kind)
                 .filter(|kind| {
                     kind.stats().cost <= budget
+                        && answers_now(observation, *kind, short)
                         && helps(*kind, at, short)
                         && (short.attackers.is_empty() || worth(*kind) >= PAYS_BACK)
                         && 2 * worth(*kind) >= best
@@ -1978,11 +1996,6 @@ fn depletion(observation: &ObservationData, map: &MapModel) -> u32 {
     u32::try_from(1_000 - left.min(initial) * 1_000 / initial)
         .expect("a per-mille share fits in u32")
 }
-
-/// Income per minute, less four for each point of guile, at which the seat
-/// starts keeping Scuttlers for raiding: a personality limit, since raiding
-/// waits for an economy that can spare it.
-const RAID_INCOME: u32 = 900;
 
 /// What a needed lift adds to the Airworks' investment score.
 const LIFT_PULL: u32 = 600;

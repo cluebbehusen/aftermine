@@ -678,19 +678,27 @@ fn defenses_remembered_out_of_sight_each_want_a_sapper() {
     );
 }
 
-#[test]
-fn a_scuttler_another_mission_holds_leaves_the_raid_stock_short() {
+/// West's first decision with one Scuttler held by a defense, a known
+/// enemy harvest line to raid and scrap to spare, its economy no larger than
+/// an opening's, and an Airworks if `airworks`.
+fn raid_stock(airworks: bool) -> Vec<PlayerCommand> {
     let mut scenario = outpost(UnitKind::Scuttler, BuildingKind::Foundry);
     scenario.units.retain(|unit| (unit.x, unit.y) != RAIDERS[1]);
     scenario.units.push(harvester(0, 2, 2));
     scenario.players[0].scrap = 1_000;
+    if airworks {
+        scenario.buildings.push(BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Airworks,
+            x: 10,
+            y: 18,
+        });
+    }
     let mut state = scenario.build().unwrap();
     let held = at(&state, RAIDERS[0].0, RAIDERS[0].1);
     advance_to(&mut state, 120, &[]);
     let home = foundries(&state, PlayerId(0))[0];
     let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
-    // Income enough to raid, and the one Scuttler held by a defense.
-    json["income"] = serde_json::json!({"previous": null, "per_minute": 2_000});
     json["missions"] = serde_json::json!({
         "next": 1,
         "list": [{
@@ -704,13 +712,27 @@ fn a_scuttler_another_mission_holds_leaves_the_raid_stock_short() {
     });
     let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
     let mut opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
-    let commands = opponent.act(&state, &mut OwnEvents::default());
-    assert!(
-        trains(&commands)
-            .iter()
-            .any(|(_, kind)| *kind == UnitKind::Scuttler),
-        "{commands:?}"
-    );
+    opponent.act(&state, &mut OwnEvents::default())
+}
+
+fn trains_scuttler(commands: &[PlayerCommand]) -> bool {
+    trains(commands)
+        .iter()
+        .any(|(_, kind)| *kind == UnitKind::Scuttler)
+}
+
+#[test]
+fn a_scuttler_another_mission_holds_leaves_the_raid_stock_short() {
+    // An opening raids: the stock trains whatever the economy.
+    let commands = raid_stock(false);
+    assert!(trains_scuttler(&commands), "{commands:?}");
+}
+
+#[test]
+fn an_airworks_ends_the_scuttler_raid_stock() {
+    // Bombers take raiding over once the seat can train them.
+    let commands = raid_stock(true);
+    assert!(!trains_scuttler(&commands), "{commands:?}");
 }
 
 #[test]

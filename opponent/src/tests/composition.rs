@@ -89,7 +89,9 @@ fn seen_enemy_air_brings_anti_air_in_proportion() {
 
 #[test]
 fn a_seen_enemy_airworks_raises_anti_air_before_any_flyer() {
-    let airworks = [(BuildingKind::Airworks, 8, 2)];
+    // Out on the field, seen but not going up among West's buildings, where
+    // a defense would meet it first.
+    let airworks = [(BuildingKind::Airworks, 12, 2)];
     assert!(anti_air(&fabricator_trains(&armed(&[], &airworks))));
 
     let target = |scenario: &Scenario| {
@@ -1018,14 +1020,16 @@ fn an_enemy_builder_alone_short_is_met_with_the_cheapest_unit() {
         .filter(|pick| pick.path == PickPath::Shortfall)
         .map(|pick| pick.unit)
         .collect();
+    // A Fabricator stands, but a builder alone still meets the cheapest unit.
     assert_eq!(picks, [UnitKind::Scuttler]);
 }
 
 #[test]
-fn a_busy_producer_keeps_no_scrap_from_an_answer_trained_now() {
+fn a_seat_with_a_fabricator_answers_a_raid_with_no_scuttler() {
     // A Lancer raids the base and the Fabricator has Lancers queued past this
-    // decision: the Lancer it would answer with comes too late to hold the
-    // bank, so the Foundry trains what helps now.
+    // decision. The Foundry's Scuttler is free now, but with a Fabricator
+    // standing the defense waits for what the army trains rather than feed
+    // the raider the cheapest unit.
     let mut scenario = armed(&[(UnitKind::Lancer, 8, 3)], &[]);
     scenario.players[0].scrap = 150;
     let state = scenario.build().unwrap();
@@ -1041,7 +1045,12 @@ fn a_busy_producer_keeps_no_scrap_from_an_answer_trained_now() {
     let state: State = serde_json::from_value(value).unwrap();
     let commands =
         seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
-    assert!(!trains(&commands).is_empty(), "{commands:?}");
+    assert!(
+        trains(&commands)
+            .iter()
+            .all(|(_, kind)| *kind != UnitKind::Scuttler),
+        "{commands:?}"
+    );
 }
 
 #[test]
