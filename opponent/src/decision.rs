@@ -1840,17 +1840,24 @@ fn workforce(observation: &ObservationData) -> u64 {
 
 /// What the seat's armed units cost.
 pub(crate) fn army(observation: &ObservationData) -> u64 {
-    army_force(observation).iter().map(|(_, value)| value).sum()
+    armed(observation)
+        .map(|unit| u64::from(unit.kind.stats().cost))
+        .sum()
+}
+
+/// The seat's armed machines. A drone comes and goes from its host's bay, so
+/// only machines count.
+fn armed(observation: &ObservationData) -> impl Iterator<Item = &UnitObs> {
+    observation
+        .my_units
+        .iter()
+        .filter(|unit| !unit.kind.stats().weapons.is_empty() && !unit.kind.stats().docks())
 }
 
 /// The seat's armed machines, each at its price: the army [`army`] prices,
 /// as the counter chart weighs it.
 pub(crate) fn army_force(observation: &ObservationData) -> Vec<(Piece, u64)> {
-    // A drone comes and goes from its host's bay, so only machines count.
-    observation
-        .my_units
-        .iter()
-        .filter(|unit| !unit.kind.stats().weapons.is_empty() && !unit.kind.stats().docks())
+    armed(observation)
         .map(|unit| (Piece::Unit(unit.kind), u64::from(unit.kind.stats().cost)))
         .collect()
 }
