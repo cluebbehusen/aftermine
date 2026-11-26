@@ -69,7 +69,7 @@ pub(super) struct Sweep<'a> {
     /// The start's ground.
     home: Option<u32>,
     /// What offense leaves at home.
-    reserve: [u64; 2],
+    reserve: &'a super::reserve::Keep,
     /// Aims another clearance holds.
     held: Vec<TilePos>,
     /// Where the building a lift goes after, or the next lift would, stands.
@@ -239,7 +239,7 @@ impl Missions {
             home: map
                 .start(observation.me)
                 .and_then(|start| map.component(start)),
-            reserve: scratch.reserve,
+            reserve: &scratch.reserve,
             held: Vec::new(),
             focus: target.map(|target| target.anchor),
             owner: target.map(|target| target.owner),

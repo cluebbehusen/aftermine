@@ -408,7 +408,7 @@ struct Lifting<'a> {
     /// Whether free gunships go at the target's anti-air instead of carrying.
     gunships_clear: bool,
     /// What offense leaves at home.
-    reserve: [u64; 2],
+    reserve: &'a super::reserve::Keep,
     /// The target this decision gave up on.
     given_up: Option<Objective>,
 }
@@ -1242,7 +1242,7 @@ impl<'a> Lifting<'a> {
             rival: scratch.rival,
             severed: scratch.severed,
             gunships_clear: scratch.gunships_clear,
-            reserve: scratch.reserve,
+            reserve: &scratch.reserve,
             given_up: None,
         })
     }

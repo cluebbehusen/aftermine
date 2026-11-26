@@ -2758,6 +2758,79 @@ fn a_guard_short_of_known_enemies_is_answered_with_what_beats_them() {
 }
 
 #[test]
+fn a_guard_is_full_by_what_it_trades_against_its_enemies_not_by_its_price() {
+    // Lancers stand near an expansion whose guard is worth more than they
+    // are. Sentinels, which Lancers beat, leave the guard short and the seat
+    // trains for it; a Warden, which beats them, does not.
+    let short = |kind: UnitKind, count: i32| {
+        let mut scenario = widened(arena(400), 12, 20);
+        scenario.players[0].bot_config = Some(rung(BotDifficulty::Prime));
+        scenario.buildings.extend([
+            BuildingSpec {
+                player: 0,
+                kind: BuildingKind::Foundry,
+                x: 24,
+                y: 8,
+            },
+            BuildingSpec {
+                player: 0,
+                kind: BuildingKind::Fabricator,
+                x: 6,
+                y: 1,
+            },
+        ]);
+        scenario.units.push(unit(0, UnitKind::Surveyor, 33, 9));
+        for y in [9, 10] {
+            scenario.units.push(unit(1, UnitKind::Lancer, 35, y));
+        }
+        for y in 0..count {
+            scenario.units.push(unit(0, kind, 22, 8 + y));
+        }
+        assert!(
+            u64::from(kind.stats().cost) * u64::try_from(count).unwrap()
+                >= 2 * u64::from(UnitKind::Lancer.stats().cost),
+            "premise: the guard is worth more than the Lancers"
+        );
+        let state = scenario.build().unwrap();
+        let expansion = state
+            .buildings()
+            .iter()
+            .find(|b| b.player == PlayerId(0) && b.anchor == TilePos::new(24, 8))
+            .unwrap()
+            .id;
+        let mut members: Vec<_> = (0..count).map(|y| at(&state, 22, 8 + y)).collect();
+        members.sort_unstable();
+        let mut opponent = restored_with(
+            &seat_with(&scenario, 0, rung(BotDifficulty::Prime)),
+            &scenario,
+            &state,
+            |json| {
+                json["missions"] = serde_json::json!({
+                    "next": 1,
+                    "list": [{
+                        "id": 0,
+                        "task": {"task": "defend", "asset": expansion.0, "phase": "guard"},
+                        "since": 0,
+                        "units": members,
+                        "goal": {"x": 23, "y": 9},
+                    }],
+                });
+            },
+        );
+        let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let picks = trace.unwrap().army.picks;
+        let short = picks
+            .iter()
+            .any(|pick| pick.path == crate::trace::PickPath::Shortfall);
+        (short, picks)
+    };
+    let (sentinels, picks) = short(UnitKind::Sentinel, 3);
+    assert!(sentinels, "{picks:?}");
+    let (warden, picks) = short(UnitKind::Warden, 1);
+    assert!(!warden, "{picks:?}");
+}
+
+#[test]
 fn a_builder_raising_a_site_is_attacked_before_a_nearer_scout() {
     // An east Harvester raises a Fabricator among the west buildings while
     // a Surveyor stands nearer the Foundry. Killing the builder stops the

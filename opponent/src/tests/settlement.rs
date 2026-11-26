@@ -1196,8 +1196,16 @@ fn a_funded_island_raises_escort_capability_without_owning_future_units() {
         unit(0, UnitKind::Kestrel, 24, 28),
         unit(1, UnitKind::Buzzard, 24, 31),
     ]);
-    let aa = crate::missions::minimum(BotStance::Turtle)
-        .div_ceil(u64::from(UnitKind::Talon.stats().cost));
+    // Home keeps every Talon: they make up the Turtle floor against air, at
+    // what they trade against the Buzzard it knows.
+    let buzzard = [(
+        crate::counters::Piece::Unit(UnitKind::Buzzard),
+        u64::from(UnitKind::Buzzard.stats().cost),
+    )];
+    let talon = u64::from(UnitKind::Talon.stats().cost)
+        * crate::counters::weight(crate::counters::Piece::Unit(UnitKind::Talon), &buzzard)
+        / 1_000;
+    let aa = crate::missions::minimum(BotStance::Turtle).div_ceil(talon);
     scenario
         .units
         .extend((0..aa).map(|i| unit(0, UnitKind::Talon, 8 + i32::try_from(i).unwrap(), 4)));

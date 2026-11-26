@@ -406,7 +406,7 @@ fn a_lone_roc_leaves_home_whatever_the_reserve_keeps() {
         &crate::missions::Missions::default(),
     );
     assert!(
-        scratch.reserve[0] > u64::from(UnitKind::Roc.stats().cost),
+        scratch.reserve.need(&[])[0] > u64::from(UnitKind::Roc.stats().cost),
         "premise: the reserve wants more than it"
     );
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());

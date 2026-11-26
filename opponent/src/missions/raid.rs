@@ -92,7 +92,7 @@ struct Foray<'a> {
     ground: &'a [Hazard],
     air: &'a [Hazard],
     /// What offense leaves at home.
-    reserve: [u64; 2],
+    reserve: &'a super::reserve::Keep,
     /// Targets another raid holds or this decision is done with.
     held: Vec<Objective>,
     /// Per mille of a target's known guard a raid must bring.
@@ -369,7 +369,7 @@ impl<'a> Foray<'a> {
             memory,
             ground: &scratch.ground,
             air: &scratch.air,
-            reserve: scratch.reserve,
+            reserve: &scratch.reserve,
             held: Vec::new(),
             margin: margin(profile.difficulty),
             retreat: outweighed(profile),

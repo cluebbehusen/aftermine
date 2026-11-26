@@ -953,25 +953,51 @@ fn force(kind: UnitKind, hp: u32) -> [u64; 2] {
     })
 }
 
-/// The summed [`force`] of the seat's units among `ids`, aboard carriers or
+/// The summed `force` of the seat's units among `ids`, aboard carriers or
 /// not, each counted once.
-fn strength(observation: &ObservationData, ids: impl IntoIterator<Item = UnitId>) -> [u64; 2] {
+fn strength(
+    observation: &ObservationData,
+    ids: impl IntoIterator<Item = UnitId>,
+    force: impl Fn(UnitKind, u32) -> [u64; 2],
+) -> [u64; 2] {
+    held(observation, ids)
+        .into_iter()
+        .map(|(kind, hp)| force(kind, hp))
+        .fold([0; 2], |sum, value| [sum[0] + value[0], sum[1] + value[1]])
+}
+
+/// The kind and health of each of `ids`, the seat's units in sight or
+/// carried, each counted once.
+fn held(
+    observation: &ObservationData,
+    ids: impl IntoIterator<Item = UnitId>,
+) -> Vec<(UnitKind, u32)> {
     let mut ids: Vec<_> = ids.into_iter().collect();
     ids.sort_unstable();
     ids.dedup();
     ids.into_iter()
         .filter_map(|id| {
-            mine(observation, id)
-                .map(|u| force(u.kind, u.hp))
-                .or_else(|| {
-                    observation
-                        .my_carried_units
-                        .iter()
-                        .find(|u| u.id == id)
-                        .map(|u| force(u.kind, u.hp))
-                })
+            mine(observation, id).map(|u| (u.kind, u.hp)).or_else(|| {
+                observation
+                    .my_carried_units
+                    .iter()
+                    .find(|u| u.id == id)
+                    .map(|u| (u.kind, u.hp))
+            })
         })
-        .fold([0; 2], |sum, value| [sum[0] + value[0], sum[1] + value[1]])
+        .collect()
+}
+
+/// `ids`, the seat's units in sight or carried, as the chart weighs them:
+/// each kind at its worth.
+fn held_force(
+    observation: &ObservationData,
+    ids: impl IntoIterator<Item = UnitId>,
+) -> Vec<(crate::counters::Piece, u64)> {
+    held(observation, ids)
+        .into_iter()
+        .map(|(kind, hp)| (crate::counters::Piece::Unit(kind), worth(kind, hp)))
+        .collect()
 }
 
 fn mine(observation: &ObservationData, id: UnitId) -> Option<&UnitObs> {
@@ -1079,11 +1105,11 @@ pub(crate) struct Scratch {
     /// several, as the missions stood when the decision began: production
     /// and investments prepare for the same enemy the missions go after.
     pub(crate) rival: Option<PlayerId>,
-    /// Value against ground and against aircraft that offense leaves home,
-    /// before the units out defending count. A seat whose ground reaches no
+    /// What offense leaves home against ground and against aircraft, before
+    /// the units out defending count. A seat whose ground reaches no
     /// enemy adds its free clearing gunships, which leave regardless, so they
     /// let nothing else leave in their place.
-    pub(crate) reserve: [u64; 2],
+    pub(crate) reserve: reserve::Keep,
     /// Value against ground of the units a lift could take: those at home
     /// without cutting into the reserve, or those on other own ground no
     /// target stands on, whichever bring more.
@@ -1119,7 +1145,7 @@ impl Scratch {
         traits: PersonalityTraits,
         missions: &Missions,
     ) -> Self {
-        let mut reserve = reserve::reserve(observation, map, memory, stance);
+        let mut reserve = reserve::Keep::home(observation, map, memory, stance);
         let objectives = objectives(observation, map);
         let severed = !objectives.is_empty()
             && objectives.iter().all(|objective| {
@@ -1138,16 +1164,18 @@ impl Scratch {
             .collect();
         let free = missions.available(observation, None);
         if severed {
-            reserve[0] += free
-                .iter()
-                .filter_map(|id| mine(observation, *id))
-                .filter(|unit| clear::clearing_gunship(unit))
-                .map(attack::striking)
-                .sum::<u64>();
+            reserve.add(
+                0,
+                free.iter()
+                    .filter_map(|id| mine(observation, *id))
+                    .filter(|unit| clear::clearing_gunship(unit))
+                    .map(attack::striking)
+                    .sum::<u64>(),
+            );
         }
         let (home, elsewhere) = payload(observation, map, &targeted, &free);
         let payload = missions
-            .liftable(observation, map, reserve, home)
+            .liftable(observation, map, &reserve, home)
             .max(elsewhere);
         let mut scratch = Self {
             frame,

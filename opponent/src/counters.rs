@@ -243,7 +243,7 @@ pub(crate) fn weigh(side: &[(Piece, u64)], against: &[(Piece, u64)]) -> u64 {
 }
 
 /// `force` with each piece once, at its total value.
-fn merged(force: &[(Piece, u64)]) -> Vec<(Piece, u64)> {
+pub(crate) fn merged(force: &[(Piece, u64)]) -> Vec<(Piece, u64)> {
     let mut merged: Vec<(Piece, u64)> = Vec::new();
     for (piece, value) in force {
         match merged.iter_mut().find(|(seen, _)| seen == piece) {

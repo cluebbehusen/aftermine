@@ -332,7 +332,7 @@ impl Missions {
                         && healthy(unit, FIT))
             })
             .collect();
-        self.spare(observation, map, scratch.reserve)
+        self.spare(observation, map, &scratch.reserve)
             .outermost(map, scratch.frame, fit)
     }
 

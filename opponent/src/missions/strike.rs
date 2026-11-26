@@ -56,7 +56,7 @@ pub(super) struct Raid<'a> {
     pub(super) air: &'a [Hazard],
     objectives: &'a [Objective],
     /// What offense leaves at home.
-    reserve: [u64; 2],
+    reserve: &'a super::reserve::Keep,
     /// The enemy to go after first, when there are several.
     rival: Option<aftermine_sim::PlayerId>,
     /// Targets another strike holds or this decision gave up on.
@@ -90,7 +90,7 @@ impl Missions {
             retreat: outweighed(profile),
             air: &scratch.air,
             objectives: &scratch.objectives,
-            reserve: scratch.reserve,
+            reserve: &scratch.reserve,
             rival: scratch.rival,
             held: Vec::new(),
             severed: scratch.severed,
