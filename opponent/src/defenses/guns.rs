@@ -11,8 +11,8 @@ use crate::investments::Investment;
 use crate::investments::buildable;
 use crate::map::{Gate, MapModel};
 use aftermine_sim::observation::{BuildingObs, ObservationData};
-use aftermine_sim::stats::{BuildingStats, Domain, WeaponStats};
-use aftermine_sim::{BuildingKind, PlayerId, UnitKind};
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{BuildingKind, PlayerId};
 use chassis::fx::Fx;
 use chassis::grid::TilePos;
 use std::cmp::Reverse;
@@ -24,11 +24,6 @@ const GATE_DEPTH: u16 = 4;
 /// Tiles beyond its reach inside which a threat keeps a defense from
 /// upgrading: the building is down to a fifth of its health until done.
 const UPGRADE_CLEARANCE: i32 = 3;
-
-/// How many enemies a splash shell hits, in thousandths, against a spread
-/// enemy and a clustered one. A spread enemy stands too far apart for a
-/// shell to hit two; a clustered one, in a column or a clump, counts three.
-pub(super) const SPLASH_TARGETS: [u64; 2] = [1_000, 3_000];
 
 impl Guard<'_> {
     /// What raising the built gun `building` a tier adds against `asset`'s
@@ -175,7 +170,7 @@ pub(super) fn first_placeable<R: Ord>(
     None
 }
 
-/// An upgrade for a built defense, worth what the strength it adds closes at
+/// An upgrade for a built defense, worth what the cover it adds closes at
 /// the approach samples the next tier covers, per scrap, or for an Array the
 /// far points its radar watches, each by how sure the seat is of the threat,
 /// unless an enemy in sight could hit it while it is down, from the
@@ -217,7 +212,7 @@ pub(super) fn upgrade(
         return None;
     }
     let centre = footprint_centre(building.kind, building.anchor);
-    // The next tier, where it reaches, and the strength it adds.
+    // The next tier, where it reaches, and what more it holds off.
     let raised = cover.map(|cover| {
         let next = Cover::of(building.kind, building.tier + 1, building.anchor).unwrap_or(cover);
         (cover, next)
@@ -388,37 +383,6 @@ fn guard_sites(
     sites.sort_unstable();
     sites.dedup();
     sites
-}
-
-/// What a gun holds off, in army scrap: the price of the Sentinels that would
-/// match it under Lanchester's square law, from the product of its damage per
-/// tick and health against a Sentinel's, with a splash shell counting
-/// `targets` thousandths of hits.
-pub(super) fn strength(stats: &BuildingStats, targets: u64) -> u64 {
-    // Damage per tick, in thousandths.
-    fn rate<'a>(weapons: impl Iterator<Item = &'a WeaponStats>, targets: u64) -> u64 {
-        weapons
-            .map(|weapon| {
-                let hits = if weapon.splash.is_some() {
-                    targets
-                } else {
-                    1_000
-                };
-                u64::from(weapon.damage) * hits / u64::from(weapon.cooldown_ticks.max(1))
-            })
-            .sum()
-    }
-    let sentinel = UnitKind::Sentinel.stats();
-    let reference = rate(
-        sentinel
-            .weapons
-            .iter()
-            .filter(|weapon| weapon.targets.ground),
-        1_000,
-    ) * u64::from(sentinel.max_hp);
-    let gun = rate(stats.weapons.iter(), targets) * u64::from(stats.max_hp);
-    let ratio = (gun * 1_000_000).checked_div(reference).unwrap_or(0);
-    u64::from(sentinel.cost) * ratio.isqrt() / 1_000
 }
 
 /// What a gun's next tier `next` adds at `point` over the gun today `cover`,

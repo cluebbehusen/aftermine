@@ -187,21 +187,32 @@ const CLUMPED: [(i32, i32); 6] = [(13, 4), (13, 5), (13, 6), (14, 4), (14, 5), (
 
 #[test]
 fn turrets_and_bastions_share_a_watched_approach_by_what_they_hold_per_scrap() {
-    // A known army of Wardens outweighs any one gun.
-    let spread = guns_laid(UnitKind::Warden, &SPREAD);
-    assert_eq!(spread.first(), Some(&BuildingKind::Turret), "{spread:?}");
-    let bastion = |tiles: &[(i32, i32)]| {
-        offer(
-            &offers(&watched(UnitKind::Warden, tiles, &[])),
-            BuildingKind::Bastion,
-        )
-        .expect("a Bastion is offered")
-        .1
+    // Wardens beat a Turret and lose to a Bastion, so a Bastion leads against
+    // a known army of them; once Bastions hold most of it, a cheaper Turret
+    // closes what is left.
+    let laid = guns_laid(UnitKind::Warden, &SPREAD);
+    assert_eq!(laid.first(), Some(&BuildingKind::Bastion), "{laid:?}");
+    assert!(laid.contains(&BuildingKind::Turret), "{laid:?}");
+}
+
+#[test]
+fn a_bastion_outscores_a_turret_against_wardens_but_not_against_sentinels() {
+    // A Turret reaches Wardens as well as Sentinels, but Wardens beat it and
+    // lose to a Bastion. Against Sentinels worth as much, which a Turret
+    // beats too, the cheaper Turret is worth at least as much per scrap.
+    let scores = |enemy: UnitKind, count: usize| {
+        let offered = offers(&watched(enemy, &SPREAD[..count], &[]));
+        let score = |kind| offer(&offered, kind).map_or(0, |(_, score)| score);
+        (score(BuildingKind::Bastion), score(BuildingKind::Turret))
     };
     assert!(
-        bastion(&CLUMPED) > bastion(&SPREAD) * 3 / 2,
-        "a clump lifts a Bastion's worth, its shells hitting several"
+        6 * UnitKind::Sentinel.stats().cost <= 2 * UnitKind::Warden.stats().cost,
+        "premise: the Sentinels are worth no more than the Wardens"
     );
+    let (bastion, turret) = scores(UnitKind::Warden, 2);
+    assert!(bastion > turret, "{bastion} against {turret}");
+    let (bastion, turret) = scores(UnitKind::Sentinel, 6);
+    assert!(turret >= bastion, "{turret} against {bastion}");
 }
 
 #[test]
@@ -254,8 +265,9 @@ fn a_known_army_draws_more_guns_than_a_lone_enemy() {
             .buildings
             .push(building(0, BuildingKind::Turret, first.x, first.y));
         scenario.units.push(unit(0, UnitKind::Kestrel, 10, 5));
+        // Sentinels, which a Turret beats, so Turrets are what holds them.
         for (x, y) in army {
-            scenario.units.push(unit(1, UnitKind::Warden, *x, *y));
+            scenario.units.push(unit(1, UnitKind::Sentinel, *x, *y));
         }
         let state = scenario.build().unwrap();
         let mut memory = Memory::default();
@@ -594,7 +606,12 @@ fn a_defense_upgrades_only_with_its_prerequisite_and_no_threat_near() {
             .find(|building| building.kind == BuildingKind::Turret)
             .unwrap()
             .id;
-        wanted(&scenario, &state, &Memory::default(), 60)
+        // A presumed army larger than the Turret holds, so a heavier one
+        // has something to add.
+        let stakes = defenses::Stakes {
+            minimum: 4 * crate::missions::minimum(BotStance::Turtle),
+        };
+        wanted_at(0, true, &scenario, &state, &Memory::default(), 60, stakes)
             .iter()
             .any(|(investment, _)| {
                 *investment
