@@ -2,7 +2,7 @@
 
 /// The fingerprint of the unit and structure stats the chart was
 /// measured with.
-pub(super) const STATS: u64 = 0xc0c7_d610_60ce_e9a4;
+pub(super) const STATS: u64 = 0x8728_2865_a3cf_fd54;
 
 /// `TRADES[a][b]`: per mille of its value lost, the value `MEASURED[a]`
 /// destroys of `MEASURED[b]` at even prices.
@@ -23,11 +23,11 @@ pub(super) const TRADES: [[u16; 10]; 10] = [
 /// destroys of `GUNS[g]` at even prices.
 pub(super) const AGAINST: [[u16; 7]; 10] = [
     [499, 713, 1673, 8000, 8000, 125, 125],
-    [303, 539, 376, 8000, 8000, 137, 600],
-    [2638, 2601, 1286, 8000, 8000, 265, 818],
-    [1649, 2431, 2422, 8000, 8000, 610, 2330],
+    [303, 539, 376, 8000, 8000, 137, 508],
+    [2638, 2601, 1286, 8000, 8000, 265, 768],
+    [1649, 2431, 2422, 8000, 8000, 610, 1335],
     [8000, 8000, 8000, 8000, 8000, 8000, 8000],
-    [2721, 2042, 1373, 8000, 8000, 706, 1975],
+    [2721, 2042, 1373, 8000, 8000, 706, 1665],
     [125, 125, 125, 1000, 1000, 125, 125],
     [8000, 8000, 8000, 125, 125, 8000, 8000],
     [1000, 1000, 1000, 125, 125, 1000, 1000],

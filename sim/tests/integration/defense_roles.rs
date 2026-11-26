@@ -93,25 +93,23 @@ fn defense_stats_name_three_distinct_jobs() {
         "flak fires only skyward"
     );
 
-    // The Citadel only reaches further.
+    // The Citadel is the same gun reaching further, sturdier and hitting
+    // harder: it keeps the Bastion's sight, dead zone, rate and blast.
     let bastion = BuildingKind::Bastion.base_stats();
     let citadel = BuildingKind::Bastion.tier_stats(1);
-    assert_eq!(
-        (citadel.max_hp, citadel.vision),
-        (bastion.max_hp, bastion.vision)
-    );
+    assert_eq!(citadel.vision, bastion.vision);
+    assert!(citadel.max_hp > bastion.max_hp);
     let (gun, long_gun) = (bastion.weapons[0], citadel.weapons[0]);
     assert!(long_gun.range > gun.range);
+    assert!(long_gun.damage > gun.damage);
     assert_eq!(
         (
-            gun.damage,
             gun.minimum_range,
             gun.cooldown_ticks,
             gun.splash,
             gun.targets
         ),
         (
-            long_gun.damage,
             long_gun.minimum_range,
             long_gun.cooldown_ticks,
             long_gun.splash,

@@ -217,7 +217,8 @@ pub(crate) fn price_to_beat(enemy: &[(Piece, u64)], mix: &[(Piece, u64)], margin
         .sum::<u64>()
         / total)
         .max(1);
-    weigh(enemy, mix) * margin / 1_000 * 1_000 / quality
+    // Rounded up, so a force bought at the price reaches the margin.
+    (weigh(enemy, mix) * margin).div_ceil(quality)
 }
 
 /// What `side` is worth against `against`: each of its pieces' value

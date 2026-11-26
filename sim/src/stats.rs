@@ -2550,11 +2550,11 @@ const DEEP_ARRAY: BuildingStats = BuildingStats {
 };
 
 const CITADEL: BuildingStats = BuildingStats {
-    max_hp: 500,
+    max_hp: 650,
     vision: 6,
     produces: &[],
     weapons: &[WeaponStats {
-        damage: 40,
+        damage: 48,
         // Clears a Bombard's 9.5 plus the footprint's half-diagonal, so it
         // answers one from any side, and stays short of the Avalanche's 14.
         range: Fx::lit("12.5"),
