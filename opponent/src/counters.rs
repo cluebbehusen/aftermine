@@ -61,7 +61,8 @@ impl From<UnitKind> for Piece {
 }
 
 /// A fingerprint of every unit kind's stats and the measured structures',
-/// all of them, with the structures' footprints, which set how they stand in
+/// and the Array's that tracks for the guns in a siege, all of them, with
+/// the structures' footprints, which set how they stand in
 /// a block and how far a shot reaches them, so that no change that could
 /// decide a fight slips past: weapons and their projectiles, movement,
 /// turning, aiming and bracing alike. The chart is stale once this differs
@@ -71,13 +72,17 @@ pub fn fingerprint() -> u64 {
     let stats: Vec<String> = UnitKind::ALL
         .iter()
         .map(|kind| format!("{kind:?} {:?}", kind.stats()))
-        .chain(GUNS.iter().map(|(gun, tier)| {
-            format!(
-                "{gun:?} {tier} {:?} {:?}",
-                gun.tier_stats(*tier),
-                gun.size()
-            )
-        }))
+        .chain(
+            GUNS.iter()
+                .chain(&[(BuildingKind::Array, 0)])
+                .map(|(gun, tier)| {
+                    format!(
+                        "{gun:?} {tier} {:?} {:?}",
+                        gun.tier_stats(*tier),
+                        gun.size()
+                    )
+                }),
+        )
         .collect();
     chassis::hash::state_hash(&stats)
 }
