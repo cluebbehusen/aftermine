@@ -1690,12 +1690,16 @@ fn emergency_raised(ledger: &Ledger) -> Vec<BuildingKind> {
         .collect()
 }
 
-/// Whether a unit of `kind` answers an emergency now. Scuttlers do only
-/// until a Fabricator stands: from then on a short defense answers with what
-/// the army's roles train, or waits for a producer of it, rather than feed
-/// the attackers the cheapest unit a Foundry has free.
-fn answers_now(observation: &ObservationData, kind: UnitKind) -> bool {
-    kind != UnitKind::Scuttler || !crate::investments::built(observation, BuildingKind::Fabricator)
+/// Whether a unit of `kind` answers `short` now. Against armed attackers,
+/// Scuttlers do only until a Fabricator stands: from then on a short defense
+/// answers with what the army's roles train, or waits for a producer of it,
+/// rather than feed the attackers the cheapest unit a Foundry has free. A
+/// shortfall left by builders and producers alone is still met with the
+/// cheapest unit.
+fn answers_now(observation: &ObservationData, kind: UnitKind, short: &Shortfall) -> bool {
+    kind != UnitKind::Scuttler
+        || short.attackers.is_empty()
+        || !crate::investments::built(observation, BuildingKind::Fabricator)
 }
 
 /// Scrap the bank gains in [`SAVE_TICKS`] at `income` a minute.
@@ -1722,7 +1726,9 @@ fn best_answer(
         .flat_map(|producer| {
             let at = map.component(producer.building.anchor);
             composition::producible(observation, producer.building.kind)
-                .filter(move |kind| helps(*kind, at, short) && answers_now(observation, *kind))
+                .filter(move |kind| {
+                    helps(*kind, at, short) && answers_now(observation, *kind, short)
+                })
                 .map(Fighter::Unit)
         });
     // A structure answers only where a worker could put it up, once what it
@@ -1871,7 +1877,7 @@ fn arm(
             composition::producible(observation, producer.building.kind)
                 .filter(|kind| {
                     kind.stats().cost <= budget
-                        && answers_now(observation, *kind)
+                        && answers_now(observation, *kind, short)
                         && helps(*kind, at, short)
                         && (short.attackers.is_empty() || worth(*kind) >= PAYS_BACK)
                         && 2 * worth(*kind) >= best

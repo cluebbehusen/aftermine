@@ -1020,8 +1020,8 @@ fn an_enemy_builder_alone_short_is_met_with_the_cheapest_unit() {
         .filter(|pick| pick.path == PickPath::Shortfall)
         .map(|pick| pick.unit)
         .collect();
-    // With a Fabricator standing, Scuttlers answer no emergency.
-    assert_eq!(picks, [UnitKind::Sentinel]);
+    // A Fabricator stands, but a builder alone still meets the cheapest unit.
+    assert_eq!(picks, [UnitKind::Scuttler]);
 }
 
 #[test]
