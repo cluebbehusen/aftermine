@@ -232,7 +232,8 @@ impl Missions {
             let even = pressing.map(|value| value * 2 / 3);
             let gap = siege.gap(even, have);
             if *own && gap != [0, 0] {
-                shortfalls.push(siege.shortfall(component, gap));
+                let armed = (0..2).any(|index| even[index] > have[index]);
+                shortfalls.push(siege.shortfall(component, gap, armed));
             }
             // Guns are reached rather than waited for: they shell from
             // where they stand.
@@ -710,9 +711,10 @@ pub(crate) struct Shortfall {
     /// value, so what is trained can be what beats them; empty when the
     /// shortfall answers no particular force.
     pub(crate) attackers: Vec<(UnitKind, u64)>,
-    /// Whether armed attackers press, to be answered with what beats them.
-    /// Builders and producers alone are answered with what is cheapest,
-    /// which leaves the emergency structures the rest of the bank.
+    /// Whether armed attackers, in sight or not, leave the defense short on
+    /// their own, to be answered with what beats them. A shortfall left by
+    /// builders and producers alone is answered with what is cheapest, which
+    /// leaves the emergency structures the rest of the bank.
     pub(crate) read: bool,
 }
 
@@ -1498,15 +1500,16 @@ impl Siege<'_> {
     }
 
     /// The shortfall `gap` of the defense of a Foundry on `ground`, with the
-    /// attackers it answers. Builders and producers with nothing armed beside
-    /// them are met with the cheapest unit: the first one there soonest stops
-    /// the site going up.
-    fn shortfall(&self, ground: Option<u32>, gap: [u64; 2]) -> Shortfall {
+    /// attackers it answers, where `armed` says armed attackers leave it short
+    /// on their own. Builders and producers that nothing armed leaves the
+    /// defense short beside are met with the cheapest unit: the first one
+    /// there soonest stops the site going up.
+    fn shortfall(&self, ground: Option<u32>, gap: [u64; 2], armed: bool) -> Shortfall {
         Shortfall {
             ground,
             gap,
             attackers: self.attackers(gap),
-            read: !self.unarmed_only(),
+            read: armed && !self.unarmed_only(),
         }
     }
 
