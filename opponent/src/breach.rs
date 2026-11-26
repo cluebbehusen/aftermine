@@ -3,6 +3,7 @@
 //! where a cradle may stand so its machine can drive out. Nothing here
 //! persists between decisions.
 
+use crate::counters::{Piece, price_to_beat};
 use crate::gunship::gunship;
 use crate::investments::{Investment, capped, weighed};
 use crate::map::{MapModel, UNREACHABLE};
@@ -60,11 +61,12 @@ pub(crate) fn investments(
 
 /// How far the army, with the machines the seat fields and assembles at their
 /// price, falls short of what an attack on the known guns its ground reaches
-/// would need, those guns by the attack `margin` per mille. A breacher cuts
-/// through them and a gunship flies over them, so either answers this need.
+/// would need: the army's price that beats those guns by the attack `margin`
+/// per mille, each side weighed against the other. A breacher cuts through
+/// them and a gunship flies over them, so either answers this need.
 pub(crate) fn guns_shortfall(observation: &ObservationData, map: &MapModel, margin: u64) -> u64 {
     let me = observation.me;
-    let fortification: u64 = observation
+    let fortification: Vec<(Piece, u64)> = observation
         .enemy_buildings
         .iter()
         .filter(|building| {
@@ -76,9 +78,14 @@ pub(crate) fn guns_shortfall(observation: &ObservationData, map: &MapModel, marg
                 .any(|weapon| weapon.targets.ground)
                 && map.distance(me, building.anchor) != UNREACHABLE
         })
-        .map(crate::missions::building_value)
-        .sum();
-    let army: u64 = observation
+        .map(|building| {
+            (
+                Piece::Gun(building.kind, building.tier),
+                crate::missions::building_value(building),
+            )
+        })
+        .collect();
+    let army: Vec<(Piece, u64)> = observation
         .my_units
         .iter()
         .filter(|unit| {
@@ -91,10 +98,12 @@ pub(crate) fn guns_shortfall(observation: &ObservationData, map: &MapModel, marg
                 )
             )
         })
-        .map(|unit| worth(unit.kind, unit.hp))
-        .sum();
+        .map(|unit| (Piece::Unit(unit.kind), worth(unit.kind, unit.hp)))
+        .collect();
+    let fielded_army: u64 = army.iter().map(|(_, value)| value).sum();
     let machines = fielded(observation, crate::missions::breacher) + fielded(observation, gunship);
-    (fortification * margin / 1_000).saturating_sub(army + machines)
+    // The army's price that would beat the guns, weighed against each other.
+    price_to_beat(&fortification, &army, margin).saturating_sub(fielded_army + machines)
 }
 
 /// What the seat's machines that `fits` are worth: those it fields at their

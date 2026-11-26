@@ -6,8 +6,8 @@
 use super::Scratch;
 use super::air::{self, Hazard, Legs};
 use super::attack::{
-    FIT, Force, healthy, margin, minimum, outweighed, priced, recruit_by, striking, striking_mix,
-    worth_against,
+    FIT, Force, fitting, healthy, margin, minimum, outweighed, priced, recruit_by, striking,
+    striking_mix, worth_against,
 };
 use super::sortie::Sortie;
 use super::{
@@ -15,7 +15,7 @@ use super::{
     run, standing,
 };
 use crate::composition::{self, Role};
-use crate::counters::{Piece, weigh};
+use crate::counters::{Piece, price_to_beat, weigh};
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, ring};
 use crate::map::MapModel;
@@ -295,8 +295,11 @@ fn cover(air: &[Hazard], target: Objective) -> Force {
 }
 
 /// What a strike needs against the easiest target the seat knows of and has
-/// not given up on: the known anti-air reaching over it by the attack margin,
-/// at least the stance's minimum. Nothing while it has given up on all.
+/// not given up on, at the price of the strike aircraft it has or could
+/// train: enough to beat the known anti-air reaching over it by the attack
+/// margin, each side weighed against the other, so production stops only
+/// once a strike would go; at least the stance's minimum. Nothing while it
+/// has given up on all.
 pub(crate) fn strike_need(
     observation: &ObservationData,
     memory: &Memory,
@@ -304,11 +307,12 @@ pub(crate) fn strike_need(
     scratch: &Scratch,
 ) -> u64 {
     let margin = margin(profile.difficulty);
+    let wing = fitting(observation, bomber);
     scratch
         .objectives
         .iter()
         .filter(|target| !memory.abandoned(target.building, target.anchor, observation.tick))
-        .map(|target| priced(&cover(&scratch.air, *target)) * margin / 1_000)
+        .map(|target| price_to_beat(&cover(&scratch.air, *target), &wing, margin))
         .min()
         .map_or(0, |need| need.max(minimum(profile.stance)))
 }

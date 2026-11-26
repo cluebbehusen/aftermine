@@ -2,11 +2,11 @@
 //! estimate of enemy strength a defense, a local guard and a raid read to go
 //! out, wait or give the place up.
 
-use super::attack::{Force, guards, gun, priced};
+use super::attack::{Force, guards, gun};
 use super::defense::at_home;
 use super::reserve::LOCAL_REACH;
 use super::{against_machines, reached, value};
-use crate::counters::Piece;
+use crate::counters::{Piece, weigh};
 use crate::frame::{HomeFrame, doubled, gap};
 use crate::map::{MapModel, NEIGHBOURS, UNREACHABLE};
 use crate::memory::Memory;
@@ -106,7 +106,8 @@ pub(super) fn escort(observation: &ObservationData, memory: &Memory, place: Tile
 /// reach of the steps between: a computation bound, not a count.
 const STRIDE: u32 = 4;
 
-/// The strongest known enemy force a ground group would meet on its way from
+/// The strongest known enemy force, weighed against the group `against`, a
+/// ground group would meet on its way from
 /// the seat's start to `goal`: what [`opposed`] finds every few steps back
 /// along a shortest ground way from `goal`, with the known enemy buildings
 /// that fire on ground there, from the first such step, since the guard at
@@ -117,6 +118,7 @@ pub(super) fn on_the_way(
     memory: &Memory,
     (map, frame): (&MapModel, HomeFrame),
     goal: TilePos,
+    against: &[(Piece, u64)],
 ) -> Force {
     let me = observation.me;
     let foes = foes(observation, memory);
@@ -136,7 +138,7 @@ pub(super) fn on_the_way(
                     .filter(|building| guards(building, tile))
                     .map(gun),
             );
-            if priced(&met) > priced(&most) {
+            if weigh(&met, against) > weigh(&most, against) {
                 most = met;
             }
         }

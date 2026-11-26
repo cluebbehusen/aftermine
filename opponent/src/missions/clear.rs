@@ -13,13 +13,13 @@
 use super::Scratch;
 use super::air::{self, Hazard, Legs};
 use super::attack::{
-    FIT, Force, healthy, margin, minimum, outweighed, priced, recruit_by, striking, striking_mix,
-    worth_against,
+    FIT, Force, fitting, healthy, margin, minimum, outweighed, priced, recruit_by, striking,
+    striking_mix, worth_against,
 };
 use super::sortie::Sortie;
 use super::{MISSION_CAP, Mission, Missions, StrikePhase, Task, UNIT_CAP, mine, run};
 use crate::composition::{self, Role};
-use crate::counters::{Piece, weigh};
+use crate::counters::{Piece, price_to_beat, weigh};
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled, footprint_centre};
 use crate::gunship::gunship;
@@ -167,9 +167,11 @@ impl Missions {
             .collect()
     }
 
-    /// Bomber strength a clearance ahead of the next lift needs: the known
-    /// anti-air around its target by the margin. Nothing while no lift has a
-    /// target or the seat's ground reaches an enemy.
+    /// Bomber strength a clearance ahead of the next lift needs, at the price
+    /// of the splash bombers it has or could train: enough to beat the known
+    /// anti-air around its target by the margin, each side weighed against
+    /// the other. Nothing while no lift has a target or the seat's ground
+    /// reaches an enemy.
     pub(crate) fn clear_need(
         &self,
         observation: &ObservationData,
@@ -469,10 +471,11 @@ impl Sweep<'_> {
         })
     }
 
-    /// [`guard`](Self::guard) at its price, for the bombers to train.
+    /// [`guard`](Self::guard) as the price of splash bombers that would meet
+    /// it, for production to train toward.
     fn guard_priced(&self) -> u64 {
         self.cover().map_or(u64::MAX, |cover| {
-            (priced(&cover) * self.margin / 1_000).max(self.minimum)
+            price_to_beat(&cover, &fitting(self.observation, splash), self.margin).max(self.minimum)
         })
     }
 

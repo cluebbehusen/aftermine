@@ -984,3 +984,43 @@ fn a_raider_that_ran_home_is_released_there() {
     let (back, _, units) = strike((home.x, home.y), false);
     assert!(!units.contains(&back.0), "{units:?}");
 }
+
+#[test]
+fn scuttlers_raid_a_line_guarded_by_what_they_beat_but_not_by_what_beats_them() {
+    // At an Aggressive seat a guard counts as light up to a little over a
+    // Lancer's price. A lone Lancer is that cheap, but it outranges
+    // Scuttlers, so it is no light guard for them; a lone Sentinel is.
+    let raided = |guard: UnitKind| {
+        let mut scenario = outpost(UnitKind::Scuttler, BuildingKind::Foundry);
+        for y in 5..=12 {
+            scenario.units.push(unit(0, UnitKind::Scuttler, 17, y));
+        }
+        scenario.units.push(unit(1, guard, 24, 11));
+        scenario.units.push(unit(0, UnitKind::Kestrel, 21, 8));
+        let state = scenario.build().unwrap();
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        assert!(
+            observation
+                .enemy_units
+                .iter()
+                .any(|enemy| enemy.kind == guard),
+            "premise: the guard is in sight"
+        );
+        let config = aftermine_sim::scenario::BotConfig::new(
+            BotDifficulty::Veteran,
+            aftermine_sim::scenario::BotStance::Aggressive,
+            0,
+        );
+        let (_, trace) =
+            seat_with(&scenario, 0, config).act_traced(&state, &mut OwnEvents::default());
+        raid(&trace.unwrap().missions).is_some()
+    };
+    assert!(
+        raided(UnitKind::Sentinel),
+        "a Sentinel is a light guard for Scuttlers"
+    );
+    assert!(
+        !raided(UnitKind::Lancer),
+        "a Lancer is not, though it costs little more"
+    );
+}
