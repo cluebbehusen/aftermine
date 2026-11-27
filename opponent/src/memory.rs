@@ -191,13 +191,16 @@ impl Memory {
         }
     }
 
-    /// Stops counting the enemy units `events` report the seat saw die.
+    /// Forgets the enemy units `events` report the seat saw die: it stops
+    /// counting them, and stops remembering where they stood, which a
+    /// sighting elsewhere would not clear while their old place is fogged.
     pub(crate) fn died(&mut self, events: &[OwnEvent]) {
         for event in events {
-            if let OwnEvent::EnemyDied { unit } = *event
-                && let Ok(index) = self.census.binary_search_by_key(&unit, |known| known.id)
-            {
-                self.census.remove(index);
+            if let OwnEvent::EnemyDied { unit } = *event {
+                if let Ok(index) = self.census.binary_search_by_key(&unit, |known| known.id) {
+                    self.census.remove(index);
+                }
+                self.units.retain(|seen| seen.id != unit);
             }
         }
     }
