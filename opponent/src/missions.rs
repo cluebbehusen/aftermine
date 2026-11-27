@@ -306,8 +306,8 @@ pub struct Launch {
     pub mission: u64,
     /// The attack and the building it went after.
     pub kind: MissionKind,
-    /// Known local defense at the target's approach, each defender weighed
-    /// by what it trades against the units sent.
+    /// The known army and guns the attack would meet, as its need counted
+    /// them, each weighed by what it trades against the units sent.
     pub defense: u64,
     /// Per mille of the known army it would meet that the attack had to
     /// bring.
@@ -1186,7 +1186,7 @@ impl Scratch {
             rival: None,
             reserve,
             payload,
-            invaders: reserve::threat(map, memory, observation.me, observation.tick),
+            invaders: reserve::threat(map, memory, observation.me),
             gunships_clear: false,
             targets: OnceCell::new(),
         };

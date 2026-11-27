@@ -1310,7 +1310,7 @@ impl<'a> Lifting<'a> {
             self.observation,
             self.map,
             self.memory,
-            &[landing, target.anchor],
+            (target.owner, &[landing, target.anchor]),
         );
         let need = (weigh(&enemy, side) * margin(self.profile.difficulty) / 1_000)
             .max(minimum(self.profile.stance));

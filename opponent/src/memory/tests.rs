@@ -146,6 +146,14 @@ fn a_seen_enemy_counts_wherever_it_went_until_it_is_seen_to_die() {
     let mut memory = Memory::default();
     memory.observe(&observation);
     let counted = |memory: &Memory| memory.census().collect::<Vec<_>>();
+    let map = MapModel::from_scenario(&Scenario::skirmish()).unwrap();
+    let grounds: Vec<Option<u32>> = memory.census_on(&map).map(|(_, _, on)| on).collect();
+    let seen_on = |x: i32| map.component(TilePos::new(x, 10));
+    assert_eq!(
+        grounds,
+        [seen_on(11), seen_on(12)],
+        "each on the ground it was seen on"
+    );
     assert_eq!(
         counted(&memory),
         [UnitKind::Lancer, UnitKind::Sentinel],
@@ -189,7 +197,7 @@ fn a_seen_enemy_counts_wherever_it_went_until_it_is_seen_to_die() {
 
 #[test]
 fn checkpoints_reject_a_malformed_census() {
-    let entry = |id: u32, seen: u64| serde_json::json!({"id": id, "kind": "lancer", "seen": seen});
+    let entry = |id: u32, seen: u64| serde_json::json!({"id": id, "kind": "lancer", "player": 1, "tile": {"x": 1, "y": 1}, "seen": seen});
     let restored = |census: Vec<serde_json::Value>| -> Memory {
         serde_json::from_value(serde_json::json!({
             "units": [],
@@ -211,6 +219,12 @@ fn checkpoints_reject_a_malformed_census() {
         ("out of order", vec![entry(2, 50), entry(1, 50)]),
         ("counted twice", vec![entry(1, 50), entry(1, 60)]),
         ("seen after the checkpoint", vec![entry(1, 101)]),
+        (
+            "off the map",
+            vec![
+                serde_json::json!({"id": 1, "kind": "lancer", "player": 1, "tile": {"x": 9, "y": 1}, "seen": 50}),
+            ],
+        ),
         (
             "over the cap",
             (0..=u32::try_from(UNIT_CAP).unwrap())

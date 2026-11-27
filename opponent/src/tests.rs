@@ -212,7 +212,7 @@ fn remembered(units: impl IntoIterator<Item = (u32, UnitKind, TilePos, u64)>) ->
 }
 
 /// The census of a seat that remembers `units`, staged as [`remembered`]
-/// gives them: every one but drones, by id.
+/// gives them, as East's: every one but drones, by id.
 pub(crate) fn counted(units: &serde_json::Value) -> serde_json::Value {
     let mut census: Vec<serde_json::Value> = units
         .as_array()
@@ -222,7 +222,7 @@ pub(crate) fn counted(units: &serde_json::Value) -> serde_json::Value {
             let kind: UnitKind = serde_json::from_value(unit["kind"].clone()).unwrap();
             !kind.stats().docks()
         })
-        .map(|unit| serde_json::json!({"id": unit["id"], "kind": unit["kind"], "seen": unit["seen"]}))
+        .map(|unit| serde_json::json!({"id": unit["id"], "kind": unit["kind"], "player": 1, "tile": unit["tile"], "seen": unit["seen"]}))
         .collect();
     census.sort_by_key(|unit| unit["id"].as_u64());
     census.into()
@@ -481,9 +481,10 @@ fn play(
     script: &[(u64, PlayerCommand)],
 ) -> Vec<Trace> {
     let mut traces = Vec::new();
+    let mut events = OwnEvents::default();
     while state.current_tick() < until {
         let now = state.current_tick();
-        let (mut commands, trace) = opponent.act_traced(state, &mut OwnEvents::default());
+        let (mut commands, trace) = opponent.act_traced(state, &mut events);
         traces.extend(trace);
         commands.extend(
             script
@@ -491,7 +492,8 @@ fn play(
                 .filter(|(tick, _)| *tick == now)
                 .map(|(_, command)| command.clone()),
         );
-        state.tick(&commands);
+        let ticked = state.tick(&commands);
+        events.record(opponent.player(), state, &ticked.events);
     }
     traces
 }

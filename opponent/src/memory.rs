@@ -11,6 +11,7 @@
 //! ghosts.
 
 use crate::events::OwnEvent;
+use crate::map::MapModel;
 use aftermine_sim::observation::ObservationData;
 use aftermine_sim::{BuildingKind, PlayerId, StallReason, UnitId, UnitKind};
 use chassis::grid::TilePos;
@@ -95,12 +96,14 @@ pub(crate) struct SeenUnit {
     pub(crate) seen: u64,
 }
 
-/// An enemy unit the seat knows exists, and when it last saw it.
+/// An enemy unit the seat knows exists, and where and when it last saw it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Censused {
     id: UnitId,
     kind: UnitKind,
+    player: PlayerId,
+    tile: TilePos,
     seen: u64,
 }
 
@@ -135,7 +138,7 @@ impl Memory {
                 Ok(index) => self.units[index] = seen,
                 Err(index) => self.units.insert(index, seen),
             }
-            self.count(unit.id, unit.kind, now);
+            self.count(unit.id, unit.kind, unit.player, unit.tile, now);
         }
         self.census.retain(|unit| now < unit.seen + CENSUS_TICKS);
         self.units.retain(|unit| {
@@ -168,16 +171,18 @@ impl Memory {
         }
     }
 
-    /// Counts `id` as an enemy unit of `kind` seen at `now`. Drones are left
-    /// out: they dock in their host without dying and launch again under new
-    /// ids.
-    fn count(&mut self, id: UnitId, kind: UnitKind, now: u64) {
+    /// Counts `id` as `player`'s enemy unit of `kind` seen on `tile` at `now`.
+    /// Drones are left out: they dock in their host without dying and launch
+    /// again under new ids.
+    fn count(&mut self, id: UnitId, kind: UnitKind, player: PlayerId, tile: TilePos, now: u64) {
         if kind.stats().docks() {
             return;
         }
         let counted = Censused {
             id,
             kind,
+            player,
+            tile,
             seen: now,
         };
         match self.census.binary_search_by_key(&id, |known| known.id) {
@@ -226,7 +231,13 @@ impl Memory {
                     Ok(index) => self.units[index] = seen,
                     Err(index) => self.units.insert(index, seen),
                 }
-                self.count(unit, kind, observation.tick);
+                self.count(
+                    unit,
+                    kind,
+                    player,
+                    TilePos::containing(pos),
+                    observation.tick,
+                );
             }
         }
     }
@@ -243,6 +254,20 @@ impl Memory {
     /// gone.
     pub(crate) fn census(&self) -> impl Iterator<Item = UnitKind> + '_ {
         self.census.iter().map(|unit| unit.kind)
+    }
+
+    /// The kind and owner of each enemy unit in the
+    /// [`census`](Self::census), with the ground it was last seen on: what an
+    /// attack or lift must beat counts its target owner's units on the ground
+    /// it goes to. A ground unit leaves its ground only aboard a carrier, so
+    /// where it stands now is left to tactics.
+    pub(crate) fn census_on<'a>(
+        &'a self,
+        map: &'a MapModel,
+    ) -> impl Iterator<Item = (UnitKind, PlayerId, Option<u32>)> + 'a {
+        self.census
+            .iter()
+            .map(|unit| (unit.kind, unit.player, map.component(unit.tile)))
     }
 
     /// Enemy units in sight on the tile they were last seen on, by id. Read
@@ -427,7 +452,9 @@ impl Memory {
         points: usize,
     ) -> Result<(), String> {
         let on_map = |tile: TilePos| (0..width).contains(&tile.x) && (0..height).contains(&tile.y);
-        if !self.units.iter().all(|unit| on_map(unit.tile)) {
+        if !self.units.iter().all(|unit| on_map(unit.tile))
+            || !self.census.iter().all(|unit| on_map(unit.tile))
+        {
             return Err("checkpoint enemy units are off the map".into());
         }
         let sized = self.scouted.is_empty() || self.scouted.len() == points;
