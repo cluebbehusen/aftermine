@@ -251,7 +251,7 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         observation,
         situation.map,
         situation.memory,
-        (traits.greed, secure),
+        (traits.greed, secure, peril(situation, &army, &known)),
         situation.depletion,
     );
     let stranded = !growth
@@ -732,6 +732,44 @@ pub(crate) fn built(observation: &ObservationData, kind: BuildingKind) -> bool {
 }
 
 /// The completed Foundries among `buildings`, in their order.
+/// The scrap a minute a seat standing on one Foundry would lose with it, by
+/// how far the `known` enemy army outweighs its `army` and the guns on its
+/// home ground: what a second Foundry insures. Nothing while another
+/// Foundry stands or is going up, or while the seat is exposed, when its
+/// army comes first.
+fn peril(situation: &Situation<'_>, army: &[(Piece, u64)], known: &[(Piece, u64)]) -> u64 {
+    let observation = situation.observation;
+    let foundries = observation
+        .my_buildings
+        .iter()
+        .filter(|building| building.kind == BuildingKind::Foundry);
+    let Some(only) = foundries.clone().next() else {
+        return 0;
+    };
+    if situation.exposed || foundries.count() > 1 || !only.built {
+        return 0;
+    }
+    let home = situation.map.component(only.anchor);
+    let mut defense = army.to_vec();
+    defense.extend(
+        observation
+            .my_buildings
+            .iter()
+            .filter(|building| building.built && building.kind.fires())
+            .filter(|building| situation.map.component(building.anchor) == home)
+            .map(|building| {
+                (
+                    Piece::Gun(building.kind, building.tier),
+                    crate::missions::building_value(building),
+                )
+            }),
+    );
+    let enemy = weigh(known, &defense);
+    let held = weigh(&defense, known);
+    let risk = enemy.saturating_sub(held) * 1_000 / enemy.max(1);
+    u64::from(situation.income) * risk / 1_000
+}
+
 pub(crate) fn built_foundries(buildings: &[BuildingObs]) -> impl Iterator<Item = &BuildingObs> {
     buildings
         .iter()

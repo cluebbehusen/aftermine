@@ -3,7 +3,7 @@
 //! out, wait or give the place up.
 
 use super::attack::{Force, guards, gun};
-use super::defense::at_home;
+use super::defense::{at_home, lets_go};
 use super::reserve::LOCAL_REACH;
 use super::{against_machines, reached, value};
 use crate::counters::{Piece, weigh};
@@ -186,9 +186,9 @@ const SITE_TILES: i32 = 8;
 /// a lone Turret raised in front of an army that beats it only feeds it its
 /// price and its builder. An enemy counts within its reach of the
 /// footprint, or within the site's reach when it can walk there; distances
-/// run from the footprint, so mirrored sites are judged alike. Never at home
-/// or by the seat's last Foundry, where a short defense may raise one as its
-/// answer.
+/// run from the footprint, so mirrored sites are judged alike. Never at
+/// home, and beside a built Foundry only as [`lets_go`] weighs it, so never
+/// by the seat's last, where a short defense may raise one as its answer.
 pub(crate) fn overruns(
     observation: &ObservationData,
     memory: &Memory,
@@ -200,14 +200,12 @@ pub(crate) fn overruns(
     if at_home(observation, map, anchor) {
         return false;
     }
-    let mut foundries = crate::investments::built_foundries(&observation.my_buildings);
-    match (foundries.next(), foundries.next()) {
-        (None, _) => return false,
-        (Some(only), None) if gap(only.anchor, only.kind.size(), anchor, size) <= LOCAL_REACH => {
-            return false;
-        }
-        _ => {}
+    let foundries = crate::investments::built_foundries(&observation.my_buildings).count();
+    if foundries == 0 {
+        return false;
     }
+    let beside = crate::investments::built_foundries(&observation.my_buildings)
+        .any(|foundry| gap(foundry.anchor, foundry.kind.size(), anchor, size) <= LOCAL_REACH);
     let ground = map.component(anchor);
     let near = |kind: UnitKind, tile: TilePos| {
         let reach = crate::defenses::reach(kind);
@@ -261,7 +259,12 @@ pub(crate) fn overruns(
             .map(|unit| (Piece::Unit(unit.kind), value(unit))),
     )
     .collect();
-    weigh(&enemy, &held) > weigh(&held, &enemy)
+    let (against, held) = (weigh(&enemy, &held), weigh(&held, &enemy));
+    if beside {
+        lets_go(held, against, foundries)
+    } else {
+        against > held
+    }
 }
 
 #[cfg(test)]

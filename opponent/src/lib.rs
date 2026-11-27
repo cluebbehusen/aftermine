@@ -149,9 +149,7 @@ impl Opponent {
         if !self.decision_due(state)
             || state.player(self.player).resigned
             || !state.buildings().iter().any(|building| {
-                building.player == self.player
-                    && building.kind == BuildingKind::Foundry
-                    && building.built()
+                building.player == self.player && building.kind == BuildingKind::Foundry
             })
         {
             return None;

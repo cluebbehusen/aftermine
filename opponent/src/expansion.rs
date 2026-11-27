@@ -39,7 +39,7 @@ pub(crate) fn candidates(
     observation: &ObservationData,
     map: &MapModel,
     memory: &Memory,
-    (greed, secure): (u8, bool),
+    (greed, secure, peril): (u8, bool, u64),
     depletion: u32,
 ) -> Vec<(Investment, u32)> {
     let mut list = Vec::new();
@@ -88,6 +88,24 @@ pub(crate) fn candidates(
                 lift,
                 greed,
             )));
+        }
+        // A seat standing on one Foundry that a known army outweighs would
+        // lose its income with it: a second Foundry near frames insures
+        // against that, the more the nearer it lies to the seat's start than
+        // to any hostile one, where the enemy reaches it last.
+        if peril > 0
+            && let Some(anchor) = open.as_ref()
+            && known_frames(observation, site) > 0
+        {
+            let distance = u64::from(distance(observation, map, *anchor));
+            let hostile = map.hostile_distance(observation.me, *anchor);
+            let share = if hostile == UNREACHABLE {
+                1_000
+            } else {
+                u64::from(hostile) * 1_000 / (distance + u64::from(hostile)).max(1)
+            };
+            let price = u64::from(construction_cost(BuildingKind::Foundry)) + u64::from(lift);
+            score += i64::from(payback(peril * share / 1_000, price, greed));
         }
         list.push((
             Investment::Expansion(u16::try_from(index).expect("site counts fit in u16")),
@@ -328,20 +346,7 @@ pub(crate) fn value(
                 .map_or(0, |index| i64::from(observation.known_scrap[index].1))
         })
         .sum();
-    let frames = site
-        .frames
-        .iter()
-        .filter(|frame| {
-            observation.known_frames.contains(frame)
-                && (!held(observation, **frame, -1)
-                    || observation.my_buildings.iter().any(|building| {
-                        building.kind == BuildingKind::Extractor
-                            && building.anchor == **frame
-                            && !supported(observation, **frame)
-                    }))
-        })
-        .count();
-    let frames = i64::try_from(frames).expect("frame counts fit in i64");
+    let frames = i64::try_from(known_frames(observation, site)).expect("frame counts fit in i64");
     // Once a Crucible stands, a Foundry here would let own remote Extractors
     // in its reach become Deep Bores.
     let deepens = if crate::investments::built(observation, BuildingKind::Crucible) {
@@ -373,6 +378,23 @@ pub(crate) fn value(
         + i64::try_from(danger(observation, map, memory, anchor)).unwrap_or(i64::MAX);
     let weight = 750 + 5 * i64::from(greed);
     Some(resource * weight / 1_000 - penalty * (2_000 - weight) / 1_000)
+}
+
+/// The known frames of `site` a Foundry there would let the seat work: free,
+/// or holding an own Extractor no Foundry supports yet.
+fn known_frames(observation: &ObservationData, site: &Site) -> usize {
+    site.frames
+        .iter()
+        .filter(|frame| {
+            observation.known_frames.contains(frame)
+                && (!held(observation, **frame, -1)
+                    || observation.my_buildings.iter().any(|building| {
+                        building.kind == BuildingKind::Extractor
+                            && building.anchor == **frame
+                            && !supported(observation, **frame)
+                    }))
+        })
+        .count()
 }
 
 /// Whether someone already works `site`: an own or enemy Foundry, or any

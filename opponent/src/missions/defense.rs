@@ -69,9 +69,9 @@ impl Missions {
     /// running back without stopping to fight on the way. Artillery is still
     /// reached: at once when nothing else would join the fight at it, else
     /// once those gathered match everything that would. A threat away from
-    /// home that everything
-    /// the defense could take would not match is given up, and defenders
-    /// out at it fall back home. Unarmed enemies and enemy buildings among the seat's
+    /// home that everything the defense could take would not match is given
+    /// up, beside a Foundry only as [`lets_go`] weighs it, and defenders out
+    /// at it fall back home. Unarmed enemies and enemy buildings among the seat's
     /// buildings draw defenders worth what they cost, and a shortfall
     /// counts only armed attackers. A shelling building counts
     /// with the known defense around it, and only while the units the
@@ -82,7 +82,9 @@ impl Missions {
     /// The seat's units count against the ground attackers, and the known
     /// guns beside the batteries, at what they trade against them.
     /// Returns each of the seat's own Foundries whose defense falls short of
-    /// its attackers, home-nearest first.
+    /// its attackers, home-nearest first, and how far the ground attackers
+    /// within local reach of the seat's last built Foundry outweigh
+    /// everything its defense holds or could take.
     ///
     /// Only threats standing on or beside the Foundry's ground count. One
     /// across water or a chasm is left to production: chasing it would stall
@@ -98,8 +100,10 @@ impl Missions {
         (memory, searched): (&Memory, &[&BuildingObs]),
         difficulty: BotDifficulty,
         ledger: &mut Ledger,
-    ) -> Vec<Shortfall> {
+    ) -> (Vec<Shortfall>, u64) {
         let now = observation.tick;
+        let last = crate::investments::built_foundries(&observation.my_buildings).count() == 1;
+        let mut overrun = 0;
         let lendable = self.available(observation, Some(difficulty));
         let mut groups = threats(observation, map, frame, (memory, searched));
         self.weigh((observation, map, memory, ledger), &lendable, &mut groups);
@@ -242,6 +246,9 @@ impl Missions {
             // where they stand.
             let mission = index.map(|index| &self.list[index]);
             let met = pressing[0] * 2 / 3 + guns;
+            if *own && last && beside(foundry, goal) {
+                overrun = met.saturating_sub(siege.held).max(overrun);
+            }
             // A place held short of even odds is given up, but not by a
             // defense already out at its fight where the rung falls back to
             // the post: turned out under fire, its members only die on the
@@ -252,8 +259,7 @@ impl Missions {
                 && gathering
                 && met > 0
                 && yields
-                && siege.held < met
-                && !kept(observation, map, foundry, goal)
+                && gives_up(observation, map, foundry, goal, (siege.held, met))
             {
                 self.give_up(index, observation, map, frame, goal, ledger);
                 continue;
@@ -393,7 +399,7 @@ impl Missions {
         // Defenses that stood down go home last, so their orders never
         // take the allowance from a defense answering an attack now.
         self.send_home(returning, ledger);
-        shortfalls
+        (shortfalls, overrun)
     }
 
     /// Runs each defense that stood down, in `returning`, back to its post:
@@ -1218,17 +1224,43 @@ const RESERVE_TILES: i32 = 3;
 /// fight began. Not a count of units.
 pub(super) const GATHER_TILES: i32 = 6;
 
-/// Whether a threat at `goal`, grouped to `foundry`, is one the seat never
-/// gives up: at home, or at its last Foundry.
-fn kept(
+/// Whether a defense that holds or could take `held` against the `met` it
+/// would meet at `goal`, grouped to `foundry`, gives the place up: never at
+/// home, beside the Foundry as [`lets_go`] weighs it, and elsewhere once
+/// outweighed.
+fn gives_up(
     observation: &ObservationData,
     map: &MapModel,
     foundry: &BuildingObs,
     goal: TilePos,
+    (held, met): (u64, u64),
 ) -> bool {
-    at_home(observation, map, goal)
-        || (crate::investments::built_foundries(&observation.my_buildings).count() <= 1
-            && gap(foundry.anchor, foundry.kind.size(), goal, (1, 1)) <= LOCAL_REACH)
+    if at_home(observation, map, goal) {
+        return false;
+    }
+    if beside(foundry, goal) {
+        return lets_go(
+            held,
+            met,
+            crate::investments::built_foundries(&observation.my_buildings).count(),
+        );
+    }
+    held < met
+}
+
+/// Whether `goal` lies within local reach of `foundry`: a force there is at
+/// the Foundry itself, not raiding a far building grouped to it.
+fn beside(foundry: &BuildingObs, goal: TilePos) -> bool {
+    gap(foundry.anchor, foundry.kind.size(), goal, (1, 1)) <= LOCAL_REACH
+}
+
+/// Whether a seat with `foundries` built Foundries lets one go that it
+/// holds `held` against `met`: only below (n − 1)/n of what it would meet,
+/// so the fewer it has, the worse the odds it fights at for each, and it
+/// never gives up its last.
+pub(super) fn lets_go(held: u64, met: u64, foundries: usize) -> bool {
+    let foundries = u64::try_from(foundries).unwrap_or(u64::MAX);
+    held.saturating_mul(foundries) < met.saturating_mul(foundries.saturating_sub(1))
 }
 
 /// Whether `tile` lies at home: within local reach of the seat's start.

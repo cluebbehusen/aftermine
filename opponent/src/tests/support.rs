@@ -820,7 +820,7 @@ fn an_extractor_frame_waits_while_an_armed_enemy_stands_near() {
         let state = scenario.build().unwrap();
         let observation = ObservationData::fog_honest(&state, PlayerId(0));
         memory.observe(&observation);
-        expansion::candidates(&observation, &map(scenario), memory, (50, true), 0)
+        expansion::candidates(&observation, &map(scenario), memory, (50, true, 0), 0)
             .iter()
             .any(|(investment, _)| *investment == Investment::Extractor(frame))
     };

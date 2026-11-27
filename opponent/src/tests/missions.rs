@@ -2258,9 +2258,9 @@ fn expansion_raided(home: &[(i32, i32)]) -> Scenario {
 #[test]
 fn a_place_away_from_home_the_army_cannot_match_is_given_up() {
     let expansion = Some(TilePos::new(24, 5));
-    // Three Sentinels at home against six at the expansion: no defense or
-    // guard goes out to it.
-    let few = [(5, 8), (6, 8), (5, 9)];
+    // Two Sentinels at home against six at the expansion, a third of them:
+    // no defense or guard goes out to one of the seat's two Foundries.
+    let few = [(5, 8), (6, 8)];
     let scenario = expansion_raided(&few);
     let state = scenario.build().unwrap();
     let commands =
@@ -2364,6 +2364,30 @@ fn a_place_away_from_home_the_army_cannot_match_is_given_up() {
             .any(|mission| matches!(mission.kind, MissionKind::Defend { .. })),
         "the defense goes on"
     );
+}
+
+#[test]
+fn a_seat_with_more_foundries_gives_one_up_sooner() {
+    // Three Sentinels at home against six raiders at the expansion, half
+    // their worth: one of two Foundries is held at those odds, so they go to
+    // it; one of four is given up.
+    let defended = |extra: &[(i32, i32)]| {
+        let mut scenario = expansion_raided(&[(5, 8), (6, 8), (5, 9)]);
+        for (x, y) in extra {
+            scenario
+                .buildings
+                .push(building(0, BuildingKind::Foundry, *x, *y));
+        }
+        let state = scenario.build().unwrap();
+        let commands = seat_with(&scenario, 0, rung(BotDifficulty::Prime))
+            .act(&state, &mut OwnEvents::default());
+        hunts(&commands)
+            .iter()
+            .chain(&runs(&commands))
+            .any(|(_, goal)| goal.x >= 20)
+    };
+    assert!(defended(&[]), "one of two");
+    assert!(!defended(&[(1, 1), (1, 8)]), "one of four");
 }
 
 #[test]
@@ -2667,14 +2691,15 @@ fn a_landed_defender_under_ground_fire_stays() {
 
 #[test]
 fn only_a_defense_out_at_its_fight_holds_on_and_only_where_it_can_fall_back() {
-    // One Sentinel at home and two by the expansion against six raiders: under
-    // even odds. A Prime defense out at the raiders holds on and falls back by
+    // Two Sentinels by the expansion against six raiders, a third of them:
+    // below what one of two Foundries is held at. A Prime defense out at the
+    // raiders holds on and falls back by
     // its own rule; one still waiting at the expansion's post, or sent at the
     // raiders but still on its way, is given up; at Scrapheap, which never
     // falls back, one out at them is given up too.
     let expansion = TilePos::new(24, 5);
     let defended = |config: BotConfig, goal: TilePos, x: i32| {
-        let mut scenario = expansion_raided(&[(5, 8)]);
+        let mut scenario = expansion_raided(&[]);
         scenario.players[0].bot_config = Some(config);
         scenario.units.extend([
             unit(0, UnitKind::Sentinel, x, 9),
