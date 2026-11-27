@@ -291,7 +291,7 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
     let share = u64::try_from(deep + shallow.len())
         .unwrap_or(u64::MAX)
         .saturating_mul(situation.economy)
-        .div_ceil(1_000);
+        / 1_000;
     let room = u64::try_from(deep).unwrap_or(u64::MAX) < share.max(1);
     let ready = situation.plans_bores || built(observation, BuildingKind::Crucible);
     let bore = shallow

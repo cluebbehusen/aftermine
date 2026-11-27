@@ -10,7 +10,9 @@
 //! attacked, once those gathered match any escort beside it. Defenders
 //! falling back run without stopping to fight on the way.
 
-use super::attack::{Force, building_value, concentrates, defense_mix, force_of, priced};
+use super::attack::{
+    Force, building_value, concentrates, defense_mix, force_of, join_body, marches, priced,
+};
 use super::reserve::LOCAL_REACH;
 use super::{
     AttackPhase, DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, fill, force, hits,
@@ -234,7 +236,7 @@ impl Missions {
                     unit.id,
                 )
             });
-            let mut recruits = fill(candidates, need, &mut have, room, |unit| trades.force(unit));
+            let recruits = fill(candidates, need, &mut have, room, |unit| trades.force(unit));
             // A defense recruits half again what presses it, but it is short,
             // and the seat trains for it, only below the attackers at even
             // odds: a skirmish it holds is no emergency.
@@ -298,26 +300,13 @@ impl Missions {
             };
 
             let Some(index) = index else {
-                if recruits.is_empty() || self.list.len() >= MISSION_CAP {
-                    continue;
-                }
-                recruits.sort_unstable();
-                let ordered = dispatch(observation, ledger, recruits, goal, pursuit);
-                if !ordered.is_empty() {
-                    take(&mut free, &ordered);
-                    self.release(&ordered);
-                    self.list.push(Mission {
-                        id: self.next,
-                        since: now,
-                        units: ordered,
-                        goal,
-                        task: Task::Defend {
-                            asset: foundry.id,
-                            phase: DefendPhase::Engage { focus: gun },
-                        },
-                    });
-                    self.next += 1;
-                }
+                self.open(
+                    observation,
+                    ledger,
+                    (&mut free, recruits),
+                    (goal, pursuit, gun),
+                    foundry.id,
+                );
                 continue;
             };
             let mission = &self.list[index];
@@ -374,7 +363,15 @@ impl Missions {
             }
             sent.sort_unstable();
             sent.dedup();
-            let ordered = dispatch(observation, ledger, sent, goal, pursuit);
+            let joins = marches(difficulty) && !resend && post.is_some_and(|post| goal != post);
+            let body = &self.list[index].units;
+            let ordered = send(
+                observation,
+                (frame, ledger),
+                (body, sent),
+                (goal, pursuit, fight),
+                joins,
+            );
             let mut joined = waiting;
             if ordered.is_empty() {
                 self.release_from_others(index, &joined);
@@ -402,6 +399,39 @@ impl Missions {
         // take the allowance from a defense answering an attack now.
         self.send_home(returning, ledger);
         (shortfalls, overrun)
+    }
+
+    /// Opens a defense of `asset` with the `recruits` given an order after
+    /// its threats, at most [`MISSION_CAP`] missions.
+    fn open(
+        &mut self,
+        observation: &ObservationData,
+        ledger: &mut Ledger,
+        (free, mut recruits): (&mut Vec<UnitId>, Vec<UnitId>),
+        (goal, pursuit, gun): (TilePos, Pursuit, Option<UnitId>),
+        asset: aftermine_sim::BuildingId,
+    ) {
+        if recruits.is_empty() || self.list.len() >= MISSION_CAP {
+            return;
+        }
+        recruits.sort_unstable();
+        let ordered = dispatch(observation, ledger, recruits, goal, pursuit);
+        if ordered.is_empty() {
+            return;
+        }
+        take(free, &ordered);
+        self.release(&ordered);
+        self.list.push(Mission {
+            id: self.next,
+            since: observation.tick,
+            units: ordered,
+            goal,
+            task: Task::Defend {
+                asset,
+                phase: DefendPhase::Engage { focus: gun },
+            },
+        });
+        self.next += 1;
     }
 
     /// Runs each defense that stood down, in `returning`, back to its post:
@@ -932,7 +962,7 @@ fn intruder(observation: &ObservationData, focus: Option<UnitId>) -> bool {
 }
 
 /// How defenders go after a Foundry's threats.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Pursuit {
     /// March on the nearest threat, engaging everything on the way.
     Hunt,
@@ -976,6 +1006,33 @@ impl Pursuit {
             (None, None, Some(_)) => Self::Hunt,
         }
     }
+}
+
+/// Sends `sent` after a defense's threats as [`dispatch`] does, except that
+/// when it `joins`, hunting with defenders of `members` already at the
+/// `fight`, those sent go to those defenders before they hunt, rather than
+/// one by one into the attackers past them. Returns the units given an order.
+fn send(
+    observation: &ObservationData,
+    (frame, ledger): (HomeFrame, &mut Ledger),
+    (members, sent): (&[UnitId], Vec<UnitId>),
+    (goal, pursuit, fight): (TilePos, Pursuit, TilePos),
+    joins: bool,
+) -> Vec<UnitId> {
+    let body: Vec<&UnitObs> = if joins && pursuit == Pursuit::Hunt {
+        members
+            .iter()
+            .filter(|id| !sent.contains(id))
+            .filter_map(|id| mine(observation, *id))
+            .filter(|unit| hits(unit, Domain::Ground) && unit.tile.chebyshev(fight) <= GATHER_TILES)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    if !body.is_empty() && join_body(frame, &body, (&sent, goal), ledger) {
+        return sent;
+    }
+    dispatch(observation, ledger, sent, goal, pursuit)
 }
 
 /// Sends defenders after a Foundry's threats: those that can hit ground as

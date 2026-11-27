@@ -1901,6 +1901,68 @@ fn a_defense_out_short_of_its_attackers_holds_its_recruit_at_the_post() {
 }
 
 #[test]
+fn a_top_rung_defense_sends_late_recruits_to_the_defenders_at_the_fight() {
+    // Five Sentinels out at six raiders, level with them once a recruit from
+    // the Foundry joins. Veteran's recruit hunts the raiders on its own;
+    // Prime's goes to the defenders first, then hunts on with them.
+    let raiders: Vec<(UnitKind, i32, i32)> = (4..=6)
+        .flat_map(|y| [(UnitKind::Sentinel, 9, y), (UnitKind::Sentinel, 10, y)])
+        .collect();
+    let front = [(8, 7), (8, 8), (9, 8), (10, 8), (11, 8)];
+    let orders = |difficulty: BotDifficulty| {
+        let mut defenders: Vec<(UnitKind, i32, i32)> = front
+            .iter()
+            .map(|(x, y)| (UnitKind::Sentinel, *x, *y))
+            .collect();
+        defenders.push((UnitKind::Sentinel, 2, 8));
+        let mut scenario = raided(&defenders, &raiders);
+        scenario.players[0].bot_config = Some(rung(difficulty));
+        let state = scenario.build().unwrap();
+        let home = state
+            .buildings()
+            .iter()
+            .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
+            .unwrap();
+        let mut members: Vec<UnitId> = front.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+        members.sort_unstable();
+        let recruit = at(&state, 2, 8);
+        let mut opponent = restored_with(
+            &seat_with(&scenario, 0, rung(difficulty)),
+            &scenario,
+            &state,
+            |json| {
+                json["missions"] = serde_json::json!({
+                    "next": 1,
+                    "list": [{
+                        "id": 0,
+                        "task": {"task": "defend", "asset": home.id.0, "phase": {"engage": {"focus": null}}},
+                        "since": 0,
+                        "units": members,
+                        "goal": {"x": 9, "y": 5},
+                    }],
+                });
+            },
+        );
+        let commands = opponent.act(&state, &mut OwnEvents::default());
+        let first = |orders: Vec<(Vec<UnitId>, TilePos)>| {
+            orders
+                .into_iter()
+                .find(|(units, _)| units.contains(&recruit))
+                .map(|(_, goal)| goal)
+        };
+        let fronts: Vec<TilePos> = front.iter().map(|&(x, y)| TilePos::new(x, y)).collect();
+        (
+            first(advances(&commands)).map(|goal| fronts.contains(&goal)),
+            first(hunts(&commands)),
+        )
+    };
+    let (advance, goal) = orders(BotDifficulty::Veteran);
+    assert_eq!(advance, None);
+    assert!(goal.is_some(), "premise: the recruit goes on");
+    assert_eq!(orders(BotDifficulty::Prime), (Some(true), goal));
+}
+
+#[test]
 fn a_defense_s_reserve_is_not_taken_back_by_a_regrouping_attack() {
     // The recruit gathers with an attack forming at home. The defense out at
     // eight raiders, still short with it, borrows it to wait at the post; the

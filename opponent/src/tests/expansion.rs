@@ -840,7 +840,8 @@ fn frames_and_deep_bores_rank_by_what_they_pay_back() {
 #[test]
 fn a_seat_refits_its_economy_s_share_of_its_extractors() {
     // Two Extractors West's Foundry supports and a Crucible: a seat that
-    // builds half its economy deepens one of them, the full economy both.
+    // builds half its economy, or most of it, deepens one of them, the full
+    // economy both.
     // Deep Bores out of every Foundry's support count toward neither.
     let wanted = |deepened: bool, orphans: bool, difficulty: BotDifficulty| {
         let mut scenario = lane(&[(6, 3), (6, 9), (24, 3), (24, 9)]);
@@ -889,6 +890,10 @@ fn a_seat_refits_its_economy_s_share_of_its_extractors() {
     assert!(
         wanted(true, false, BotDifficulty::Prime),
         "Prime deepens both"
+    );
+    assert!(
+        !wanted(true, false, BotDifficulty::Veteran),
+        "most of two, rounded down, is one"
     );
     assert!(
         wanted(false, true, BotDifficulty::Scrapheap),
