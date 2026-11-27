@@ -143,9 +143,12 @@ impl Missions {
                 continue;
             };
             let members = index.map_or(&[][..], |i| self.list[i].units.as_slice());
+            // One a defense standing down just sent home keeps that order this
+            // decision rather than being turned straight back out.
             let free: Vec<_> = self
                 .free(observation, ledger)
                 .into_iter()
+                .filter(|id| !ledger.running(*id))
                 .filter_map(|id| mine(observation, id))
                 .filter(|u| reaches(u, map, ground))
                 .collect();

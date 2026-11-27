@@ -1046,3 +1046,88 @@ fn scuttlers_raid_a_line_guarded_by_what_they_beat_but_not_by_what_beats_them() 
         "a Lancer is not, though it costs little more"
     );
 }
+
+/// Six West Scuttlers striking the outpost Foundry, with an East Lancer at
+/// `lancer` and, with `turret`, an East Turret beside it. The commands of
+/// West's decision, and the Lancer's id.
+fn struck_from_range(
+    lancer: (i32, i32),
+    turret: bool,
+) -> (Vec<PlayerCommand>, UnitId, Vec<UnitId>) {
+    let mut scenario = outpost(UnitKind::Scuttler, BuildingKind::Foundry);
+    let extra = [(19, 10), (19, 11), (19, 12), (18, 11)];
+    for (x, y) in extra {
+        scenario.units.push(unit(0, UnitKind::Scuttler, x, y));
+    }
+    scenario
+        .units
+        .push(unit(1, UnitKind::Lancer, lancer.0, lancer.1));
+    if turret {
+        scenario.buildings.push(building(
+            1,
+            BuildingKind::Turret,
+            lancer.0 - 1,
+            lancer.1 - 1,
+        ));
+    }
+    let mut state = scenario.build().unwrap();
+    let mut members = raiders(&state);
+    members.extend(extra.iter().map(|&(x, y)| at(&state, x, y)));
+    members.sort_unstable();
+    let lancer = at(&state, lancer.0, lancer.1);
+    state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Hunt {
+            units: members.clone(),
+            goal: TilePos::new(21, 10),
+            queue: false,
+        },
+    }]);
+    while state.current_tick() < 12 {
+        state.tick(&[]);
+    }
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {
+                    "task": "raid",
+                    "target": {"owner": 1, "building": "foundry", "anchor": {"x": 22, "y": 10}},
+                    "phase": "strike",
+                },
+                "since": 0,
+                "units": members,
+                "goal": {"x": 21, "y": 10},
+            }],
+        });
+    });
+    (
+        opponent.act(&state, &mut OwnEvents::default()),
+        lancer,
+        members,
+    )
+}
+
+#[test]
+fn raiders_a_lancer_outranges_close_on_it_then_strike_on() {
+    let on = |commands: &[PlayerCommand], lancer: UnitId| {
+        attacks(commands)
+            .into_iter()
+            .find(|(_, target)| *target == AttackTarget::Unit(lancer))
+            .map(|(units, _)| units)
+    };
+    let (commands, lancer, members) = struck_from_range((15, 12), false);
+    let closing = on(&commands, lancer).expect("they close on the Lancer");
+    assert!(!closing.is_empty() && closing.iter().all(|id| members.contains(id)));
+    assert!(
+        hunts(&commands)
+            .iter()
+            .any(|(units, goal)| *units == closing && *goal == TilePos::new(21, 10)),
+        "then strike on: {commands:?}"
+    );
+    let (commands, lancer, _) = struck_from_range((15, 12), true);
+    assert_eq!(on(&commands, lancer), None, "not under a known gun");
+    let (commands, lancer, _) = struck_from_range((8, 20), false);
+    assert_eq!(on(&commands, lancer), None, "not one out of sight");
+}

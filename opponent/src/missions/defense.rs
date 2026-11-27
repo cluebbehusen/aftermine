@@ -355,7 +355,9 @@ impl Missions {
                 (members, siege, post, pursuit),
                 goal,
             );
-            sent.retain(|id| !away.contains(id));
+            let busy =
+                super::focus::engaged(observation, map, members, (focus, gun), lost || recovering);
+            sent.retain(|id| !away.contains(id) && !busy.contains(id));
             if sent.is_empty() {
                 // Releasing may drop emptied missions, so it comes last.
                 self.release_from_others(index, &waiting);

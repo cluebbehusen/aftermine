@@ -228,6 +228,13 @@ impl Ledger {
         self.aside.binary_search(&unit).is_ok()
     }
 
+    /// Whether `unit` was given an order this decision.
+    pub(crate) fn ordered(&self, unit: UnitId) -> bool {
+        self.decision.commands.iter().any(|command| {
+            units_of(&mut command.command.clone()).is_some_and(|units| units.contains(&unit))
+        })
+    }
+
     /// Whether `unit` was sent running this decision.
     pub(crate) fn running(&self, unit: UnitId) -> bool {
         self.decision.commands.iter().any(|command| {

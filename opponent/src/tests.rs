@@ -834,6 +834,7 @@ fn a_staged_foundry_spreads_its_harvesters_and_trains_its_army_first() {
             target: None,
             protected: 0,
             missions: Vec::new(),
+            members: Vec::new(),
             army: ArmyReasons::default(),
         }
     );

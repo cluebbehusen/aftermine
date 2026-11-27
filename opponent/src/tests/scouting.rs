@@ -279,7 +279,7 @@ fn scrapheap() -> BotConfig {
 }
 
 #[test]
-fn veteran_focuses_the_weakest_enemy_every_member_reaches() {
+fn veteran_focuses_the_weakest_enemy_with_the_members_that_reach_it() {
     let (scenario, state, weakest) = skirmish([(8, 5), (8, 6)], 20);
     let mut members = vec![at(&state, 8, 5), at(&state, 8, 6)];
     members.sort_unstable();
@@ -295,12 +295,14 @@ fn veteran_focuses_the_weakest_enemy_every_member_reaches() {
         "a wound this deep shows on Standard's health bars too"
     );
 
-    let (scenario, state, _) = skirmish([(5, 8), (8, 5)], 20);
+    // One member out of reach keeps its own order; the one that reaches
+    // focuses without waiting for it.
+    let (scenario, state, weakest) = skirmish([(5, 8), (8, 5)], 20);
     let commands = seat_with(&scenario, 0, veteran()).act(&state, &mut OwnEvents::default());
     assert!(!hunts(&commands).is_empty(), "premise: both defend");
-    assert!(
-        attacks(&commands).is_empty(),
-        "a member out of reach would have to chase"
+    assert_eq!(
+        attacks(&commands),
+        [(vec![at(&state, 8, 5)], AttackTarget::Unit(weakest))]
     );
 }
 
