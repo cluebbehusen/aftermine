@@ -3166,6 +3166,200 @@ fn a_structure_hit_by_fire_nobody_sees_draws_a_search_and_no_welder() {
     );
 }
 
+/// The field with a West Extractor beside home, `defenders` at home, and an
+/// East Lancer shooting the Extractor from beyond what it sees, played until
+/// the Extractor is hurt on a decision tick; with the Lancer's id.
+fn shot_from_the_fog(defenders: &[UnitKind]) -> (Scenario, State, UnitId) {
+    let mut scenario = field();
+    scenario.map[4].replace_range(12..13, "E");
+    for (kind, (x, y)) in defenders.iter().zip(GARRISON) {
+        scenario.units.push(unit(0, *kind, x, y));
+    }
+    scenario.units.push(unit(1, UnitKind::Lancer, 19, 5));
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Extractor, 12, 4));
+    let mut state = scenario.build().unwrap();
+    let extractor = state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::Extractor)
+        .unwrap()
+        .id;
+    let lancer = at(&state, 19, 5);
+    state.tick(&[PlayerCommand {
+        player: PlayerId(1),
+        command: Command::Attack {
+            units: vec![lancer],
+            target: AttackTarget::Building(extractor),
+            queue: false,
+        },
+    }]);
+    let hurt = |state: &State| {
+        state
+            .building(extractor)
+            .is_some_and(|building| building.hp < BuildingKind::Extractor.base_stats().max_hp)
+    };
+    while !hurt(&state) || state.current_tick() < 312 || !state.current_tick().is_multiple_of(12) {
+        assert!(state.current_tick() < 1_200, "premise: the Lancer hits it");
+        state.tick(&[]);
+    }
+    assert!(
+        ObservationData::fog_honest(&state, PlayerId(0))
+            .enemy_units
+            .is_empty(),
+        "premise: the Lancer is out of sight"
+    );
+    (scenario, state, lancer)
+}
+
+/// West in `shot_from_the_fog`, remembering its Lancer where it stands,
+/// seen 300 ticks ago.
+fn remembering_the_shooter(scenario: &Scenario, state: &State, lancer: UnitId) -> Opponent {
+    let tile = state.unit(lancer).unwrap().tile();
+    let seen = state.current_tick() - 300;
+    restored_with(&seat(scenario, 0), scenario, state, |json| {
+        json["memory"]["units"] = remembered([(lancer.0, UnitKind::Lancer, tile, seen)]);
+        json["memory"]["census"] = counted(&json["memory"]["units"]);
+    })
+}
+
+#[test]
+fn a_search_weighs_a_shooter_it_has_seen() {
+    // Fire nobody sees, from where the seat remembers a Lancer: three
+    // Scuttlers it could not hold the Lancer with wait at home instead of
+    // walking out to find it, while four Lancers go.
+    let advances_beside = |defenders: &[UnitKind]| {
+        let (scenario, state, lancer) = shot_from_the_fog(defenders);
+        let commands = remembering_the_shooter(&scenario, &state, lancer)
+            .act(&state, &mut OwnEvents::default());
+        let beside: Vec<TilePos> =
+            crate::frame::ring(TilePos::new(12, 4), BuildingKind::Extractor.size()).collect();
+        advances(&commands)
+            .iter()
+            .any(|(units, goal)| !units.is_empty() && beside.contains(goal))
+    };
+    assert!(!advances_beside(&[UnitKind::Scuttler; 3]));
+    assert!(advances_beside(&[UnitKind::Lancer; 4]));
+}
+
+#[test]
+fn a_defense_judges_lancers_lost_from_sight_at_their_whole_price() {
+    // Three Lancers seen behind the one at the Fabricator a while ago are
+    // likely still there: counted whole while the seat remembers where they
+    // stood, rather than at the share its fading memory leaves, they keep
+    // its three Lancers from walking out into all four.
+    let scenario = raiders_far_out(&[UnitKind::Lancer; 3], &[UnitKind::Lancer]);
+    let mut state = scenario.build().unwrap();
+    advance_to(&mut state, 312, &[]);
+    let behind: Vec<TilePos> = (9..=11).map(|y| TilePos::new(30, y)).collect();
+    let vision = ObservationData::fog_honest(&state, PlayerId(0));
+    assert!(
+        behind.iter().all(|tile| !vision.visible(*tile)),
+        "premise: out of sight"
+    );
+    for difficulty in [BotDifficulty::Standard, BotDifficulty::Prime] {
+        let mut state = state.clone();
+        let mut opponent = restored_with(
+            &seat_with(&scenario, 0, rung(difficulty)),
+            &scenario,
+            &state,
+            |json| {
+                json["memory"]["units"] = remembered(
+                    behind
+                        .iter()
+                        .zip(0..)
+                        .map(|(&tile, index)| (1_000 + index, UnitKind::Lancer, tile, 12)),
+                );
+                json["memory"]["census"] = counted(&json["memory"]["units"]);
+            },
+        );
+        while !opponent.decision_due(&state) {
+            state.tick(&[]);
+        }
+        let commands = opponent.act(&state, &mut OwnEvents::default());
+        assert!(
+            hunts(&commands)
+                .iter()
+                .all(|(_, goal)| goal.chebyshev(TilePos::new(22, 11)) > 6),
+            "{difficulty:?}: {commands:?}"
+        );
+    }
+}
+
+#[test]
+fn a_lancer_in_sight_just_past_the_threat_gap_keeps_the_defense() {
+    // A Lancer steps back just past the buildings' reach, still in sight:
+    // the defense out at it stays engaged rather than stand down and come
+    // again with its next step, while a seat with no defense out forms none
+    // for it.
+    let mut scenario = field();
+    scenario.units.extend([
+        unit(0, UnitKind::Sentinel, 6, 10),
+        unit(0, UnitKind::Sentinel, 6, 11),
+        unit(0, UnitKind::Surveyor, 11, 11),
+        unit(1, UnitKind::Lancer, 13, 11),
+    ]);
+    let state = scenario.build().unwrap();
+    let home = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
+        .unwrap();
+    assert_eq!(
+        crate::frame::gap(
+            home.anchor,
+            BuildingKind::Foundry.size(),
+            TilePos::new(13, 11),
+            (1, 1)
+        ),
+        8,
+        "premise: just past the buildings' reach"
+    );
+    assert!(
+        !ObservationData::fog_honest(&state, PlayerId(0))
+            .enemy_units
+            .is_empty(),
+        "premise: in sight"
+    );
+    let mut members = vec![at(&state, 6, 10), at(&state, 6, 11)];
+    members.sort_unstable();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {"task": "defend", "asset": home.id.0, "phase": {"engage": {"focus": null}}},
+                "since": 0,
+                "units": members,
+                "goal": {"x": 13, "y": 11},
+            }],
+        });
+    });
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    assert!(
+        trace.unwrap().missions.iter().any(|mission| {
+            matches!(mission.kind, MissionKind::Defend { .. }) && mission.phase == Phase::Engage
+        }),
+        "{commands:?}"
+    );
+    assert!(
+        runs(&commands)
+            .iter()
+            .all(|(units, _)| units.iter().all(|id| !members.contains(id))),
+        "{commands:?}"
+    );
+    let (_, trace) = seat(&scenario, 0).act_traced(&state, &mut OwnEvents::default());
+    assert!(
+        trace
+            .unwrap()
+            .missions
+            .iter()
+            .all(|mission| !matches!(mission.kind, MissionKind::Defend { .. })),
+        "no defense starts for it"
+    );
+}
+
 #[test]
 fn a_search_looks_out_from_the_side_unseen_fire_came_from() {
     // A Lancer nobody sees shoots a West Extractor from the south, away

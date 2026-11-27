@@ -13,8 +13,8 @@
 use super::attack::{Force, building_value, concentrates, defense_mix, force_of, priced};
 use super::reserve::LOCAL_REACH;
 use super::{
-    AttackPhase, DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, against_machines,
-    fill, force, hits, hunt, insert, meeting, mine, reached, run, value, worth,
+    AttackPhase, DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, fill, force, hits,
+    hunt, insert, meeting, mine, reached, run, value, worth,
 };
 use crate::counters::{Piece, weigh, weight};
 use crate::decision::Ledger;
@@ -39,7 +39,10 @@ const QUIET_TICKS: u64 = 120;
 /// Ticks a defense may stay engaged before evaluation calls it stuck.
 const ENGAGE_TICKS: u64 = 3_600;
 
-/// Tiles a threat may move before its defenders are sent after it again.
+/// Tiles a threat may move before its defenders are sent after it again,
+/// and that one in sight may step back past the buildings' reach and still
+/// count: a band that keeps a threat moving a step at a time from turning
+/// each decision into new orders.
 const RETARGET_TILES: i32 = 3;
 
 /// Ticks a defense's `phase` should end within; a quiet guard has no
@@ -168,13 +171,6 @@ impl Missions {
             );
             let gun = pursuit.held();
             let hunting = matches!(pursuit, Pursuit::Hunt);
-            // A gun with others beside it that would join the fight there is
-            // met like any ground force at a seat that gathers: defenders
-            // going at it one by one die to its escort on the way.
-            let escorted = shelling
-                .filter(|_| concentrates(difficulty))
-                .is_some_and(|threat| meeting::escort(observation, memory, threat.tile) > 0);
-            let gathering = hunting || escorted;
             // Defenders hunting a ground threat meet whatever stands near
             // it, not only the enemies that came near the buildings: a line
             // held a few tiles behind them joins in. Going at an escorted
@@ -185,19 +181,26 @@ impl Missions {
                     .map(|(piece, worth)| siege.trades.enemy(piece, worth))
                     .sum()
             };
-            let meets = grounded.filter(|_| gathering).map_or(0, meet).max(
+            // A gun with others beside it that would join the fight there is
+            // met like any ground force at a seat that gathers: defenders
+            // going at it one by one die to its escort on the way.
+            let escorted = shelling
+                .filter(|_| concentrates(difficulty))
+                .is_some_and(|threat| meeting::escort(observation, memory, threat.tile) > 0);
+            // Fire nobody sees where the seat remembers a shooter is that
+            // shooter's: the search is weighed like a threat in sight, so a
+            // place the defense could not match is waited for or given up
+            // before it goes, not at contact.
+            let sought = siege.sought(meet);
+            let gathering = hunting || escorted || sought.is_some();
+            let place = grounded.or(sought);
+            let meets = place.filter(|_| gathering).map_or(0, meet).max(
                 shelling
                     .filter(|_| escorted)
                     .map_or(0, |threat| meet(threat.tile)),
             );
             let pressing = siege.pressing_value(meets);
-            let guns = siege
-                .guns
-                .iter()
-                .map(|(piece, value)| siege.trades.enemy(*piece, *value))
-                .sum::<u64>()
-                + siege.unseen.map_or(0, |_| gun_value())
-                + siege.search.map_or(0, |(_, need)| need);
+            let guns = siege.gun_need(sought.is_none());
             let unarmed = siege.unarmed();
             let need = [
                 pressing[0] + guns * 3 / 2 + unarmed[0],
@@ -254,7 +257,7 @@ impl Missions {
                 self.give_up(index, observation, map, frame, goal, ledger);
                 continue;
             }
-            let post = grounded.and_then(|threat| waiting_post(map, frame, foundry, threat));
+            let post = place.and_then(|threat| waiting_post(map, frame, foundry, threat));
             // Only defenders at the post or already at the fight count
             // toward going out: those still on their way would reach it
             // after it began.
@@ -264,7 +267,7 @@ impl Missions {
                 trades.together(observation, members.iter().chain(&recruits), [post, fight])
             });
             let sent = members.iter().chain(&recruits);
-            let (goal, pursuit, gun) = match grounded
+            let (goal, pursuit, gun) = match place
                 .filter(|_| gathering && concentrates(difficulty))
                 .filter(|_| waits(mission, foundry, [gathered, front.1], met))
                 .map(|threat| waiting_post(map, frame, foundry, threat))
@@ -533,10 +536,11 @@ impl Missions {
                 .units
                 .iter()
                 .map(|threat| (Piece::Unit(threat.kind), value(threat)))
-                .chain(recalled.iter().map(|seen| {
-                    let value = seen.value(now) * against_machines(seen.kind) / 1_000;
-                    (Piece::Unit(seen.kind), value)
-                }))
+                .chain(
+                    recalled
+                        .iter()
+                        .map(|seen| (Piece::Unit(seen.kind), super::located(seen, now))),
+                )
                 .chain(siege.guns.iter().copied())
                 .collect();
             siege.trades = Trades::of(&attackers, &own);
@@ -546,10 +550,7 @@ impl Missions {
                 recalled
                     .iter()
                     .filter(|seen| seen.kind.stats().domain == domain)
-                    .map(|seen| {
-                        let value = seen.value(now) * against_machines(seen.kind) / 1_000;
-                        siege.trades.enemy(seen.kind, value)
-                    })
+                    .map(|seen| siege.trades.enemy(seen.kind, super::located(seen, now)))
                     .sum()
             });
             siege.held = pool.iter().map(|unit| siege.trades.ground(unit)).sum();
@@ -1365,9 +1366,9 @@ struct Siege<'a> {
     /// it, with what they bring: its price, or the enemies remembered near
     /// it if worth more.
     search: Option<(TilePos, u64)>,
-    /// What armed enemies remembered out of sight near the buildings are
-    /// worth, against ground and air, by how sure the seat is they are still
-    /// there.
+    /// What armed enemies remembered out of sight near the buildings, or in
+    /// sight just back past their reach, are worth against ground and air, at
+    /// their whole price while the seat remembers where they stood.
     remembered: [u64; 2],
     /// Those remembered enemies, by id.
     recalled: Vec<UnitId>,
@@ -1524,6 +1525,27 @@ impl Siege<'_> {
     /// Whether it looks for what hit a structure out of sight with nothing
     /// armed in sight, on the ground or in the air: an unarmed intruder,
     /// such as a scout, waits.
+    /// Where a search goes after fire nobody sees when the seat remembers a
+    /// shooter that would join the fight there: what `meet` finds there.
+    fn sought(&self, meet: impl Fn(TilePos) -> u64) -> Option<TilePos> {
+        self.search
+            .filter(|_| self.searching())
+            .map(|(tile, _)| tile)
+            .filter(|tile| meet(*tile) > 0)
+    }
+
+    /// What its guns press with, as the attackers trade, with a gun out of
+    /// sight at an artillery piece's price and, while no shooter is known
+    /// (`unknown`), a search at what it stands in for.
+    fn gun_need(&self, unknown: bool) -> u64 {
+        self.guns
+            .iter()
+            .map(|(piece, value)| self.trades.enemy(*piece, *value))
+            .sum::<u64>()
+            + self.unseen.map_or(0, |_| gun_value())
+            + self.search.filter(|_| unknown).map_or(0, |(_, need)| need)
+    }
+
     fn searching(&self) -> bool {
         self.search.is_some() && self.units.is_empty() && self.armed_grounded().next().is_none()
     }
@@ -1865,16 +1887,27 @@ fn besieged<'a>(
     }
     // An attacker that steps out of sight is still there: counting only those
     // in sight, a defense facing one that blinks at the edge of its sight
-    // marches out and back with every blink.
+    // marches out and back with every blink. One in sight that steps just
+    // back past the buildings' reach is there too, and counts until it is a
+    // few tiles further out: a defense facing one that steps back and forth
+    // across that edge would otherwise stand down and come again with every
+    // step. Alone, such attackers give no place to go after, so they keep a
+    // defense rather than start one.
+    let grouped: Vec<UnitId> = groups
+        .iter()
+        .flat_map(|(_, siege)| siege.units.iter().map(|unit| unit.id))
+        .collect();
     for seen in memory.map_or(&[][..], Memory::units) {
-        if seen.seen >= observation.tick {
+        let sighted = seen.seen >= observation.tick;
+        if sighted && grouped.contains(&seen.id) {
             continue;
         }
         let reach = crate::defenses::reach(seen.kind);
         if reach <= Fx::ZERO {
             continue;
         }
-        let reach = reach.ceil().to_num::<i32>().max(THREAT_GAP);
+        let reach =
+            reach.ceil().to_num::<i32>().max(THREAT_GAP) + if sighted { RETARGET_TILES } else { 0 };
         if !buildings
             .iter()
             .any(|building| gap(building.anchor, building.kind.size(), seen.tile, (1, 1)) < reach)
@@ -1891,8 +1924,7 @@ fn besieged<'a>(
             });
         if reachable {
             let domain = usize::from(seen.kind.stats().domain == Domain::Air);
-            groups[index].1.remembered[domain] +=
-                seen.value(observation.tick) * against_machines(seen.kind) / 1_000;
+            groups[index].1.remembered[domain] += super::located(seen, observation.tick);
             groups[index].1.recalled.push(seen.id);
         }
     }
