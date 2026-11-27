@@ -690,7 +690,7 @@ impl RowCoverage {
 /// ground salvage tile as dangerous.
 ///
 /// This is the one threat-knowledge funnel used by autonomous Harvest
-/// work. Live mobile enemies are consulted only when the viewer's
+/// work and by idle workers choosing a structure to weld. Live mobile enemies are consulted only when the viewer's
 /// current team vision contains their tile, and nearby friendly ground
 /// firepower can screen equal or weaker pressure. Static weapons come
 /// from the vision's own building memories, and unidentified radar
@@ -986,7 +986,7 @@ impl GroundSalvageDanger {
     }
 
     /// Whether this snapshot marks one tile as too dangerous for
-    /// autonomous salvage work.
+    /// autonomous salvage work or an idle worker's weld.
     pub(crate) fn contains(&self, source: TilePos) -> bool {
         self.lane_memo(source, lane::CONTAINS_SET, lane::CONTAINS, || {
             self.compute_contains(source)

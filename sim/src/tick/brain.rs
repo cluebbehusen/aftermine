@@ -256,7 +256,15 @@ pub(super) fn run(
             }
             // An idle airframe stays parked and brace retraction moves
             // nothing, so the radar check's acquisition still holds here.
-            Order::Idle => idle(state, index, &mut reach, &wounded, id, acquired),
+            Order::Idle => idle(
+                state,
+                index,
+                &mut reach,
+                &wounded,
+                &mut harvest_danger_by_team,
+                id,
+                acquired,
+            ),
             Order::Run { .. } => {
                 if !land_at_destination(state, index, &mut reach, id, events) {
                     walk(state, index, &mut reach, id, events);
@@ -353,6 +361,7 @@ pub(super) fn run(
                 index,
                 &mut reach,
                 &wounded,
+                &mut harvest_danger_by_team,
                 id,
                 &mut field_welds,
                 &mut builds,

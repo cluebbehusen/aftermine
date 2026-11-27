@@ -50,7 +50,10 @@ bank stalls.
 An idle Harvester or Excavator welds on its own: once it has stopped with \
     nothing queued, it goes to the nearest wounded own unit standing still, or \
     damaged own finished structure, within {tend} tiles of where it stopped, while \
-    the bank can pay. A stop order leaves a worker idle, so it starts again. Any \
+    the bank can pay. It passes over a structure {tend_crew} workers already weld \
+    on their own, and one in known danger (see Workers in danger); a worker already \
+    welding stays when danger comes. An ordered repair or a patrol has neither \
+    limit. A stop order leaves a worker idle, so it starts again. Any \
     new order interrupts it, and the set_idle_weld command (through send) turns it \
     off, or back on, for chosen workers: \
 {{\"type\":\"set_idle_weld\",\"units\":[3,4],\"enabled\":false}}.
@@ -102,7 +105,9 @@ A Harvester or Excavator routes around known danger when it can, and never \
     units in sight, within their reach and {mobile} tiles more; enemy defenses you \
     know of, within their reach and {fixed} more; radar contacts, within {radar} \
     tiles; and places your team lost a unit or structure, or had one other than a \
-    Foundry hit, in the last {incident}, within {near} tiles.
+    Foundry hit, in the last {incident}, within {near} tiles. Your team's armed \
+    units in reach cancel enemy units in sight there worth no more, each counted at \
+    its cost scaled by its health.
 
 ## Construction
 
@@ -122,6 +127,7 @@ tick on its own.
         foundry_price = stats::FOUNDRY_REPAIR_PRICE,
         tend = stats::ESCORT_ENGAGE_RADIUS.to_num::<i32>(),
         crew = stats::ASSEMBLY_CREW_CAP,
+        tend_crew = stats::TEND_CREW_CAP,
         station = tick_time_label(u32::from(stats::LEASH_STATION_TICKS)),
         leash = stats::LEASH_RADIUS.to_num::<i32>(),
         patience = tick_time_label(u32::from(stats::LEASH_PATIENCE)),
