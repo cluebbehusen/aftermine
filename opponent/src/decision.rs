@@ -1752,14 +1752,14 @@ fn emergency_raised(ledger: &Ledger) -> Vec<BuildingKind> {
 }
 
 /// Whether a unit of `kind` answers `short` now. Against armed attackers,
-/// Scuttlers do only until a Fabricator stands: from then on a short defense
-/// answers with what the army's roles train, or waits for a producer of it,
-/// rather than feed the attackers the cheapest unit a Foundry has free. A
-/// shortfall left by builders and producers alone is still met with the
-/// cheapest unit.
+/// in sight or not, Scuttlers do only until a Fabricator stands: from then on
+/// a short defense answers with what the army's roles train, or waits for a
+/// producer of it, rather than feed the attackers the cheapest unit a
+/// Foundry has free. A shortfall left by builders and producers alone is
+/// still met with the cheapest unit.
 fn answers_now(observation: &ObservationData, kind: UnitKind, short: &Shortfall) -> bool {
     kind != UnitKind::Scuttler
-        || short.attackers.is_empty()
+        || !short.read
         || !crate::investments::built(observation, BuildingKind::Fabricator)
 }
 
