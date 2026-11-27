@@ -328,8 +328,9 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         }
     }
     // Once harvesting is saturated and home scrap has begun to run down, more
-    // workers add no income: Reclaimers and Refineries grow it then.
-    if saturated && situation.depletion > 0 {
+    // workers add no income: Reclaimers and Refineries grow it then, once the
+    // army holds what the seat knows of the enemy's, as a Deep Bore waits.
+    if saturated && situation.depletion > 0 && holds {
         let base = 150
             + 3 * u32::from(traits.greed)
             + situation.depletion * 400 / 1_000
