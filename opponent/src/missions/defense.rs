@@ -86,10 +86,12 @@ impl Missions {
     /// the seat's last built Foundry outweigh everything its defense holds or
     /// could take.
     ///
-    /// Only threats standing on or beside the Foundry's ground count. One
-    /// across water or a chasm is left to production: chasing it would stall
-    /// every defender, and a defense short forever would never save for the
-    /// tech that answers it. Nor does a defense against shelling, from a
+    /// Only threats standing on or beside a Foundry's ground count, at the
+    /// nearest Foundry they do, so one across a pit from the Foundry it
+    /// presses is met from the ground it stands on. One on ground no Foundry
+    /// holds is left to production: chasing it would stall every defender,
+    /// and a defense short forever would never save for the tech that
+    /// answers it. Nor does a defense against shelling, from a
     /// building or a gun out of sight, count as short: static defenses cannot
     /// reach the guns.
     pub(crate) fn defend(
@@ -1868,10 +1870,23 @@ fn besieged<'a>(
         .map(|foundry| (*foundry, Siege::default()))
         .collect();
     let shelled = shelled(observation, buildings);
+    // Whether the Foundry at `index` stands on ground a footprint lies on or
+    // beside, so its defenders can walk to it.
+    let walks = |index: usize, anchor: TilePos, size: (i32, i32)| {
+        map.component(foundries[index].anchor)
+            .is_some_and(|component| {
+                map.component(anchor) == Some(component)
+                    || ring(anchor, size).any(|tile| map.component(tile) == Some(component))
+            })
+    };
+    // A threat goes to the nearest Foundry that can walk to it: one shelling
+    // an island across a pit from ground another Foundry holds is met from
+    // there.
     let nearest = |anchor: TilePos, size: (i32, i32), centre: (i64, i64)| {
         (0..foundries.len()).min_by_key(|index| {
             let foundry = foundries[*index];
             (
+                !walks(*index, anchor, size),
                 gap(foundry.anchor, foundry.kind.size(), anchor, size),
                 frame.rank(centre, footprint_centre(foundry.kind, foundry.anchor)),
             )
@@ -1973,8 +1988,8 @@ fn besieged<'a>(
         let foundry = foundries[index];
         let home = footprint_centre(foundry.kind, foundry.anchor);
         let component = map.component(foundry.anchor);
-        // A battery off the Foundry's ground is left to production, as a
-        // unit across a chasm is.
+        // A battery on ground no Foundry holds is left to production, as a
+        // unit there is.
         let beside = ring(building.anchor, size)
             .filter(|tile| component.is_some() && map.component(*tile) == component)
             .min_by_key(|tile| frame.rank(home, doubled(*tile)));
