@@ -241,7 +241,7 @@ fn checkpoints_reject_a_malformed_census() {
 fn a_unit_seen_dying_is_forgotten_where_it_stood_too() {
     let mut memory: Memory = serde_json::from_value(serde_json::json!({
         "units": [{"id": 1, "kind": UnitKind::Lancer, "tile": {"x": 3, "y": 3}, "seen": 0}],
-        "census": [{"id": 1, "kind": UnitKind::Lancer, "seen": 0}],
+        "census": [{"id": 1, "kind": UnitKind::Lancer, "player": 1, "tile": {"x": 3, "y": 3}, "seen": 0}],
         "failures": [], "abandoned": [], "raided": [], "scouted": [], "stuck": [], "extractors": [],
     }))
     .unwrap();
