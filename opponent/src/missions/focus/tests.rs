@@ -94,3 +94,56 @@ fn a_gun_never_focuses_an_enemy_inside_its_minimum_range() {
     let clear = field(false, &[(UnitKind::Avalanche, 6, 4)], enemy);
     assert_eq!(focused(&clear), 1);
 }
+
+/// West's units and East's single unit on `scenario`, as `outranged` and
+/// `shooters` see them.
+fn closers(scenario: &Scenario) -> (usize, usize) {
+    let state = scenario.build().unwrap();
+    let map = MapModel::from_scenario(scenario).unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let members: Vec<&UnitObs> = observation.my_units.iter().collect();
+    let enemy = observation
+        .enemy_units
+        .first()
+        .expect("premise: East's unit is in sight");
+    (
+        outranged(&observation, &map, &members, enemy).len(),
+        shooters(&map, &members, enemy).len(),
+    )
+}
+
+#[test]
+fn members_a_shooter_outranges_close_on_it_and_one_that_reaches_shoots() {
+    // A Sentinel and a Lancer five tiles off: the Lancer hits it from beyond
+    // its reach, so it closes on the Lancer, while one that already reaches
+    // shoots. A chasm between them leaves nobody to close.
+    let sentinel = |x, y| (UnitKind::Sentinel, x, y);
+    let lancer = (UnitKind::Lancer, 9, 4);
+    assert_eq!(
+        closers(&field(false, &[sentinel(4, 4), sentinel(2, 6)], lancer)),
+        (1, 0)
+    );
+    assert_eq!(
+        closers(&field(false, &[sentinel(4, 4), sentinel(7, 4)], lancer)),
+        (1, 1),
+        "one in reach shoots while the other closes"
+    );
+    assert_eq!(
+        closers(&field(true, &[sentinel(4, 4)], lancer)),
+        (0, 0),
+        "across the chasm"
+    );
+}
+
+#[test]
+fn a_member_in_reach_focuses_without_waiting_for_one_out_of_it() {
+    let sentinel = |x, y| (UnitKind::Sentinel, x, y);
+    assert_eq!(
+        focused(&field(
+            false,
+            &[sentinel(7, 4), sentinel(2, 6)],
+            sentinel(9, 4)
+        )),
+        1
+    );
+}

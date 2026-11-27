@@ -337,7 +337,37 @@ impl Missions {
                     return withdraw(self, ledger).then_some(lost);
                 }
                 if !strays.is_empty() {
-                    ledger.order(run(strays, home));
+                    ledger.order(run(strays.clone(), home));
+                }
+                // Raiders a shooter outranges close on it, then strike on.
+                let closing: Vec<&UnitObs> = members
+                    .iter()
+                    .copied()
+                    .filter(|unit| !strays.contains(&unit.id) && !away(unit))
+                    .collect();
+                let rank = |enemy: &&UnitObs| {
+                    (
+                        enemy.hp,
+                        foray.frame.rank(doubled(goal), doubled(enemy.tile)),
+                        enemy.id,
+                    )
+                };
+                if let Some(enemy) = super::focus::outranger(observation, foray.map, &closing, rank)
+                    && ledger.room() >= 2
+                {
+                    let units = super::focus::outranged(observation, foray.map, &closing, enemy);
+                    let attack = Command::Attack {
+                        units: units.clone(),
+                        target: AttackTarget::Unit(enemy.id),
+                        queue: false,
+                    };
+                    if ledger.order(attack) {
+                        ledger.order(Command::Hunt {
+                            units,
+                            goal,
+                            queue: true,
+                        });
+                    }
                 }
                 self.list[index]
                     .units

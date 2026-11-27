@@ -608,6 +608,14 @@ impl Mission {
 }
 
 impl Missions {
+    /// Every mission's members, by mission id.
+    pub(crate) fn rosters(&self) -> Vec<(u64, Vec<UnitId>)> {
+        self.list
+            .iter()
+            .map(|mission| (mission.id, mission.units.clone()))
+            .collect()
+    }
+
     /// Every mission, by id.
     pub(crate) fn statuses(&self) -> Vec<MissionStatus> {
         self.list

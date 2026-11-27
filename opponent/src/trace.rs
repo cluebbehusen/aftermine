@@ -5,7 +5,7 @@ use crate::OwnEvent;
 use crate::composition::{Factors, Reach, Role};
 use crate::investments::{Investment, Step};
 use crate::missions::MissionStatus;
-use aftermine_sim::{BuildingId, BuildingKind, PlayerId, UnitKind};
+use aftermine_sim::{BuildingId, BuildingKind, PlayerId, UnitId, UnitKind};
 use chassis::grid::TilePos;
 use serde::Serialize;
 
@@ -34,6 +34,9 @@ pub struct Trace {
     pub protected: u32,
     /// Missions after the decision, by id.
     pub missions: Vec<MissionStatus>,
+    /// Each mission's members after the decision, by mission id: a
+    /// diagnostic that tells which mission held a unit given an order.
+    pub members: Vec<(u64, Vec<UnitId>)>,
     /// Why the decision trained the army units it did.
     pub army: ArmyReasons,
 }

@@ -133,6 +133,7 @@ impl Opponent {
             target: decision.target,
             protected: decision.protected,
             missions: self.missions(),
+            members: self.persistent.missions.rosters(),
             army: decision
                 .army
                 .expect("a traced decision records its army reasons"),
