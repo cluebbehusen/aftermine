@@ -746,7 +746,7 @@ fn frame_scores(scenario: &Scenario) -> Vec<(TilePos, u32)> {
         &observation,
         &map(scenario),
         &Memory::default(),
-        (50, true),
+        (50, true, 0),
         0,
     )
     .into_iter()
@@ -1070,7 +1070,7 @@ fn an_enemy_that_cannot_hurt_a_building_leaves_a_frame_wanted() {
             &observation,
             &map(&scenario),
             &Memory::default(),
-            (50, true),
+            (50, true, 0),
             0,
         )
         .iter()
@@ -1096,7 +1096,7 @@ fn a_secure_seat_scores_a_site_by_the_support_its_remote_extractor_would_get() {
     let score = |scenario: &Scenario, secure: bool| {
         let state = scenario.build().unwrap();
         let observation = ObservationData::fog_honest(&state, PlayerId(0));
-        expansion::candidates(&observation, &model, &Memory::default(), (50, secure), 0)
+        expansion::candidates(&observation, &model, &Memory::default(), (50, secure, 0), 0)
             .into_iter()
             .find(|(investment, _)| {
                 *investment == Investment::Expansion(u16::try_from(index).unwrap())
@@ -1128,7 +1128,7 @@ fn a_stranded_deep_bore_draws_its_foundry_back_harder_than_an_extractor() {
     let (index, _) = site_with(&model, TilePos::new(12, 10));
     let score = |state: &State| {
         let observation = ObservationData::fog_honest(state, PlayerId(0));
-        expansion::candidates(&observation, &model, &Memory::default(), (50, true), 0)
+        expansion::candidates(&observation, &model, &Memory::default(), (50, true, 0), 0)
             .into_iter()
             .find(|(investment, _)| {
                 *investment == Investment::Expansion(u16::try_from(index).unwrap())
@@ -1164,7 +1164,7 @@ fn a_frame_no_enemy_walks_to_is_still_theirs_when_their_guns_reach_it() {
             &mapped(&state, PlayerId(player)),
             &model,
             &Memory::default(),
-            (50, true),
+            (50, true, 0),
             0,
         )
         .into_iter()
@@ -1243,7 +1243,7 @@ fn a_plateau_the_seat_holds_with_a_foundry_keeps_its_frames() {
             &mapped(&state, PlayerId(0)),
             &map(scenario),
             &Memory::default(),
-            (50, true),
+            (50, true, 0),
             0,
         )
         .iter()
@@ -1396,4 +1396,269 @@ fn a_seat_saving_for_a_deep_bore_lets_it_go_once_a_known_army_outweighs_its_own(
     assert!(!kept, "the Lancers outweigh an empty army");
     assert!(held_after < held, "{held_after} < {held}");
     assert!(spent, "the scrap let go buys an answer");
+}
+
+/// A memory that counts `lancers` East Lancers seen far off at tick 0, with
+/// no place remembered for them now.
+fn knows_lancers(lancers: u32) -> Memory {
+    let census: Vec<serde_json::Value> = (0..lancers)
+        .map(|id| {
+            serde_json::json!({"id": 100 + id, "kind": UnitKind::Lancer, "player": 1, "tile": {"x": 36, "y": 2}, "seen": 0})
+        })
+        .collect();
+    serde_json::from_value(serde_json::json!({
+        "units": [], "census": census, "failures": [], "abandoned": [],
+        "raided": [], "scouted": [], "stuck": [], "extractors": [],
+    }))
+    .unwrap()
+}
+
+#[test]
+fn a_seat_on_one_foundry_an_army_outweighs_insures_it_with_an_expansion_on_its_side() {
+    // A free frame beside a West field and its mirror beside an East one.
+    // West stands on its start Foundry with two Sentinels. Three known East
+    // Lancers outweigh them: what losing that Foundry would cost raises the
+    // fields with frames above tech, the one on West's side by more than its
+    // mirror near East. Two Wardens hold the Lancers, and a second Foundry,
+    // built or going up, already insures the seat: then nothing changes.
+    let mut scenario = frontier(0);
+    scenario.map[9].replace_range(16..18, "E.");
+    scenario.map[9].replace_range(22..24, "E.");
+    let model = map(&scenario);
+    let (west, _) = site_with(&model, TilePos::new(12, 2));
+    let (east, _) = site_with(&model, rotate(TilePos::new(12, 2)));
+    let scores = |guards: UnitKind, second: Option<bool>, lancers: u32| {
+        let mut scenario = scenario.clone();
+        scenario
+            .units
+            .extend([(8, 4), (8, 5)].map(|(x, y)| unit(0, guards, x, y)));
+        if second == Some(true) {
+            scenario.buildings.push(BuildingSpec {
+                player: 0,
+                kind: BuildingKind::Foundry,
+                x: 2,
+                y: 9,
+            });
+        }
+        let state = scenario.build().unwrap();
+        let mut observation = mapped(&state, PlayerId(0));
+        if second == Some(false) {
+            let mut site = crate::investments::built_foundries(&observation.my_buildings)
+                .next()
+                .unwrap()
+                .clone();
+            site.anchor = TilePos::new(2, 9);
+            site.built = false;
+            observation.my_buildings.push(site);
+        }
+        let memory = knows_lancers(lancers);
+        let list = crate::investments::candidates(&calm(&observation, &model, &memory));
+        let score = |investment: Investment| {
+            list.iter()
+                .find(|candidate| candidate.investment == investment)
+                .map_or(0, |candidate| candidate.score)
+        };
+        let site = |index: usize| Investment::Expansion(u16::try_from(index).unwrap());
+        (
+            score(site(west)),
+            score(site(east)),
+            score(Investment::Tech(BuildingKind::Fabricator)),
+        )
+    };
+    let (west_calm, east_calm, tech) = scores(UnitKind::Sentinel, None, 0);
+    assert!(
+        west_calm < tech,
+        "premise: tech leads while nothing is known"
+    );
+    let (west_risk, east_risk, _) = scores(UnitKind::Sentinel, None, 3);
+    assert!(west_risk > tech, "{west_risk} vs tech {tech}");
+    assert!(
+        west_risk - west_calm > east_risk - east_calm,
+        "West's side gains more: {west_calm}->{west_risk} vs {east_calm}->{east_risk}"
+    );
+    assert_eq!(
+        scores(UnitKind::Warden, None, 3).0,
+        scores(UnitKind::Warden, None, 0).0
+    );
+    for second in [true, false] {
+        assert_eq!(
+            scores(UnitKind::Sentinel, Some(second), 3).0,
+            scores(UnitKind::Sentinel, Some(second), 0).0,
+            "a second Foundry, built: {second}"
+        );
+    }
+}
+
+/// The frontier with a Fabricator beside West's start, a West Harvester by
+/// the north field, `lancers` East Lancers at West's door and `scrap` in
+/// each bank.
+fn besieged(scrap: u32, lancers: usize) -> Scenario {
+    let mut scenario = frontier(scrap);
+    scenario.units.push(harvester(0, 16, 3));
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Fabricator, 2, 10));
+    for (x, y) in [(6, 5), (6, 6), (6, 7), (7, 5), (7, 6), (7, 7)]
+        .into_iter()
+        .take(lancers)
+    {
+        scenario.units.push(unit(1, UnitKind::Lancer, x, y));
+    }
+    scenario
+}
+
+fn foundries_placed(commands: &[PlayerCommand]) -> Vec<TilePos> {
+    builds(commands)
+        .into_iter()
+        .filter(|(kind, _)| *kind == BuildingKind::Foundry)
+        .map(|(_, anchor)| anchor)
+        .collect()
+}
+
+#[test]
+fn a_seat_whose_last_foundry_is_overrun_places_another_out_of_known_fire() {
+    // Six East Lancers at West's start outweigh everything its 600 could
+    // buy: it places a Foundry at a field out of their reach. A bank that
+    // could answer them trains instead, two Lancers are no such siege, a
+    // second built Foundry needs no backup, and once one is going up no
+    // other follows it.
+    let placed = |scenario: &Scenario| {
+        let state = scenario.build().unwrap();
+        foundries_placed(
+            &seat_with(scenario, 0, rung(BotDifficulty::Prime))
+                .act(&state, &mut OwnEvents::default()),
+        )
+    };
+    let scenario = besieged(600, 6);
+    let model = map(&scenario);
+    let backup = placed(&scenario);
+    assert_eq!(backup.len(), 1, "{backup:?}");
+    assert!(
+        model
+            .sites()
+            .iter()
+            .any(|site| site.anchors.contains(&backup[0]))
+    );
+    let reach = crate::defenses::reach(UnitKind::Lancer)
+        .ceil()
+        .to_num::<i32>();
+    assert!(
+        [(6, 5), (6, 6), (6, 7), (7, 5), (7, 6), (7, 7)]
+            .into_iter()
+            .all(|(x, y)| crate::frame::gap(
+                backup[0],
+                BuildingKind::Foundry.size(),
+                TilePos::new(x, y),
+                (1, 1)
+            ) > reach),
+        "{backup:?}"
+    );
+    assert!(placed(&besieged(1_000, 6)).is_empty(), "the bank answers");
+    assert!(placed(&besieged(600, 2)).is_empty(), "two Lancers");
+    let mut second = besieged(600, 6);
+    second
+        .buildings
+        .push(building(0, BuildingKind::Foundry, 6, 10));
+    assert!(placed(&second).is_empty(), "a second Foundry stands");
+
+    let mut state = scenario.build().unwrap();
+    let mut opponent = seat_with(&scenario, 0, rung(BotDifficulty::Prime));
+    let mut events = OwnEvents::default();
+    let commands = opponent.act(&state, &mut events);
+    assert_eq!(foundries_placed(&commands).len(), 1);
+    state.tick(&commands);
+    while !opponent.decision_due(&state) {
+        state.tick(&[]);
+    }
+    assert!(
+        state
+            .buildings()
+            .iter()
+            .any(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry && !b.built()),
+        "premise: the site is going up"
+    );
+    assert!(foundries_placed(&opponent.act(&state, &mut events)).is_empty());
+}
+
+#[test]
+fn a_seat_left_with_only_a_foundry_going_up_keeps_deciding() {
+    // West's start falls while its north Foundry is going up, and the
+    // builder has walked off: the site alone keeps West in the match, and
+    // West sends a worker back to finish it.
+    let mut scenario = besieged(600, 0);
+    scenario.units.extend([
+        unit(1, UnitKind::Sentinel, 5, 5),
+        unit(1, UnitKind::Sentinel, 5, 7),
+    ]);
+    let state = scenario.build().unwrap();
+    let start = foundries(&state, PlayerId(0))[0];
+    let mut state = damaged(&state, start, 1);
+    let builder = at(&state, 16, 3);
+    let anchor = TilePos::new(15, 2);
+    let command = |player: u8, command: Command| PlayerCommand {
+        player: PlayerId(player),
+        command,
+    };
+    state.tick(&[
+        command(
+            0,
+            Command::Build {
+                units: vec![builder],
+                kind: BuildingKind::Foundry,
+                anchor,
+                queue: false,
+                defer: false,
+            },
+        ),
+        command(
+            1,
+            Command::Attack {
+                units: vec![at(&state, 5, 5), at(&state, 5, 7)],
+                target: AttackTarget::Building(start),
+                queue: false,
+            },
+        ),
+    ]);
+    let site = |state: &State| {
+        state
+            .buildings()
+            .iter()
+            .find(|b| b.player == PlayerId(0) && b.anchor == anchor)
+            .cloned()
+    };
+    let built = |state: &State| {
+        state
+            .buildings()
+            .iter()
+            .any(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry && b.built())
+    };
+    while site(&state).is_some_and(|site| site.unstarted()) && state.current_tick() < 600 {
+        state.tick(&[]);
+    }
+    state.tick(&[command(
+        0,
+        Command::Run {
+            units: vec![builder],
+            goal: TilePos::new(22, 4),
+            queue: false,
+        },
+    )]);
+    while built(&state) && state.current_tick() < 1_200 {
+        state.tick(&[]);
+    }
+    let mut opponent = seat_with(&scenario, 0, rung(BotDifficulty::Prime));
+    while !opponent.decision_due(&state) {
+        state.tick(&[]);
+    }
+    assert!(
+        !built(&state) && site(&state).is_some_and(|site| !site.built() && !site.unstarted()),
+        "premise: only a started site stands"
+    );
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    assert!(
+        builds(&commands)
+            .iter()
+            .any(|(kind, at)| *kind == BuildingKind::Foundry && *at == anchor),
+        "{commands:?}"
+    );
 }

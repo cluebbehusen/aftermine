@@ -3,7 +3,7 @@
 //! it. The start keeps its own reserve, which offense already respects.
 
 use super::attack::{force_of, priced};
-use super::defense::at_home;
+use super::defense::{at_home, lets_go};
 use super::reserve::{self, LOCAL_REACH};
 use super::{
     DefendPhase, MISSION_CAP, Mission, Missions, Shortfall, Task, UNIT_CAP, fill, hits, hunt,
@@ -90,8 +90,8 @@ impl Missions {
     /// its current guards and free units nearest it first, never what home
     /// keeps in reserve, and disbands a guard nothing threatens. A base away
     /// from home whose known enemies nearby the units it could take would not
-    /// match is given up: its guard falls back home rather than wait there to
-    /// be overrun. A
+    /// match, at a Foundry as [`lets_go`] weighs it, is given up: its guard
+    /// falls back home rather than wait there to be overrun. A
     /// guard is a defense mission in its Guard phase, so a defense that answers an
     /// attack on the building takes its guards along, and the guard takes
     /// over again only once that defense has finished recovering. Returns
@@ -219,12 +219,18 @@ impl Missions {
                 });
             }
             let met = meeting::opposed(observation, memory, goal);
-            // The seat's last Foundry is never given up, as at home.
-            let last = asset.kind == BuildingKind::Foundry
-                && asset.built
-                && crate::investments::built_foundries(&observation.my_buildings).count() == 1;
-            let outweighed = priced(&met) > 0 && weigh(&could, &met) < weigh(&met, &could);
-            if !at_home(observation, map, goal) && !last && outweighed {
+            let (held, against) = (weigh(&could, &met), weigh(&met, &could));
+            let outweighed = priced(&met) > 0
+                && if asset.kind == BuildingKind::Foundry && asset.built {
+                    lets_go(
+                        held,
+                        against,
+                        crate::investments::built_foundries(&observation.my_buildings).count(),
+                    )
+                } else {
+                    held < against
+                };
+            if !at_home(observation, map, goal) && outweighed {
                 self.give_up(index, observation, map, frame, goal, ledger);
                 continue;
             }

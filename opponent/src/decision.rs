@@ -612,7 +612,7 @@ pub(crate) fn decide(
         .missions
         .prune(observation, &mut persistent.memory);
     let unseen = placement::unexplained(observation, map);
-    let shortfalls = persistent.missions.defend(
+    let (shortfalls, overrun) = persistent.missions.defend(
         observation,
         map,
         frame,
@@ -624,6 +624,13 @@ pub(crate) fn decide(
     ledger.hold(persistent.missions.held_workers(observation));
     workers::recover(observation, &foundries, &mut ledger);
     if short {
+        backup(
+            (observation, map, frame),
+            persistent,
+            (&candidates, &danger),
+            overrun,
+            &mut ledger,
+        );
         // The best answer to a shortfall, when it is a unit, is kept from
         // emergency structures so production can train it. With no answer
         // that pays back, the scrap kept for the saving target stays kept:
@@ -1175,6 +1182,59 @@ pub(crate) fn site(
             }
         })
         .unwrap_or(Site::Nowhere)
+}
+
+/// Places a Foundry at the best expansion out of known fire once the ground
+/// attackers at the seat's last Foundry outweigh, by `overrun`, more than its
+/// bank could buy, so the seat outlives that Foundry. As an emergency it may
+/// spend protected scrap. Nothing while another Foundry is going up.
+fn backup(
+    (observation, map, frame): (&ObservationData, &MapModel, HomeFrame),
+    persistent: &mut Persistent,
+    (candidates, danger): (&[Candidate], &placement::Danger),
+    overrun: u64,
+    ledger: &mut Ledger,
+) {
+    let kind = BuildingKind::Foundry;
+    let price = crate::expansion::construction_cost(kind);
+    if overrun <= u64::from(ledger.available())
+        || ledger.available() < price
+        || !investments::buildable(observation, kind)
+        || observation
+            .my_buildings
+            .iter()
+            .any(|building| building.kind == kind && !building.built)
+        || ledger.planned().iter().any(|(planned, _)| *planned == kind)
+    {
+        return;
+    }
+    for candidate in candidates {
+        let investment = candidate.investment;
+        if !matches!(investment, Investment::Expansion(_)) {
+            continue;
+        }
+        let Site::At(anchor, allowed) = site(
+            observation,
+            map,
+            &persistent.memory,
+            danger,
+            investment,
+            kind,
+            Some((frame, ledger)),
+        ) else {
+            continue;
+        };
+        let centre = footprint_centre(kind, anchor);
+        let Some(builder) = workers::builder(observation, map, frame, anchor, centre, ledger)
+        else {
+            continue;
+        };
+        ledger.build(builder.id, kind, anchor, allowed.defer, price);
+        if persistent.saving.investment() == Some(investment) {
+            persistent.saving.attempted(Step::Build(kind), anchor);
+        }
+        return;
+    }
 }
 
 /// Drops the investments the seat could not place anywhere, from the best
