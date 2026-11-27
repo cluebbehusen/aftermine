@@ -82,9 +82,9 @@ impl Missions {
     /// The seat's units count against the ground attackers, and the known
     /// guns beside the batteries, at what they trade against them.
     /// Returns each of the seat's own Foundries whose defense falls short of
-    /// its attackers, home-nearest first, and how far the ground attackers at
-    /// the seat's last built Foundry outweigh everything its defense holds or
-    /// could take.
+    /// its attackers, home-nearest first, and how far the ground attackers
+    /// within local reach of the seat's last built Foundry outweigh
+    /// everything its defense holds or could take.
     ///
     /// Only threats standing on or beside a Foundry's ground count, at the
     /// nearest Foundry they do, so one across a pit from the Foundry it
@@ -247,7 +247,7 @@ impl Missions {
             // where they stand.
             let mission = index.map(|index| &self.list[index]);
             let met = pressing[0] * 2 / 3 + guns;
-            if *own && last {
+            if *own && last && beside(foundry, goal) {
                 overrun = met.saturating_sub(siege.held).max(overrun);
             }
             // A place held short of even odds is given up, but not by a
@@ -1238,7 +1238,7 @@ fn gives_up(
     if at_home(observation, map, goal) {
         return false;
     }
-    if gap(foundry.anchor, foundry.kind.size(), goal, (1, 1)) <= LOCAL_REACH {
+    if beside(foundry, goal) {
         return lets_go(
             held,
             met,
@@ -1246,6 +1246,12 @@ fn gives_up(
         );
     }
     held < met
+}
+
+/// Whether `goal` lies within local reach of `foundry`: a force there is at
+/// the Foundry itself, not raiding a far building grouped to it.
+fn beside(foundry: &BuildingObs, goal: TilePos) -> bool {
+    gap(foundry.anchor, foundry.kind.size(), goal, (1, 1)) <= LOCAL_REACH
 }
 
 /// Whether a seat with `foundries` built Foundries lets one go that it
@@ -1396,7 +1402,7 @@ struct Siege<'a> {
     search: Option<(TilePos, u64)>,
     /// What armed enemies remembered out of sight near the buildings, or in
     /// sight just back past their reach, are worth against ground and air, at
-    /// their whole price while the seat remembers where they stood.
+    /// their whole price for half a minute after they were last seen.
     remembered: [u64; 2],
     /// Those remembered enemies, by id.
     recalled: Vec<UnitId>,
