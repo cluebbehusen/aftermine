@@ -191,13 +191,16 @@ impl Memory {
         }
     }
 
-    /// Stops counting the enemy units `events` report the seat saw die.
+    /// Forgets the enemy units `events` report the seat saw die: it stops
+    /// counting them, and stops remembering where they stood, which a
+    /// sighting elsewhere would not clear while their old place is fogged.
     pub(crate) fn died(&mut self, events: &[OwnEvent]) {
         for event in events {
-            if let OwnEvent::EnemyDied { unit } = *event
-                && let Ok(index) = self.census.binary_search_by_key(&unit, |known| known.id)
-            {
-                self.census.remove(index);
+            if let OwnEvent::EnemyDied { unit } = *event {
+                if let Ok(index) = self.census.binary_search_by_key(&unit, |known| known.id) {
+                    self.census.remove(index);
+                }
+                self.units.retain(|seen| seen.id != unit);
             }
         }
     }
@@ -536,9 +539,10 @@ impl SeenUnit {
         u64::from(self.kind.stats().cost) * u64::from(self.confidence(now)) / 1_000
     }
 
-    /// The unit's whole price while the seat remembers where it stood, and
-    /// nothing after: what a defense judging that place counts, so its
-    /// judgment changes when the known force does, not as the memory fades.
+    /// The unit's whole price for half a minute after it was last seen, and
+    /// nothing after, even while a stranded unit's place is kept longer:
+    /// what a defense judging that place counts, so its judgment changes
+    /// when the known force does, not as the memory fades.
     pub(crate) fn located(&self, now: u64) -> u64 {
         if now < self.seen + UNIT_TICKS {
             u64::from(self.kind.stats().cost)

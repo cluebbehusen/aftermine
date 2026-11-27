@@ -1368,7 +1368,7 @@ struct Siege<'a> {
     search: Option<(TilePos, u64)>,
     /// What armed enemies remembered out of sight near the buildings, or in
     /// sight just back past their reach, are worth against ground and air, at
-    /// their whole price while the seat remembers where they stood.
+    /// their whole price for half a minute after they were last seen.
     remembered: [u64; 2],
     /// Those remembered enemies, by id.
     recalled: Vec<UnitId>,
