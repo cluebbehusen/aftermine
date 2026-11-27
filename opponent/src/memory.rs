@@ -539,9 +539,10 @@ impl SeenUnit {
         u64::from(self.kind.stats().cost) * u64::from(self.confidence(now)) / 1_000
     }
 
-    /// The unit's whole price while the seat remembers where it stood, and
-    /// nothing after: what a defense judging that place counts, so its
-    /// judgment changes when the known force does, not as the memory fades.
+    /// The unit's whole price for half a minute after it was last seen, and
+    /// nothing after, even while a stranded unit's place is kept longer:
+    /// what a defense judging that place counts, so its judgment changes
+    /// when the known force does, not as the memory fades.
     pub(crate) fn located(&self, now: u64) -> u64 {
         if now < self.seen + UNIT_TICKS {
             u64::from(self.kind.stats().cost)
