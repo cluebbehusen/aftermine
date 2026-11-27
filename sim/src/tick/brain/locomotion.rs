@@ -28,6 +28,7 @@ pub(super) fn idle(
     index: &super::super::spatial::UnitIndex,
     reach: &mut Reach,
     wounded: &super::tend::Wounded,
+    dangers: &mut [Option<crate::vision::GroundSalvageDanger>],
     id: UnitId,
     acquired: Option<Option<Target>>,
 ) {
@@ -76,7 +77,7 @@ pub(super) fn idle(
                 cooldown: 0,
             });
         }
-    } else if !super::tend::start(state, reach, wounded, id) {
+    } else if !super::tend::start(state, reach, wounded, dangers, id) {
         let unit = state.unit_mut(id).expect("caller checked");
         unit.settled = unit.settled.saturating_add(1);
         // An airframe with nothing to do orbits for a while, then sets

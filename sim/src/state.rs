@@ -249,7 +249,8 @@ pub enum Order {
     /// its post and back. The torch works and bills like
     /// [`Order::RepairUnit`]'s or [`Order::Repair`]'s, but a patient the
     /// welder cannot pay for, reach, or find standing still is let go
-    /// without a stall.
+    /// without a stall. An idle worker's trip takes on no structure in known
+    /// danger and keeps to the crew cap; a patrol leg keeps neither.
     Tend {
         /// Where the walk ends: the patrol waypoint, or the post an idle
         /// worker returns to.
@@ -552,8 +553,8 @@ pub struct Worker {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub danger_retry_at: Option<crate::Tick>,
     /// The owner switched idle welding off: an idle worker no longer goes
-    /// out on its own to weld wounded machines near its post. A patrol
-    /// welds either way.
+    /// out on its own to weld wounded machines or damaged structures near
+    /// its post. A patrol welds either way.
     #[serde(default, skip_serializing_if = "core::ops::Not::not")]
     pub idle_weld_off: bool,
 }
@@ -824,8 +825,8 @@ impl Unit {
     }
 
     /// Whether this worker goes out on its own, while idle, to weld wounded
-    /// machines near its post. Never true for a machine without harvest
-    /// gear.
+    /// machines and damaged structures near its post. Never true for a
+    /// machine without harvest gear.
     pub fn idle_weld(&self) -> bool {
         self.worker.is_some_and(|worker| !worker.idle_weld_off)
     }

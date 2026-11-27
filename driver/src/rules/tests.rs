@@ -127,6 +127,13 @@ fn the_sheet_says_how_far_units_chase_and_what_workers_do_in_danger() {
         sheet.contains(r#"{"type":"set_idle_weld","units":[3,4],"enabled":false}"#),
         "{sheet}"
     );
+    assert!(
+        sheet.contains(&format!(
+            "passes over a structure {} workers already weld",
+            stats::TEND_CREW_CAP
+        )),
+        "{sheet}"
+    );
     // A drone's leash runs from its host, so its page gives no aggro range.
     let drone = sheet
         .split("\n## ")

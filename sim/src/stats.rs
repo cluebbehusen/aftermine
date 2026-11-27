@@ -3190,6 +3190,11 @@ pub const CROWD_CHAIN_REACH: Fx = Fx::lit("16");
 /// could answer it.
 pub const ASSEMBLY_CREW_CAP: usize = 4;
 
+/// Workers that weld one structure on their own at once, from idle posts:
+/// a rule, not a computation bound. More come only by an ordered repair or
+/// a patrol, so a fight at a structure draws no crowd of idle welders.
+pub const TEND_CREW_CAP: usize = 4;
+
 /// The widest body whose centre tile stands for all of it. A body this size
 /// may overhang the ground around that tile, as every machine up to the
 /// Breaker does; only a wider body's hull claims tiles beyond it.

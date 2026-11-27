@@ -381,8 +381,8 @@ pub enum Command {
         enabled: bool,
     },
     /// Sets whether each worker goes out on its own, while idle, to weld
-    /// wounded own ground machines near its post. A patrolling worker welds
-    /// either way.
+    /// wounded own ground machines and damaged own structures near its post.
+    /// A patrolling worker welds either way.
     SetIdleWeld {
         /// Own workers; all or none take the setting.
         units: Vec<UnitId>,

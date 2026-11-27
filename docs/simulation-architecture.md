@@ -221,7 +221,12 @@ loop.
 
 `Tend` is a worker's walk that welds on its own initiative. It chooses patients
 from a snapshot taken after the command phase, never interrupts another order,
-and never takes a building with an active or queued salvage commitment.
+and never takes a building with an active or queued salvage commitment. A trip
+from an idle post takes on no building its team knows to be in danger, judged
+through the same fog-honest snapshot as autonomous harvest work, and at most
+`TEND_CREW_CAP` such welders hold one building: crews are counted from the
+phase-start snapshot, and joiners past the cap let go at the next phase by an
+owner-relative rank. A patrol leg keeps neither limit.
 
 Walks carry a `Goal`: the clicked tile, the spread slot the unit aims for, and
 an optional endpoint. A tile goal must lie on the map, and an off-map one is
