@@ -117,3 +117,44 @@ fn against_sentinels_the_answer_is_the_lancer_that_outtrades_them() {
         worth(UnitKind::Warden)
     );
 }
+
+#[test]
+fn fire_from_out_of_sight_is_no_builder_for_a_scuttler_to_meet() {
+    // With a Fabricator standing, a shortfall that armed fire leaves is met
+    // with what the army trains even when no attacker stands in sight; one
+    // left by builders alone is still met with the cheapest unit.
+    let mut scenario = crate::tests::arena(400);
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Fabricator,
+            x: 3,
+            y: 8,
+        });
+    let state = scenario.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let map = MapModel::from_scenario(&scenario).unwrap();
+    let frame = HomeFrame::of(&observation, &map).unwrap();
+    // Producers with nothing queued are free to train now.
+    let producers = producers(&observation, frame, 1);
+    let ground = observation
+        .my_buildings
+        .first()
+        .and_then(|foundry| map.component(foundry.anchor));
+    let best = |read: bool| {
+        let short = Shortfall {
+            ground,
+            gap: [200, 0],
+            attackers: Vec::new(),
+            read,
+        };
+        best_answer(&observation, &map, &producers, &short, 400, &[]).map(|(fighter, _)| fighter)
+    };
+    assert_eq!(best(false), Some(Fighter::Unit(UnitKind::Scuttler)));
+    assert!(
+        !matches!(best(true), Some(Fighter::Unit(UnitKind::Scuttler))),
+        "{:?}",
+        best(true)
+    );
+}
