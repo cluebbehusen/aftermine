@@ -4121,3 +4121,67 @@ fn sentinels_weak_anti_air_leaves_a_shortfall_against_buzzards() {
         "{picks:?}"
     );
 }
+
+#[test]
+fn artillery_firing_from_out_of_sight_draws_no_scuttlers() {
+    // The staged siege: Bombards shell the base with a Kestrel spotting.
+    // Once a Fabricator stands, a defense short of guns it cannot see
+    // trains what the army's roles call for, never Scuttlers fed to them
+    // one by one.
+    let file: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../driver/evaluation/pressure/siege.json"
+    ))
+    .unwrap();
+    let mut scenario: Scenario = serde_json::from_value(file["scenario"].clone()).unwrap();
+    let config = rung(BotDifficulty::Veteran);
+    scenario.players[0].bot_config = Some(config);
+    let script: Vec<(u64, Command)> = file["script"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| {
+            (
+                entry["tick"].as_u64().unwrap(),
+                serde_json::from_value(entry["command"].clone()).unwrap(),
+            )
+        })
+        .collect();
+    let mut state = scenario.build().unwrap();
+    let mut opponent = seat_with(&scenario, 0, config);
+    let mut events = OwnEvents::default();
+    let mut shelled = false;
+    while state.current_tick() < 1_200 {
+        let now = state.current_tick();
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        shelled |= !observation.incoming_shells.is_empty();
+        let unseen = !observation.enemy_units.iter().any(|enemy| {
+            let stats = enemy.kind.stats();
+            !stats.weapons.is_empty() && stats.domain == aftermine_sim::stats::Domain::Ground
+        });
+        let mut commands = opponent.act(&state, &mut events);
+        if unseen && crate::investments::built(&observation, BuildingKind::Fabricator) {
+            assert!(
+                commands.iter().all(|command| !matches!(
+                    command.command,
+                    Command::Train {
+                        kind: UnitKind::Scuttler,
+                        ..
+                    }
+                )),
+                "a Scuttler at tick {now}"
+            );
+        }
+        commands.extend(
+            script
+                .iter()
+                .filter(|(tick, _)| *tick == now)
+                .map(|(_, command)| PlayerCommand {
+                    player: PlayerId(1),
+                    command: command.clone(),
+                }),
+        );
+        let ticked = state.tick(&commands);
+        events.record(PlayerId(0), &state, &ticked.events);
+    }
+    assert!(shelled, "premise: the guns fire");
+}
