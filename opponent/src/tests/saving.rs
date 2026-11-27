@@ -822,6 +822,73 @@ fn reclaimers_wait_for_home_scrap_to_run_down_and_refineries_need_a_fabricator()
 }
 
 #[test]
+fn reclaimers_and_refineries_wait_while_a_known_enemy_army_outweighs_the_seat_s() {
+    // Home scrap running down wants a Reclaimer, and a Refinery for the one
+    // built. A known enemy army that outweighs the seat's holds both back at
+    // every rung, as it holds a Deep Bore back: what the seat would grow is
+    // what an army it cannot meet takes from it.
+    let mut scenario = saturated(200);
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Reclaimer,
+        x: 8,
+        y: 8,
+    });
+    let state = scenario.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let model = map(&scenario);
+    let reclaimer = observation
+        .my_buildings
+        .iter()
+        .find(|building| building.kind == BuildingKind::Reclaimer)
+        .unwrap()
+        .id;
+    let refinery = Investment::Upgrade {
+        building: reclaimer,
+        tier: 1,
+    };
+    let known = |lancers: u32| -> Memory {
+        let units = remembered((0..lancers).map(|index| {
+            let tile = TilePos::new(20, 1 + i32::try_from(index % 10).unwrap());
+            (1_000 + index, UnitKind::Lancer, tile, 0)
+        }));
+        serde_json::from_value(serde_json::json!({
+            "census": counted(&units),
+            "units": units,
+            "failures": [],
+            "abandoned": [],
+            "raided": [],
+            "scouted": [],
+            "stuck": [],
+            "extractors": [],
+        }))
+        .unwrap()
+    };
+    for difficulty in BotDifficulty::ALL {
+        let wants = |memory: &Memory| {
+            investments::candidates(&Situation {
+                depletion: 1,
+                economy: crate::economy(difficulty),
+                ..calm(&observation, &model, memory)
+            })
+            .into_iter()
+            .map(|candidate| candidate.investment)
+            .collect::<Vec<_>>()
+        };
+        let free = wants(&known(0));
+        assert!(
+            free.contains(&Investment::Reclaimer) && free.contains(&refinery),
+            "{difficulty:?}: premise: nothing known"
+        );
+        let held = wants(&known(20));
+        assert!(
+            !held.contains(&Investment::Reclaimer) && !held.contains(&refinery),
+            "{difficulty:?}: {held:?}"
+        );
+    }
+}
+
+#[test]
 fn reclaimers_keep_coming_once_the_home_scrap_is_mined_out() {
     let mut scenario = saturated(200);
     for x in 6..12 {

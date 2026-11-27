@@ -104,12 +104,12 @@ actions affect the running total and mission state.
   supports stands; lower rungs wait for a Crucible. Either way it competes
   whether or not harvesting is saturated; Reclaimers wait until it is and the
   scrap around the start has begun to run down. Growth outranks tech by what it
-  pays back, never by a rule that holds tech down. A Deep Bore waits while an
-  enemy army the seat knows of outweighs its own. What the army needs, what
-  holds growth back and what an attack or lift must beat count every enemy unit
-  the seat has seen until it sees that unit die or three minutes pass unseen,
-  wherever it now is, a ground unit on the ground it was last seen on; never a
-  unit it has not seen.
+  pays back, never by a rule that holds tech down. A Deep Bore, a Reclaimer and
+  a Refinery wait while an enemy army the seat knows of outweighs its own, at
+  every rung. What the army needs, what holds growth back and what an attack or
+  lift must beat count every enemy unit the seat has seen until it sees that
+  unit die or three minutes pass unseen, wherever it now is, a ground unit on
+  the ground it was last seen on; never a unit it has not seen.
 - A site with scrap is taken once the seat's own Foundry, an ally's building or
   an enemy's Foundry stands near its scrap. No other enemy building takes it;
   enemy guns that reach the site count against it as danger instead.
@@ -355,7 +355,9 @@ kind.
   carries out its repertoire: lower rungs attack and defend piecemeal, pick
   targets worse, walk into known defenses as a column or gather short of them
   only briefly, count only the defenses around a target, let a defense call back
-  an army on its way, focus fire on the nearest enemy or by a rough read of its
-  wounds, leave reinforcements at home, and lift without a fresh look or without
-  counting bomber cover. Every rung keeps every capability. Lower rungs make
+  an army on its way, let their army string out on the way in, each unit
+  stopping for the first enemy it meets, focus fire on the nearest enemy or by a
+  rough read of its wounds, send reinforcements straight at the target past the
+  army or leave them at home, and lift without a fresh look or without counting
+  bomber cover. Every rung keeps every capability. Lower rungs make
   understandable mistakes, and higher rungs beat lower ones.

@@ -601,7 +601,12 @@ impl Missions {
                         Some(stage) => (AttackPhase::Advance, stage),
                         None => (AttackPhase::Travel, target.approach),
                     };
-                    if ledger.order(hunt(mission.units.clone(), goal)) {
+                    let order = if next == AttackPhase::Travel {
+                        set_out(plan.difficulty, mission.units.clone(), goal)
+                    } else {
+                        hunt(mission.units.clone(), goal)
+                    };
+                    if ledger.order(order) {
                         mission.attack_phase(target, next, now, Some(goal));
                     }
                 } else if age >= timeout(phase) {
@@ -622,8 +627,7 @@ impl Missions {
                 observation,
                 mission,
                 (target, rally),
-                &members,
-                all_idle,
+                (&members, all_idle, marches(plan.difficulty)),
                 ledger,
             ),
             AttackPhase::Engage { .. } => {
@@ -673,7 +677,19 @@ impl Missions {
                 component,
                 room,
             );
-            if !recruits.is_empty() && ledger.order(hunt(recruits.clone(), target.approach)) {
+            let sent = !recruits.is_empty()
+                && if marches(plan.difficulty) {
+                    join(
+                        observation,
+                        plan.frame,
+                        mission,
+                        (&recruits, target.approach),
+                        ledger,
+                    )
+                } else {
+                    ledger.order(hunt(recruits.clone(), target.approach))
+                };
+            if sent {
                 for id in recruits {
                     insert(&mut mission.units, id);
                 }
@@ -683,15 +699,57 @@ impl Missions {
     }
 }
 
+/// Sends `recruits` to the army of `mission` and on with it to `goal`: an
+/// advance to the member nearest the middle of its fighting body, then a
+/// hunt queued on to the goal, so they meet the army rather than the enemy
+/// past it. On the ground, the body is its ground members, which aircraft
+/// can hover where no recruit walks. With no body, a hunt to the goal; with
+/// room for fewer than both orders, nothing, until the next decision.
+fn join(
+    observation: &ObservationData,
+    frame: HomeFrame,
+    mission: &Mission,
+    (recruits, goal): (&[UnitId], TilePos),
+    ledger: &mut Ledger,
+) -> bool {
+    let mut body: Vec<&UnitObs> = mission
+        .units
+        .iter()
+        .filter_map(|id| mine(observation, *id))
+        .filter(|unit| unit.kind != UnitKind::Sapper && !breacher(unit.kind) && !screens(unit))
+        .collect();
+    if body
+        .iter()
+        .any(|unit| unit.kind.stats().domain == Domain::Ground)
+    {
+        body.retain(|unit| unit.kind.stats().domain == Domain::Ground);
+    }
+    let Some(middle) = middle_of(frame, &body, goal) else {
+        return ledger.order(hunt(recruits.to_vec(), goal));
+    };
+    ledger.room() >= 2
+        && ledger.order(Command::Advance {
+            units: recruits.to_vec(),
+            goal: middle.tile,
+            queue: false,
+        })
+        && ledger.order(Command::Hunt {
+            units: recruits.to_vec(),
+            goal,
+            queue: true,
+        })
+}
+
 /// Moves a travelling attack on: it engages on arriving or meeting the
 /// enemy, and turns home when its army stands idle short of the target or
-/// its time is up. Returns the target when it gave up on it.
+/// its time is up. Returns the target when it gave up on it. An army that
+/// `marching` advanced on its way in hunts as one once it meets the enemy,
+/// and engages only once that order is given.
 fn travel_on(
     observation: &ObservationData,
     mission: &mut Mission,
     (target, rally): (Target, TilePos),
-    members: &[&UnitObs],
-    all_idle: bool,
+    (members, all_idle, marching): (&[&UnitObs], bool, bool),
     ledger: &mut Ledger,
 ) -> Option<Objective> {
     let now = observation.tick;
@@ -699,6 +757,9 @@ fn travel_on(
         .iter()
         .any(|unit| unit.tile.chebyshev(target.approach) <= CONTACT_TILES);
     if arrived || contact(observation, members) {
+        if marching && !ledger.order(hunt(attackers(observation, mission), target.approach)) {
+            return None;
+        }
         let engage = AttackPhase::Engage(Fight::new(now));
         mission.attack_phase(target, engage, now, None);
         return None;
@@ -817,7 +878,7 @@ fn engage_on(
     });
     if let Some(next) = onward {
         let movers = onward_army.iter().map(|unit| unit.id).collect();
-        if ledger.order(hunt(movers, next.approach)) {
+        if ledger.order(set_out(plan.difficulty, movers, next.approach)) {
             mission.attack_phase(next, AttackPhase::Travel, now, Some(next.approach));
         }
         return None;
@@ -855,7 +916,7 @@ fn engage_on(
             )
     });
     if let Some(next) = next {
-        if ledger.order(hunt(army, next.approach)) {
+        if ledger.order(set_out(plan.difficulty, army, next.approach)) {
             mission.attack_phase(next, AttackPhase::Travel, now, Some(next.approach));
         }
         return None;
@@ -1030,7 +1091,7 @@ fn stage_on(
     if enough && !leaders.is_empty() && age < TRAVEL_TICKS {
         ledger.order(hunt(leaders, target.approach));
     } else if enough {
-        push(observation, mission, target, now, ledger);
+        push(observation, mission, (target, now, plan.difficulty), ledger);
     } else if ledger.order(run(mission.units.clone(), rally)) {
         mission.attack_phase(target, AttackPhase::Recover, now, Some(rally));
     }
@@ -1042,18 +1103,52 @@ fn stage_on(
 fn push(
     observation: &ObservationData,
     mission: &mut Mission,
-    target: Target,
-    now: u64,
+    (target, now, difficulty): (Target, u64, BotDifficulty),
     ledger: &mut Ledger,
 ) {
-    let going: Vec<UnitId> = mission
+    let going = attackers(observation, mission);
+    // Breachers plough through what stands in their way only on a hunt, so
+    // a marching army's breachers hunt while the rest advance with it.
+    let (breachers, rest): (Vec<UnitId>, Vec<UnitId>) = going.into_iter().partition(|id| {
+        marches(difficulty) && mine(observation, *id).is_some_and(|unit| breacher(unit.kind))
+    });
+    if !breachers.is_empty() {
+        // Both orders or neither: a breacher hunt alone would take the last
+        // order every decision while the rest of the army stays staged.
+        if !rest.is_empty() && ledger.room() < 2 {
+            return;
+        }
+        ledger.order(hunt(breachers, target.approach));
+    }
+    if ledger.order(set_out(difficulty, rest, target.approach)) {
+        mission.attack_phase(target, AttackPhase::Travel, now, Some(target.approach));
+    }
+}
+
+/// The attack's members that go at its target: all but its Sappers, which
+/// blast the defenses they reach on their own.
+fn attackers(observation: &ObservationData, mission: &Mission) -> Vec<UnitId> {
+    mission
         .units
         .iter()
         .copied()
         .filter(|id| mine(observation, *id).is_none_or(|unit| unit.kind != UnitKind::Sapper))
-        .collect();
-    if ledger.order(hunt(going, target.approach)) {
-        mission.attack_phase(target, AttackPhase::Travel, now, Some(target.approach));
+        .collect()
+}
+
+/// The order that sends `units` of a seat at `difficulty` on their way to
+/// `goal`: an advance where the seat marches, so the army keeps its pace
+/// together rather than each unit stopping for the first enemy it meets,
+/// else a hunt.
+fn set_out(difficulty: BotDifficulty, units: Vec<UnitId>, goal: TilePos) -> Command {
+    if marches(difficulty) {
+        Command::Advance {
+            units,
+            goal,
+            queue: false,
+        }
+    } else {
+        hunt(units, goal)
     }
 }
 
@@ -2363,6 +2458,14 @@ pub(super) fn lends(difficulty: BotDifficulty) -> bool {
 /// difficulty limit.
 fn reinforces(difficulty: BotDifficulty) -> bool {
     matches!(difficulty, BotDifficulty::Veteran | BotDifficulty::Prime)
+}
+
+/// Whether a seat's attack keeps together on its way in: it advances
+/// without stopping for what it passes until it meets the enemy, then hunts
+/// as one, and units that join it on the way go to its army rather than past
+/// it to the target. A difficulty limit on how well a seat attacks.
+fn marches(difficulty: BotDifficulty) -> bool {
+    difficulty == BotDifficulty::Prime
 }
 
 /// Per mille of a mission's strength the enemies around it must reach before

@@ -920,24 +920,28 @@ fn mirrored_seats_launch_mirrored_attacks() {
 
 #[test]
 fn a_checkpoint_with_an_attack_under_way_resumes_identically() {
-    let scenario = doubled();
-    let mut state = scenario.build().unwrap();
-    let mut opponent = seat(&scenario, 0);
-    let traces = play(&mut opponent, &mut state, 96, &[]);
-    let attacks = |trace: &Trace| {
-        trace
-            .missions
-            .iter()
-            .filter(|mission| matches!(mission.kind, MissionKind::Attack { .. }))
-            .count()
-    };
-    assert_eq!(
-        traces.last().map(attacks),
-        Some(1),
-        "premise: one under way"
-    );
-    let ticks = 600 - state.current_tick();
-    resumes_identically(&mut opponent, &scenario, &mut state, ticks);
+    // Prime's marching army included.
+    for config in [config(), rung(BotDifficulty::Prime)] {
+        let mut scenario = doubled();
+        scenario.players[0].bot_config = Some(config);
+        let mut state = scenario.build().unwrap();
+        let mut opponent = seat_with(&scenario, 0, config);
+        let traces = play(&mut opponent, &mut state, 96, &[]);
+        let attacks = |trace: &Trace| {
+            trace
+                .missions
+                .iter()
+                .filter(|mission| matches!(mission.kind, MissionKind::Attack { .. }))
+                .count()
+        };
+        assert_eq!(
+            traces.last().map(attacks),
+            Some(1),
+            "premise: one under way"
+        );
+        let ticks = 600 - state.current_tick();
+        resumes_identically(&mut opponent, &scenario, &mut state, ticks);
+    }
 }
 
 #[test]
@@ -1382,7 +1386,6 @@ pub(super) fn under_way(
 #[test]
 fn the_upper_rungs_send_new_units_after_an_attack_under_way() {
     for (difficulty, joins) in [
-        (BotDifficulty::Prime, true),
         (BotDifficulty::Veteran, true),
         (BotDifficulty::Standard, false),
     ] {
@@ -1411,6 +1414,123 @@ fn the_upper_rungs_send_new_units_after_an_attack_under_way() {
             assert!(sent.is_empty(), "{difficulty:?} leaves them home: {sent:?}");
             assert_eq!(mission.units as usize, members.len());
         }
+    }
+}
+
+#[test]
+fn prime_sends_new_units_to_its_army_and_veteran_to_its_target() {
+    // Units freed while an attack travels join it. Prime's go to its army,
+    // then on with it, rather than past it to the target on their own;
+    // Veteran's walk straight at the target.
+    for difficulty in [BotDifficulty::Prime, BotDifficulty::Veteran] {
+        let scenario = advanced(difficulty, &[]);
+        let mut state = scenario.build().unwrap();
+        let (members, missions) = under_way(&state, &"travel".into(), 0);
+        advance_to(&mut state, 36, &[run(0, members.clone(), 30, 11)]);
+        let mut opponent = restaged(&scenario, &state, missions);
+        let commands = opponent.act(&state, &mut OwnEvents::default());
+        let home: Vec<UnitId> = WEST.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+        let from_home = |orders: Vec<(Vec<UnitId>, TilePos)>| -> Vec<TilePos> {
+            orders
+                .into_iter()
+                .filter(|(units, _)| units.iter().any(|id| home.contains(id)))
+                .map(|(_, goal)| goal)
+                .collect()
+        };
+        let (advanced_to, hunted_to) =
+            (from_home(advances(&commands)), from_home(hunts(&commands)));
+        let target = TilePos::new(43, 11);
+        if difficulty == BotDifficulty::Prime {
+            let tiles: Vec<TilePos> = members
+                .iter()
+                .map(|id| state.unit(*id).unwrap().tile())
+                .collect();
+            assert!(
+                matches!(&advanced_to[..], [goal] if tiles.contains(goal)),
+                "{commands:?}"
+            );
+            assert!(
+                matches!(&hunted_to[..], [goal] if goal.chebyshev(target) <= 2),
+                "then on with it: {commands:?}"
+            );
+        } else {
+            assert!(advanced_to.is_empty(), "{commands:?}");
+            assert!(
+                matches!(&hunted_to[..], [goal] if goal.chebyshev(target) <= 2),
+                "{commands:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn prime_advances_on_its_way_in_where_veteran_hunts() {
+    // An army of Lancers and Sentinels sets out with no known gun on its
+    // way. Prime's advances as one, so its quicker Sentinels keep its slower
+    // Lancers' pace past what they meet; Veteran's hunts, each unit
+    // stopping for the first enemy it meets.
+    assert_ne!(
+        UnitKind::Lancer.stats().speed,
+        UnitKind::Sentinel.stats().speed,
+        "premise: they move at different speeds"
+    );
+    for difficulty in [BotDifficulty::Prime, BotDifficulty::Veteran] {
+        let mut scenario = field();
+        garrison(&mut scenario);
+        for (index, (x, y)) in ADVANCED.into_iter().enumerate() {
+            let kind = if index < 4 {
+                UnitKind::Lancer
+            } else {
+                UnitKind::Sentinel
+            };
+            scenario.units.push(unit(0, kind, x, y));
+        }
+        scenario.players[0].bot_config = Some(rung(difficulty));
+        let state = scenario.build().unwrap();
+        let (members, missions) = under_way(&state, &"gather".into(), 0);
+        let (commands, trace) =
+            restaged(&scenario, &state, missions).act_traced(&state, &mut OwnEvents::default());
+        let phase = attack(&trace.unwrap().missions).map(|mission| mission.phase);
+        assert_eq!(phase, Some(Phase::Travel), "premise: it sets out");
+        let all = |orders: Vec<(Vec<UnitId>, TilePos)>| {
+            orders.into_iter().any(|(mut units, _)| {
+                units.sort_unstable();
+                units == members
+            })
+        };
+        if difficulty == BotDifficulty::Prime {
+            assert!(all(advances(&commands)), "{commands:?}");
+            assert!(!all(hunts(&commands)), "{commands:?}");
+        } else {
+            assert!(all(hunts(&commands)), "{commands:?}");
+            assert!(advances(&commands).is_empty(), "{commands:?}");
+        }
+    }
+}
+
+#[test]
+fn once_in_contact_prime_s_army_hunts() {
+    // An army that advanced on its way in meets an East Sentinel: Prime's
+    // hunts as one from there, where Veteran's, hunting already, needs no
+    // new order.
+    for difficulty in [BotDifficulty::Prime, BotDifficulty::Veteran] {
+        let scenario = advanced(difficulty, &[(UnitKind::Sentinel, 28, 11)]);
+        let state = scenario.build().unwrap();
+        let (members, missions) = under_way(&state, &"travel".into(), 0);
+        let (commands, trace) =
+            restaged(&scenario, &state, missions).act_traced(&state, &mut OwnEvents::default());
+        assert!(
+            matches!(
+                attack(&trace.unwrap().missions).map(|mission| mission.phase),
+                Some(Phase::Engage)
+            ),
+            "{difficulty:?}: premise: it meets the enemy"
+        );
+        let hunted = hunts(&commands).into_iter().any(|(mut units, _)| {
+            units.sort_unstable();
+            units == members
+        });
+        assert_eq!(hunted, difficulty == BotDifficulty::Prime, "{commands:?}");
     }
 }
 
