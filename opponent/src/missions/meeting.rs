@@ -90,12 +90,12 @@ fn joining_force(foes: &[Foe], place: TilePos) -> Force {
 
 /// The known armed enemy ground units that could join a fight at `place`,
 /// each kind with what it is worth against the seat's units, a remembered
-/// one at its whole price while the seat remembers where it stood.
+/// one at its whole price for half a minute after it was last seen.
 pub(super) fn opposed(observation: &ObservationData, memory: &Memory, place: TilePos) -> Force {
     joining_force(&foes(observation, memory, located(observation.tick)), place)
 }
 
-/// A remembered unit's whole price while the seat remembers where it stood.
+/// A remembered unit's whole price for half a minute after it was last seen.
 fn located(now: u64) -> impl Fn(&SeenUnit) -> u64 {
     move |unit| super::located(unit, now)
 }

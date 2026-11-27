@@ -1113,6 +1113,11 @@ fn push(
         marches(difficulty) && mine(observation, *id).is_some_and(|unit| breacher(unit.kind))
     });
     if !breachers.is_empty() {
+        // Both orders or neither: a breacher hunt alone would take the last
+        // order every decision while the rest of the army stays staged.
+        if !rest.is_empty() && ledger.room() < 2 {
+            return;
+        }
         ledger.order(hunt(breachers, target.approach));
     }
     if ledger.order(set_out(difficulty, rest, target.approach)) {
