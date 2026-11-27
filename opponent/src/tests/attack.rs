@@ -2251,3 +2251,132 @@ fn breachers_on_their_way_answer_no_guns_at_the_front() {
     );
     assert!(falls_back((14, 5)), "on its way, it answers nothing");
 }
+
+/// [`armed`] with `west` Sentinels at tick 9,600, and West's checkpoint
+/// restored with `east` East Sentinels remembered by East's base just now,
+/// `waiting` as the attack clock, at `difficulty`.
+fn waits_against(
+    scenario: &Scenario,
+    state: &State,
+    east: u32,
+    (waiting, difficulty): (Option<u64>, BotDifficulty),
+) -> Opponent {
+    let now = state.current_tick();
+    let mut scenario = scenario.clone();
+    scenario.players[0].bot_config = Some(rung(difficulty));
+    let scenario = &scenario;
+    restored_with(
+        &seat_with(scenario, 0, rung(difficulty)),
+        scenario,
+        state,
+        |json| {
+            json["memory"]["units"] = remembered((0..east).map(|index: u32| {
+                let tile = TilePos::new(41, 8 + i32::try_from(index).unwrap());
+                (1_000 + index, UnitKind::Sentinel, tile, now)
+            }));
+            json["memory"]["census"] = counted(&json["memory"]["units"]);
+            json["missions"]["waiting"] = serde_json::json!(waiting);
+        },
+    )
+}
+
+fn launches(mut opponent: Opponent, state: &State) -> bool {
+    let trace = opponent.act_traced(state, &mut OwnEvents::default()).1;
+    attack(&trace.unwrap().missions).is_some()
+}
+
+#[test]
+fn the_top_rung_commits_on_a_smaller_edge() {
+    // Eight Sentinels against five known: half again their worth, short of
+    // the twice Veteran asks.
+    let scenario = armed(8, &[]);
+    let mut state = scenario.build().unwrap();
+    advance_to(&mut state, 9_600, &[]);
+    let at = |difficulty| waits_against(&scenario, &state, 5, (None, difficulty));
+    assert!(launches(at(BotDifficulty::Prime), &state));
+    assert!(!launches(at(BotDifficulty::Veteran), &state));
+}
+
+#[test]
+fn an_enemy_out_building_the_seat_shortens_its_wait() {
+    // Eight Sentinels against six known, a third over them: short of every
+    // margin until a wait lowers it. After a minute, a seat that sees East
+    // holding three Foundries to its one has earned a step at Prime, which
+    // reads that lead whole; without the lead, or at Veteran, it has not.
+    let launch = |lead: bool, difficulty| {
+        let mut scenario = armed(8, &[]);
+        scenario.units.push(unit(0, UnitKind::Surveyor, 37, 11));
+        if lead {
+            scenario.buildings.extend([
+                building(1, BuildingKind::Foundry, 40, 4),
+                building(1, BuildingKind::Foundry, 40, 18),
+            ]);
+        }
+        let mut state = scenario.build().unwrap();
+        advance_to(&mut state, 9_600, &[]);
+        let since = state.current_tick() - 1_200;
+        launches(
+            waits_against(&scenario, &state, 6, (Some(since), difficulty)),
+            &state,
+        )
+    };
+    assert!(launch(true, BotDifficulty::Prime), "Prime reads the lead");
+    assert!(!launch(false, BotDifficulty::Prime), "no lead, no step yet");
+    assert!(
+        !launch(true, BotDifficulty::Veteran),
+        "Veteran reads half of it"
+    );
+}
+
+#[test]
+fn an_attack_keeps_its_earned_margin_through_its_fight_until_it_withdraws() {
+    // Every West Sentinel is in the attack, out in the middle, and the
+    // Foundry is busy, so only the attack itself keeps the clock: regrouping
+    // it does, withdrawing it does not.
+    let mut scenario = field();
+    for (x, y) in GARRISON {
+        scenario.units.push(unit(0, UnitKind::Sentinel, x, y));
+    }
+    for &(x, y) in &WEST {
+        scenario.units.push(unit(0, UnitKind::Sentinel, x + 16, y));
+    }
+    scenario.players[0].scrap = 500;
+    let mut state = scenario.build().unwrap();
+    advance_to(&mut state, 9_600, &[]);
+    let foundry = foundries(&state, PlayerId(0))[0];
+    state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Train {
+            building: foundry,
+            kind: UnitKind::Harvester,
+        },
+    }]);
+    let probe = seat(&scenario, 0);
+    while !probe.decision_due(&state) {
+        state.tick(&[]);
+    }
+    let members: Vec<UnitId> = WEST.iter().map(|&(x, y)| at(&state, x + 16, y)).collect();
+    let clock = |phase: &str| {
+        let mut opponent = restored_with(&probe, &scenario, &state, |json| {
+            json["missions"] = serde_json::json!({
+                "next": 1,
+                "list": [{
+                    "id": 0,
+                    "task": {
+                        "task": "attack",
+                        "target": {"owner": 1, "building": "foundry", "anchor": {"x": 43, "y": 11}},
+                        "phase": phase,
+                    },
+                    "since": state.current_tick(),
+                    "units": members,
+                    "goal": {"x": 11, "y": 11},
+                }],
+                "waiting": 0,
+            });
+        });
+        opponent.act(&state, &mut OwnEvents::default());
+        serde_json::to_value(opponent.checkpoint()).unwrap()["missions"]["waiting"].clone()
+    };
+    assert_eq!(clock("recover"), serde_json::json!(0));
+    assert_eq!(clock("withdraw"), serde_json::Value::Null);
+}

@@ -333,6 +333,34 @@ fn a_lower_rung_works_the_same_nodes_with_thinner_crews() {
 }
 
 #[test]
+fn a_rung_s_economy_share_holds_over_a_pile_whose_tiles_round_alike() {
+    // A two-by-two pile beside home: each tile has few free places, so
+    // Veteran's share of each crew rounded up per tile came to Prime's
+    // whole crew. Taken over the seat, Veteran staffs most of it, the same
+    // tiles, nearest home first.
+    let mut scenario = field();
+    for (x, y) in [(6, 11), (7, 11), (6, 12), (7, 12)] {
+        scenario.map[as_index(y)].replace_range(as_index(x)..=as_index(x), "s");
+    }
+    let state = scenario.build().unwrap();
+    let staffed = |difficulty| crews_at(&scenario, &state, difficulty, BotStance::Balanced, 50);
+    let (prime, veteran) = (
+        staffed(BotDifficulty::Prime),
+        staffed(BotDifficulty::Veteran),
+    );
+    let nodes =
+        |crews: &[(TilePos, usize)]| crews.iter().map(|(node, _)| *node).collect::<Vec<_>>();
+    let total = |crews: &[(TilePos, usize)]| crews.iter().map(|(_, crew)| crew).sum::<usize>();
+    assert_eq!(nodes(&prime).len(), 4, "premise: every tile is worked");
+    assert_eq!(nodes(&prime), nodes(&veteran));
+    assert_eq!(
+        total(&veteran),
+        total(&prime) * 850 / 1_000,
+        "{prime:?} {veteran:?}"
+    );
+}
+
+#[test]
 fn a_node_running_out_wants_no_more_workers_than_its_scrap_repays() {
     let scenario = fielded((10, 11));
     let mut state = scenario.build().unwrap();

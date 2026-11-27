@@ -196,7 +196,19 @@ impl Missions {
         // so an army launched at a lowered margin is not held at home again
         // or turned back by the full one before it reaches the fight.
         let full = plan.margin;
-        plan.margin = relieved(full, self.waiting, now);
+        let step = wait_step(observation, map, profile.difficulty);
+        // A withdrawal turns to regrouping within the decision that advances
+        // it, so it is read before the attacks advance.
+        let withdrew = self.list.iter().any(|mission| {
+            matches!(
+                mission.task,
+                Task::Attack {
+                    phase: AttackPhase::Withdraw,
+                    ..
+                }
+            )
+        });
+        plan.margin = relieved(full, self.waiting, (now, step));
         let mut given_up: Vec<Objective> = Vec::new();
         for id in self.ids(attacking) {
             let Some(index) = self.index_of(id) else {
@@ -224,24 +236,23 @@ impl Missions {
             .filter(|(building, _)| crate::investments::built_producer(building))
             .peekable();
         let idle = producers.peek().is_some() && producers.all(|(_, queue)| queue.is_empty());
-        let underway = self.list.iter().any(|mission| {
-            matches!(
-                mission.task,
-                Task::Attack {
-                    phase: AttackPhase::Gather
-                        | AttackPhase::Advance
-                        | AttackPhase::Stage
-                        | AttackPhase::Travel,
-                    ..
-                }
-            )
+        // The wait holds through an attack's fight and its regrouping, so the
+        // margin it earned still judges whether it goes on; a withdrawal
+        // ends it, and the next attack must earn its margin again.
+        let phases = self.list.iter().filter_map(|mission| match mission.task {
+            Task::Attack { phase, .. } => Some(phase),
+            _ => None,
         });
-        if free >= plan.minimum || idle || underway {
+        let withdrawing = withdrew || phases.clone().any(|phase| phase == AttackPhase::Withdraw);
+        let underway = phases.clone().any(|phase| phase != AttackPhase::Withdraw);
+        if withdrawing {
+            self.waiting = None;
+        } else if free >= plan.minimum || idle || underway {
             self.waiting.get_or_insert(now);
         } else {
             self.waiting = None;
         }
-        plan.margin = relieved(full, self.waiting, now);
+        plan.margin = relieved(full, self.waiting, (now, step));
         loop {
             plan.held = self.held(attacking, None, &given_up);
             if !self.launch(&plan, &fit, ledger) {
@@ -724,7 +735,20 @@ fn join(
     {
         body.retain(|unit| unit.kind.stats().domain == Domain::Ground);
     }
-    let Some(middle) = middle_of(frame, &body, goal) else {
+    join_body(frame, &body, (recruits, goal), ledger)
+}
+
+/// Sends `recruits` to `body`, a force already on its way or at its fight,
+/// and on with it to `goal`: an advance to the member of `body` nearest its
+/// middle, then a hunt queued on to the goal. With no body, a hunt to the
+/// goal; with room for fewer than both orders, nothing.
+pub(super) fn join_body(
+    frame: HomeFrame,
+    body: &[&UnitObs],
+    (recruits, goal): (&[UnitId], TilePos),
+    ledger: &mut Ledger,
+) -> bool {
+    let Some(middle) = middle_of(frame, body, goal) else {
         return ledger.order(hunt(recruits.to_vec(), goal));
     };
     ledger.room() >= 2
@@ -2463,8 +2487,10 @@ fn reinforces(difficulty: BotDifficulty) -> bool {
 /// Whether a seat's attack keeps together on its way in: it advances
 /// without stopping for what it passes until it meets the enemy, then hunts
 /// as one, and units that join it on the way go to its army rather than past
-/// it to the target. A difficulty limit on how well a seat attacks.
-fn marches(difficulty: BotDifficulty) -> bool {
+/// it to the target; units that join a defense already at its fight go to
+/// the defenders there before they hunt. A difficulty limit on how well a
+/// seat attacks and defends.
+pub(super) fn marches(difficulty: BotDifficulty) -> bool {
     difficulty == BotDifficulty::Prime
 }
 
@@ -2507,18 +2533,68 @@ fn misjudge(profile: &ResolvedProfile, tick: u64) -> u64 {
 
 /// `margin` less one relief for each waiting step since `waiting`, never
 /// under the floor.
-fn relieved(margin: u64, waiting: Option<u64>, now: u64) -> u64 {
-    let waited = waiting.map_or(0, |since| (now - since) / WAIT_STEP);
+fn relieved(margin: u64, waiting: Option<u64>, (now, step): (u64, u64)) -> u64 {
+    let waited = waiting.map_or(0, |since| (now - since) / step.max(1));
     margin
         .saturating_sub(waited * WAIT_RELIEF)
         .max(MARGIN_FLOOR)
 }
 
-/// Per mille of the known opposition at a target that a mission must bring.
+/// Ticks one waiting step lasts: [`WAIT_STEP`], shortened while any one
+/// enemy is known to hold more economy buildings than the seat, by the share
+/// of that lead a seat of `difficulty` reads. A seat out-built while it
+/// waits brings its attack sooner, before the enemy's economy runs away.
+fn wait_step(observation: &ObservationData, map: &MapModel, difficulty: BotDifficulty) -> u64 {
+    let own = economy_of(observation.my_buildings.iter()).max(1);
+    let theirs = map
+        .hostiles(observation.me)
+        .map(|enemy| {
+            economy_of(
+                observation
+                    .enemy_buildings
+                    .iter()
+                    .filter(|building| building.player == enemy),
+            )
+        })
+        .max()
+        .unwrap_or(0);
+    let lead = theirs.saturating_sub(own);
+    WAIT_STEP * own * 1_000 / (own * 1_000 + lead * reads_lead(difficulty))
+}
+
+/// The economy buildings among `buildings` that stand: each Foundry,
+/// Extractor and Reclaimer once, and each Extractor once more for every rung
+/// it was refitted.
+fn economy_of<'a>(buildings: impl Iterator<Item = &'a BuildingObs>) -> u64 {
+    buildings
+        .filter(|building| building.built)
+        .map(|building| match building.kind {
+            BuildingKind::Foundry | BuildingKind::Reclaimer => 1,
+            BuildingKind::Extractor => 1 + u64::from(building.tier),
+            _ => 0,
+        })
+        .sum()
+}
+
+/// Per mille of an enemy's known economy lead a seat of `difficulty` reads
+/// into how soon its waiting army's margin falls: a limit on estimate
+/// accuracy. The top rung reads it whole.
+fn reads_lead(difficulty: BotDifficulty) -> u64 {
+    match difficulty {
+        BotDifficulty::Scrapheap => 250,
+        BotDifficulty::Standard | BotDifficulty::Veteran => 500,
+        BotDifficulty::Prime => 1_000,
+    }
+}
+
+/// Per mille of the known opposition at a target that a mission must bring:
+/// the top rung commits on a smaller edge, as its estimates and execution
+/// earn.
 pub(crate) fn margin(difficulty: BotDifficulty) -> u64 {
     match difficulty {
         BotDifficulty::Scrapheap => 2_500,
-        BotDifficulty::Standard | BotDifficulty::Veteran | BotDifficulty::Prime => 2_000,
+        BotDifficulty::Standard | BotDifficulty::Veteran => 2_000,
+        BotDifficulty::Prime => 1_500,
     }
 }
 

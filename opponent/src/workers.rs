@@ -4,7 +4,7 @@
 
 use crate::decision::{Ledger, Producer};
 use crate::events::OwnEvent;
-use crate::frame::{HomeFrame, doubled, footprint_centre, gap, octile_tenths, ring};
+use crate::frame::{HomeFrame, Rank, doubled, footprint_centre, gap, octile_tenths, ring};
 use crate::investments::built_foundries;
 use crate::map::{MapModel, NEIGHBOURS, UNREACHABLE};
 use crate::memory::Memory;
@@ -169,18 +169,21 @@ pub(crate) fn staffing(
         .filter(|(tile, _)| salvage_routes.clear(*tile))
         .copied()
         .collect();
-    let worked: Vec<_> = worked_nodes(
-        observation,
-        map,
-        frame,
-        profile,
-        foundries,
-        &reachable,
-        &wrecks,
-    )
-    .into_iter()
-    .filter(|(source, _)| !exposed(&scratch.ground, *source))
-    .collect();
+    let worked = shared(
+        worked_nodes(
+            observation,
+            map,
+            frame,
+            profile,
+            foundries,
+            &reachable,
+            &wrecks,
+        )
+        .into_iter()
+        .filter(|(source, _, _)| !exposed(&scratch.ground, *source))
+        .collect(),
+        crate::economy(profile.difficulty),
+    );
     let mut components: Vec<_> = foundries
         .iter()
         .filter_map(|foundry| map.component(foundry.building.anchor))
@@ -946,7 +949,8 @@ fn crew(observation: &ObservationData) -> usize {
 /// worked when its route from home avoids known danger and a Harvester
 /// hauling from there repays its price within the seat's horizon. Its crew
 /// fills the free tiles around it that its remaining scrap or salvage
-/// repays, as full as stance and greed make it.
+/// repays, as full as stance and greed make it, with its order nearest home
+/// first.
 fn worked_nodes(
     observation: &ObservationData,
     map: &MapModel,
@@ -955,7 +959,7 @@ fn worked_nodes(
     foundries: &[Producer<'_>],
     reachable: &[TilePos],
     wrecks: &[(TilePos, u32)],
-) -> Vec<(TilePos, usize)> {
+) -> Vec<(TilePos, usize, (i64, Rank))> {
     let harvester = UnitKind::Harvester.stats();
     let Some(harvest) = harvester.harvest else {
         return Vec::new();
@@ -982,7 +986,7 @@ fn worked_nodes(
         })
         .chain(wrecks)
         .filter_map(|(node, amount)| {
-            let (component, reach) = homes
+            let (component, reach, rank) = homes
                 .iter()
                 .filter(|(component, _, _)| map.touches(*node, *component))
                 .map(|(component, centre, building)| {
@@ -993,7 +997,7 @@ fn worked_nodes(
                     )
                 })
                 .min()
-                .map(|((reach, _, _), component)| (component, reach))?;
+                .map(|((reach, rank, _), component)| (component, reach, rank))?;
             // Ticks for one load: standing at the node, then there and back.
             let trip = Fx::from_num(2 * reach) / (Fx::from_num(10) * harvester.speed);
             let cycle =
@@ -1006,9 +1010,48 @@ fn worked_nodes(
             let places = room.min(repaid);
             (places > 0).then(|| {
                 let crew = (places * fill).div_ceil(1_000).max(1);
-                (*node, usize::try_from(crew).expect("crews fit in usize"))
+                (
+                    *node,
+                    usize::try_from(crew).expect("crews fit in usize"),
+                    (reach, rank),
+                )
             })
         })
+        .collect()
+}
+
+/// The crews `economy` per mille of the seat's economy staffs, from the
+/// full `crews` of the nodes it works: that share of their total, taken once
+/// over the whole seat so it does not round away node by node, at least one
+/// at every node. Each node keeps its share rounded down, and the rest go
+/// one at a time to the nodes nearest home, none past its full crew.
+fn shared(crews: Vec<(TilePos, usize, (i64, Rank))>, economy: u64) -> Vec<(TilePos, usize)> {
+    let economy = usize::try_from(economy).expect("per mille fits in usize");
+    let total: usize = crews.iter().map(|(_, crew, _)| crew).sum();
+    let target = (total * economy / 1_000).max(crews.len());
+    let mut kept: Vec<usize> = crews
+        .iter()
+        .map(|(_, crew, _)| (crew * economy / 1_000).max(1))
+        .collect();
+    let mut order: Vec<usize> = (0..crews.len()).collect();
+    order.sort_unstable_by_key(|index| crews[*index].2);
+    let mut short = target.saturating_sub(kept.iter().sum());
+    while short > 0 {
+        let before = short;
+        for &index in &order {
+            if short > 0 && kept[index] < crews[index].1 {
+                kept[index] += 1;
+                short -= 1;
+            }
+        }
+        if short == before {
+            break;
+        }
+    }
+    crews
+        .into_iter()
+        .zip(kept)
+        .map(|((node, _, _), crew)| (node, crew))
         .collect()
 }
 
@@ -1181,8 +1224,8 @@ fn horizon(profile: &ResolvedProfile) -> u64 {
 }
 
 /// Per mille of a node's places the seat fills: all of them for an economic
-/// stance, about half for an aggressive one, more the greedier it is, and as
-/// much of that as the seat's difficulty builds of its economy.
+/// stance, about half for an aggressive one, more the greedier it is. The
+/// seat's difficulty takes its share of the crews over the whole seat.
 pub(crate) fn fill(profile: &ResolvedProfile) -> u64 {
     let base: i64 = match profile.stance {
         BotStance::Turtle => 1_000,
@@ -1192,8 +1235,6 @@ pub(crate) fn fill(profile: &ResolvedProfile) -> u64 {
     (base + (i64::from(profile.traits.greed) - 50) * 5)
         .clamp(250, 1_000)
         .cast_unsigned()
-        * crate::economy(profile.difficulty)
-        / 1_000
 }
 
 /// Free tiles a worker could stand on to work the footprint of `size` at
