@@ -245,13 +245,7 @@ impl Missions {
             // where they stand.
             let mission = index.map(|index| &self.list[index]);
             let met = pressing[0] * 2 / 3 + guns;
-            // Only a force at the Foundry itself overruns it: one raiding a
-            // far building grouped to it leaves the Foundry standing.
-            if *own
-                && last
-                && crate::frame::gap(foundry.anchor, foundry.kind.size(), goal, (1, 1))
-                    <= LOCAL_REACH
-            {
+            if *own && last && beside(foundry, goal) {
                 overrun = met.saturating_sub(siege.held).max(overrun);
             }
             // A place held short of even odds is given up, but not by a
@@ -1242,7 +1236,7 @@ fn gives_up(
     if at_home(observation, map, goal) {
         return false;
     }
-    if gap(foundry.anchor, foundry.kind.size(), goal, (1, 1)) <= LOCAL_REACH {
+    if beside(foundry, goal) {
         return lets_go(
             held,
             met,
@@ -1250,6 +1244,12 @@ fn gives_up(
         );
     }
     held < met
+}
+
+/// Whether `goal` lies within local reach of `foundry`: a force there is at
+/// the Foundry itself, not raiding a far building grouped to it.
+fn beside(foundry: &BuildingObs, goal: TilePos) -> bool {
+    gap(foundry.anchor, foundry.kind.size(), goal, (1, 1)) <= LOCAL_REACH
 }
 
 /// Whether a seat with `foundries` built Foundries lets one go that it
