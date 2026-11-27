@@ -194,3 +194,78 @@ fn an_attack_counts_only_its_target_owner_s_army() {
         )]
     );
 }
+
+#[test]
+fn a_staged_attack_with_one_order_left_spends_it_on_neither_half() {
+    let breacher = UnitKind::Maw;
+    assert!(crate::missions::breacher(breacher), "premise: a breacher");
+    let mut scenario = crate::tests::arena(0);
+    scenario.units.extend([
+        aftermine_sim::scenario::UnitSpec {
+            player: 0,
+            kind: breacher,
+            x: 11,
+            y: 5,
+        },
+        aftermine_sim::scenario::UnitSpec {
+            player: 0,
+            kind: UnitKind::Sentinel,
+            x: 6,
+            y: 9,
+        },
+    ]);
+    let state = scenario.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let mut units: Vec<UnitId> = observation
+        .my_units
+        .iter()
+        .filter(|unit| unit.kind == breacher || unit.kind == UnitKind::Sentinel)
+        .map(|unit| unit.id)
+        .collect();
+    units.sort_unstable();
+    let target = Target {
+        owner: PlayerId(1),
+        building: BuildingKind::Foundry,
+        anchor: TilePos::new(19, 5),
+        approach: TilePos::new(16, 5),
+        score: 0,
+    };
+    let pushed = |allowance: u32| {
+        let mut mission = Mission {
+            id: 0,
+            since: 0,
+            units: units.clone(),
+            goal: TilePos::new(11, 5),
+            task: Task::Attack {
+                target: target.objective(),
+                phase: AttackPhase::Stage,
+            },
+        };
+        let mut ledger = Ledger::new(PlayerId(0), 0, allowance);
+        push(
+            &observation,
+            &mut mission,
+            (target, 0, BotDifficulty::Prime),
+            &mut ledger,
+        );
+        (ledger.room(), mission.task)
+    };
+    let (room, task) = pushed(1);
+    assert_eq!(room, 1, "no order spent");
+    assert!(matches!(
+        task,
+        Task::Attack {
+            phase: AttackPhase::Stage,
+            ..
+        }
+    ));
+    let (room, task) = pushed(2);
+    assert_eq!(room, 0);
+    assert!(matches!(
+        task,
+        Task::Attack {
+            phase: AttackPhase::Travel,
+            ..
+        }
+    ));
+}
