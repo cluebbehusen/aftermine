@@ -4122,6 +4122,85 @@ fn sentinels_weak_anti_air_leaves_a_shortfall_against_buzzards() {
     );
 }
 
+/// A field with a West Foundry on a pit-ringed island in its middle, West
+/// Sentinels at home and an East Bombard at `bombard`. With `pocket`, the
+/// Bombard stands in a pit-ringed pocket of its own.
+fn shelled_island(bombard: (i32, i32), pocket: bool) -> Scenario {
+    let mut map: Vec<Vec<char>> = [
+        "##############################",
+        "#............................#",
+        "#...........~~~~~~...........#",
+        "#...........~....~...........#",
+        "#..1........~....~........2..#",
+        "#...........~....~...........#",
+        "#...........~~~~~~...........#",
+        "#............................#",
+        "#............................#",
+        "##############################",
+    ]
+    .iter()
+    .map(|row| row.chars().collect())
+    .collect();
+    if pocket {
+        for (y, row) in map.iter_mut().enumerate().take(7).skip(2) {
+            for (x, tile) in row.iter_mut().enumerate().take(24).skip(19) {
+                if y == 2 || y == 6 || x == 19 || x == 23 {
+                    *tile = '~';
+                }
+            }
+        }
+    }
+    let mut scenario = arena(0);
+    scenario.map = map.into_iter().map(String::from_iter).collect();
+    scenario.buildings = vec![building(0, BuildingKind::Foundry, 14, 3)];
+    scenario.units = vec![
+        harvester(0, 4, 2),
+        harvester(1, 26, 2),
+        unit(1, UnitKind::Bombard, bombard.0, bombard.1),
+    ];
+    for (x, y) in [(4, 7), (5, 7), (6, 7), (7, 7)] {
+        scenario.units.push(unit(0, UnitKind::Sentinel, x, y));
+    }
+    scenario
+}
+
+#[test]
+fn shelling_across_a_pit_is_met_from_the_ground_it_stands_on() {
+    // An East Bombard beside the pit ringing West's island Foundry, on the
+    // ground West's start holds: West's Sentinels walk out to it. In a
+    // pocket no West Foundry holds, it is left to production.
+    let sent = |pocket: bool| {
+        let scenario = shelled_island((21, 4), pocket);
+        let state = scenario.build().unwrap();
+        let bombard = at(&state, 21, 4);
+        let commands = seat_with(&scenario, 0, rung(BotDifficulty::Prime))
+            .act(&state, &mut OwnEvents::default());
+        attacks(&commands)
+            .iter()
+            .any(|(_, target)| *target == AttackTarget::Unit(bombard))
+            || hunts(&commands)
+                .iter()
+                .chain(&runs(&commands))
+                .any(|(_, goal)| goal.chebyshev(TilePos::new(21, 4)) <= 3)
+    };
+    assert!(
+        crate::frame::gap(
+            TilePos::new(14, 3),
+            BuildingKind::Foundry.size(),
+            TilePos::new(21, 4),
+            (1, 1)
+        ) < crate::frame::gap(
+            TilePos::new(3, 4),
+            BuildingKind::Foundry.size(),
+            TilePos::new(21, 4),
+            (1, 1)
+        ),
+        "premise: the island Foundry is the one it presses"
+    );
+    assert!(sent(false), "on the start's ground");
+    assert!(!sent(true), "in a pocket of its own");
+}
+
 #[test]
 fn artillery_firing_from_out_of_sight_draws_no_scuttlers() {
     // The staged siege: Bombards shell the base with a Kestrel spotting.
