@@ -904,6 +904,13 @@ pub(crate) fn worth(kind: UnitKind, hp: u32) -> u64 {
     u64::from(stats.cost) * u64::from(hp) / u64::from(stats.max_hp.max(1))
 }
 
+/// A remembered enemy unit's whole price as strength against machines while
+/// the seat remembers where it stood, as a defense judges the place it would
+/// fight.
+pub(crate) fn located(unit: &crate::memory::SeenUnit, now: u64) -> u64 {
+    unit.located(now) * against_machines(unit.kind) / 1_000
+}
+
 /// Per mille of its price a unit brings against machines: what its primary
 /// weapon deals a machine of what it deals a structure, and all of it for a
 /// weapon that deals both alike.

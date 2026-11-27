@@ -9,7 +9,7 @@ use super::{against_machines, reached, value};
 use crate::counters::{Piece, weigh};
 use crate::frame::{HomeFrame, doubled, gap};
 use crate::map::{MapModel, NEIGHBOURS, UNREACHABLE};
-use crate::memory::Memory;
+use crate::memory::{Memory, SeenUnit};
 use aftermine_sim::observation::ObservationData;
 use aftermine_sim::stats::Domain;
 use aftermine_sim::{BuildingKind, UnitId, UnitKind};
@@ -27,11 +27,15 @@ struct Foe {
 }
 
 /// The known armed enemy ground units, in sight by their health and
-/// remembered out of sight by how sure the seat is they still are. Each
+/// remembered out of sight by `worth`. Each
 /// joins a fight within local reach of it, or its own reach if longer: an
 /// enemy holding a line a few tiles behind the one that came near joins the
 /// fight once the seat's units walk into reach of it.
-fn foes(observation: &ObservationData, memory: &Memory) -> Vec<Foe> {
+fn foes(
+    observation: &ObservationData,
+    memory: &Memory,
+    worth: impl Fn(&SeenUnit) -> u64,
+) -> Vec<Foe> {
     let joins = |kind: UnitKind| {
         let reach = crate::defenses::reach(kind);
         (kind.stats().domain == Domain::Ground && reach > Fx::ZERO)
@@ -62,7 +66,7 @@ fn foes(observation: &ObservationData, memory: &Memory) -> Vec<Foe> {
                 kind: unit.kind,
                 tile: unit.tile,
                 reach,
-                worth: unit.value(observation.tick) * against_machines(unit.kind) / 1_000,
+                worth: worth(unit),
             })
         });
     seen.chain(remembered).collect()
@@ -85,9 +89,20 @@ fn joining_force(foes: &[Foe], place: TilePos) -> Force {
 }
 
 /// The known armed enemy ground units that could join a fight at `place`,
-/// each kind with what it is worth against the seat's units.
+/// each kind with what it is worth against the seat's units, a remembered
+/// one at its whole price for half a minute after it was last seen.
 pub(super) fn opposed(observation: &ObservationData, memory: &Memory, place: TilePos) -> Force {
-    joining_force(&foes(observation, memory), place)
+    joining_force(&foes(observation, memory, located(observation.tick)), place)
+}
+
+/// A remembered unit's whole price for half a minute after it was last seen.
+fn located(now: u64) -> impl Fn(&SeenUnit) -> u64 {
+    move |unit| super::located(unit, now)
+}
+
+/// A remembered unit's price by how sure the seat is it is still there.
+fn faded(now: u64) -> impl Fn(&SeenUnit) -> u64 {
+    move |unit| unit.value(now) * against_machines(unit.kind) / 1_000
 }
 
 /// What the known armed enemy ground units other than the gun standing at
@@ -95,7 +110,7 @@ pub(super) fn opposed(observation: &ObservationData, memory: &Memory, place: Til
 /// defenders going at the gun meet on the way. Another gun beside it is
 /// escort too.
 pub(super) fn escort(observation: &ObservationData, memory: &Memory, place: TilePos) -> u64 {
-    let foes: Vec<Foe> = foes(observation, memory)
+    let foes: Vec<Foe> = foes(observation, memory, located(observation.tick))
         .into_iter()
         .filter(|foe| !(foe.tile == place && reached(foe.kind)))
         .collect();
@@ -121,7 +136,7 @@ pub(super) fn on_the_way(
     against: &[(Piece, u64)],
 ) -> Force {
     let me = observation.me;
-    let foes = foes(observation, memory);
+    let foes = foes(observation, memory, faded(observation.tick));
     let mut tile = goal;
     let mut most = Vec::new();
     for step in 0.. {
