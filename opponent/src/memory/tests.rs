@@ -222,3 +222,17 @@ fn checkpoints_reject_a_malformed_census() {
         assert!(restored(census).validate(100, 8, 8, 0).is_err(), "{why}");
     }
 }
+
+#[test]
+fn a_unit_seen_dying_is_forgotten_where_it_stood_too() {
+    let mut memory: Memory = serde_json::from_value(serde_json::json!({
+        "units": [{"id": 1, "kind": UnitKind::Lancer, "tile": {"x": 3, "y": 3}, "seen": 0}],
+        "census": [{"id": 1, "kind": UnitKind::Lancer, "seen": 0}],
+        "failures": [], "abandoned": [], "raided": [], "scouted": [], "stuck": [], "extractors": [],
+    }))
+    .unwrap();
+    assert_eq!(memory.units().len(), 1);
+    memory.died(&[OwnEvent::EnemyDied { unit: UnitId(1) }]);
+    assert!(memory.units().is_empty());
+    assert_eq!(memory.census().count(), 0);
+}
