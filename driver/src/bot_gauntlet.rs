@@ -151,7 +151,7 @@ fn play(
         // session stage them.
         commands.extend(bot_commands);
         let report = aftermine_kit::runner::record_and_tick(&mut state, &commands, replay.as_mut());
-        record_events(&mut bots, &report);
+        record_events(&mut bots, &state, &report);
         rejected += report
             .events
             .iter()

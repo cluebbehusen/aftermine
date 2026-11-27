@@ -23,7 +23,7 @@ fn untimed(workload: Workload, ticks: u64) -> (String, String) {
         let commands = aftermine_kit::bot_execution::commands(&state, &mut seats);
         fold = chassis::hash::state_hash(&(fold, state.current_tick(), &commands));
         let report = state.tick(&commands);
-        aftermine_kit::controller::record_events(&mut seats, &report);
+        aftermine_kit::controller::record_events(&mut seats, &state, &report);
     }
     (hash_hex(fold), hash_hex(state.hash()))
 }

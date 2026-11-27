@@ -423,6 +423,7 @@ fn no_route(state: &State, player: u8, unit: UnitId) -> OwnEvents {
     let mut events = OwnEvents::default();
     events.record(
         PlayerId(player),
+        state,
         &[aftermine_sim::Event::OrderStalled {
             unit,
             player: PlayerId(player),
@@ -486,6 +487,7 @@ fn checkpoints_reject_malformed_stuck_units() {
     let validated = |stuck: serde_json::Value| {
         let memory: crate::memory::Memory = serde_json::from_value(serde_json::json!({
             "units": [],
+            "census": [],
             "failures": [],
             "abandoned": [],
             "raided": [],

@@ -409,6 +409,7 @@ fn a_breacher_that_cannot_move_on_holds_no_one_up() {
     let mut events = OwnEvents::default();
     events.record(
         PlayerId(0),
+        &state,
         &[aftermine_sim::Event::OrderStalled {
             unit: maw.id,
             player: PlayerId(0),

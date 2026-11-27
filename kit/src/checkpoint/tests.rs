@@ -139,7 +139,7 @@ fn a_save_between_an_own_event_and_the_next_decision_resumes_identically() {
         command: Command::Stop { units: vec![] },
     }));
     let report = crate::runner::record_and_tick(&mut state, &commands, None);
-    record_events(&mut bots, &report);
+    record_events(&mut bots, &state, &report);
 
     let rejected = serde_json::json!([{"event": "command_rejected", "reason": "no_valid_units"}]);
     let json = serde_json::to_value(

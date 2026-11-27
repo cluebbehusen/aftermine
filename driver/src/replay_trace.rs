@@ -97,7 +97,7 @@ pub fn trace(
             }
         }
         let report = playback.step(&mut state);
-        record_events(&mut bots, &report);
+        record_events(&mut bots, &state, &report);
     }
     Ok(())
 }

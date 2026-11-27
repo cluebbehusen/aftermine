@@ -36,7 +36,7 @@ pub fn step(
 ) -> aftermine_sim::TickReport {
     let commands = crate::bot_execution::commands(state, bots);
     let report = record_and_tick(state, &commands, replay);
-    record_events(bots, &report);
+    record_events(bots, state, &report);
     report
 }
 
@@ -61,7 +61,7 @@ pub fn step_traced(
         }
     }
     let report = record_and_tick(state, &commands, replay);
-    record_events(bots, &report);
+    record_events(bots, state, &report);
     TracedStep { report, traces }
 }
 

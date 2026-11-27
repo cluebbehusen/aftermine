@@ -42,7 +42,8 @@ ordinary `PlayerCommand`s. It uses no floating point.
 - `crush` moves the seat's small machines, and keeps its sites, out of a Maw's
   path.
 - `profile` resolves difficulty, stance and the seeded personality.
-- `events` buffers the seat's own stalls and rejections between decisions.
+- `events` buffers the seat's own stalls and rejections, other seats' machines
+  standing up and the enemy deaths it sees between decisions.
 - `checkpoint` saves what carries between decisions, and `trace` reports a
   decision for diagnostics.
 

@@ -358,6 +358,7 @@ fn the_most_wanted_role_takes_the_scrap_before_a_nearer_producer() {
             let tile = TilePos::new(20, 2 + i32::try_from(index).unwrap());
             (1_000 + index, UnitKind::Buzzard, tile, state.current_tick())
         }));
+        json["memory"]["census"] = counted(&json["memory"]["units"]);
     });
     let trained = trains(&opponent.act(&state, &mut OwnEvents::default()));
     let [(at, kind)] = trained[..] else {
@@ -515,6 +516,7 @@ fn crucible_seat_banking(
                 (1_000 + index, kind, tile, now)
             },
         ));
+        json["memory"]["census"] = counted(&json["memory"]["units"]);
     });
     (scenario, state, opponent)
 }
@@ -584,6 +586,7 @@ fn recalling(
                 .zip(0_u32..)
                 .map(|(&(kind, tile), index)| (1_000 + index, kind, tile, now)),
         );
+        json["memory"]["census"] = counted(&json["memory"]["units"]);
     })
 }
 
@@ -649,6 +652,49 @@ fn seen_enemy_heavies_bring_piledrivers_in_proportion() {
 }
 
 #[test]
+fn an_enemy_heavy_seen_long_ago_still_brings_piledrivers() {
+    // Two Breakers seen over the East base longer ago than the seat remembers
+    // where a unit stands: it no longer knows where they are, but it has not
+    // seen them die, so they still count.
+    let scenario = foundry_of_heavies();
+    let mut state = scenario.build().unwrap();
+    advance_to(&mut state, crate::memory::UNIT_TICKS + 100, &[]);
+    let at = state
+        .buildings()
+        .iter()
+        .find(|building| building.player == PlayerId(0) && building.kind == BuildingKind::Crucible)
+        .unwrap()
+        .id;
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["memory"]["units"] = remembered(
+            (0..2).map(|index: u32| (1_000 + index, UnitKind::Breaker, TilePos::new(20, 1), 0)),
+        );
+        json["memory"]["census"] = counted(&json["memory"]["units"]);
+    });
+    while !opponent.decision_due(&state) {
+        state.tick(&[]);
+    }
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    let json = serde_json::to_value(opponent.checkpoint()).unwrap();
+    assert!(
+        json["memory"]["units"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|unit| unit["kind"] == "breaker")
+            .all(
+                |unit| unit["seen"].as_u64().unwrap() + crate::memory::UNIT_TICKS
+                    <= state.current_tick()
+            ),
+        "premise: the seat is no longer sure where they stand"
+    );
+    assert!(
+        trains(&commands).contains(&(at, UnitKind::Piledriver)),
+        "{commands:?}"
+    );
+}
+
+#[test]
 fn an_enemy_heavy_out_of_sight_and_memory_brings_no_piledriver() {
     let mut scenario = foundry_of_heavies();
     scenario.units.push(unit(1, UnitKind::Breaker, 20, 2));
@@ -691,6 +737,7 @@ fn an_enemy_machine_rolled_out_of_sight_brings_piledrivers() {
     let mut events = OwnEvents::default();
     events.record(
         PlayerId(0),
+        &state,
         &[aftermine_sim::Event::UnitAssembled {
             cradle: aftermine_sim::BuildingId(99),
             unit: maw.id,
@@ -1135,6 +1182,7 @@ fn a_line_facing_lancers_waits_for_a_warden_rather_than_add_a_sentinel() {
     let trained = beside_a_busy_fabricator(&scenario, |state| {
         restored_with(&seat(&scenario, 0), &scenario, state, |json| {
             json["memory"]["units"] = remembered(lancers);
+            json["memory"]["census"] = counted(&json["memory"]["units"]);
         })
     });
     assert_eq!(trained, []);

@@ -410,11 +410,13 @@ fn once_anti_heavy_units_can_be_trained_the_line_leaves_the_heavies_to_them() {
     use aftermine_sim::{BuildingId, PlayerId, Scenario};
     let state = Scenario::skirmish().build().unwrap();
     let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let units = serde_json::json!([
+        {"id": 1_000, "kind": "breaker", "tile": {"x": 40, "y": 2}, "seen": observation.tick},
+        {"id": 1_001, "kind": "breaker", "tile": {"x": 40, "y": 3}, "seen": observation.tick},
+    ]);
     let memory: Memory = serde_json::from_value(serde_json::json!({
-        "units": [
-            {"id": 1_000, "kind": "breaker", "tile": {"x": 40, "y": 2}, "seen": observation.tick},
-            {"id": 1_001, "kind": "breaker", "tile": {"x": 40, "y": 3}, "seen": observation.tick},
-        ],
+        "census": crate::tests::counted(&units),
+        "units": units,
         "failures": [],
         "abandoned": [],
         "raided": [],
@@ -544,10 +546,17 @@ fn a_known_roc_counts_as_air_that_cannot_shoot_aircraft() {
 fn a_line_of_sentinels_leaves_more_need_against_lancers_than_one_of_wardens() {
     use aftermine_sim::{PlayerId, Scenario};
     let state = Scenario::skirmish().build().unwrap();
+    let units: serde_json::Value = (0..6)
+        .map(|index| {
+            serde_json::json!({
+                "id": 1_000 + index, "kind": "lancer", "tile": {"x": 40, "y": 2 + index}, "seen": 0,
+            })
+        })
+        .collect::<Vec<_>>()
+        .into();
     let memory: Memory = serde_json::from_value(serde_json::json!({
-        "units": (0..6).map(|index| serde_json::json!({
-            "id": 1_000 + index, "kind": "lancer", "tile": {"x": 40, "y": 2 + index}, "seen": 0,
-        })).collect::<Vec<_>>(),
+        "census": crate::tests::counted(&units),
+        "units": units,
         "failures": [], "abandoned": [], "raided": [], "scouted": [], "stuck": [], "extractors": [],
     }))
     .unwrap();

@@ -84,7 +84,7 @@ fn play_and_check_integrity(
             trace.record(&state, &commands);
         }
         let report = state.tick(&commands);
-        aftermine_kit::controller::record_events(&mut bots, &report);
+        aftermine_kit::controller::record_events(&mut bots, &state, &report);
         let tick = state.current_tick();
         if let Some(trace) = &mut trace
             && tick.is_multiple_of(TRACE_HASH_INTERVAL)
@@ -166,7 +166,7 @@ fn recorded_scenario_run_reproduces_from_its_replay() {
             replay.record(state.current_tick(), command.clone());
         }
         let report = state.tick(&commands);
-        aftermine_kit::controller::record_events(&mut bots, &report);
+        aftermine_kit::controller::record_events(&mut bots, &state, &report);
     }
     replay.meta.ticks = Some(state.current_tick());
     assert_eq!(replay.meta.ticks, Some(900));

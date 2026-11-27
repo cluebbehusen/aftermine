@@ -1,6 +1,7 @@
 //! What the seat remembers between decisions: enemy units it has seen or
-//! learned stood up from a public cradle, with confidence that fades until
-//! they are seen again; building footprints it
+//! learned stood up from a public cradle, where they were with confidence
+//! that fades until they are seen again, and that they exist until the seat
+//! sees them die; building footprints it
 //! failed to claim, so it tries somewhere else for a while; enemy buildings
 //! it gave up attacking, so it attacks something else for a while; enemy
 //! buildings it raided, so the next raid goes elsewhere; when it last saw
@@ -31,9 +32,14 @@ pub(crate) const UNIT_TICKS: u64 = 600;
 /// there long after a mobile unit would have moved on.
 const STRANDED_TICKS: u64 = 3_600;
 
-/// Enemy units remembered at once, the stalest forgotten first: a computation
-/// bound that normal play stays under, since units seen more than
-/// `UNIT_TICKS` ago are forgotten anyway.
+/// Ticks an enemy unit counts toward what the seat knows the enemy fields
+/// after it was last seen, unless the seat sees it die first: a bound on how
+/// long a death out of the seat's sight keeps counting.
+const CENSUS_TICKS: u64 = 3_600;
+
+/// Enemy units remembered at once, where they stood and that they exist each,
+/// the stalest forgotten first: a computation bound that normal play stays
+/// under, since units seen more than `CENSUS_TICKS` ago are forgotten anyway.
 const UNIT_CAP: usize = 4_096;
 
 /// Ticks an own unit whose order stalled for want of a route or a firing
@@ -49,6 +55,9 @@ const STUCK_CAP: usize = 1_024;
 #[serde(deny_unknown_fields)]
 pub(crate) struct Memory {
     units: Vec<SeenUnit>,
+    /// Enemy units the seat has seen and not seen die, by id, whether or not
+    /// it still knows where they are.
+    census: Vec<Censused>,
     failures: Vec<Failure>,
     /// Attack targets given up on, oldest first.
     abandoned: Vec<Failure>,
@@ -86,6 +95,15 @@ pub(crate) struct SeenUnit {
     pub(crate) seen: u64,
 }
 
+/// An enemy unit the seat knows exists, and when it last saw it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Censused {
+    id: UnitId,
+    kind: UnitKind,
+    seen: u64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Failure {
@@ -95,10 +113,11 @@ struct Failure {
 }
 
 impl Memory {
-    /// Refreshes every enemy unit in sight, and forgets those gone stale or
-    /// missing from where they were last seen, remembering for longer the
-    /// ground units `stranded` says stand on ground the seat's own does not
-    /// reach.
+    /// Refreshes every enemy unit in sight, and forgets where those gone
+    /// stale or missing from where they were last seen stand, remembering for
+    /// longer the ground units `stranded` says stand on ground the seat's own
+    /// does not reach. That they exist is forgotten only once they are seen to
+    /// die or `CENSUS_TICKS` pass unseen.
     pub(crate) fn observe_stranded(
         &mut self,
         observation: &ObservationData,
@@ -116,7 +135,9 @@ impl Memory {
                 Ok(index) => self.units[index] = seen,
                 Err(index) => self.units.insert(index, seen),
             }
+            self.count(unit.id, unit.kind, now);
         }
+        self.census.retain(|unit| now < unit.seen + CENSUS_TICKS);
         self.units.retain(|unit| {
             let ticks = if stranded(unit) {
                 STRANDED_TICKS
@@ -134,6 +155,48 @@ impl Memory {
                 .map(|(index, _)| index)
                 .expect("over the cap");
             self.units.remove(stalest);
+        }
+        while self.census.len() > UNIT_CAP {
+            let stalest = self
+                .census
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, unit)| (unit.seen, unit.id))
+                .map(|(index, _)| index)
+                .expect("over the cap");
+            self.census.remove(stalest);
+        }
+    }
+
+    /// Counts `id` as an enemy unit of `kind` seen at `now`. Drones are left
+    /// out: they dock in their host without dying and launch again under new
+    /// ids.
+    fn count(&mut self, id: UnitId, kind: UnitKind, now: u64) {
+        if kind.stats().docks() {
+            return;
+        }
+        let counted = Censused {
+            id,
+            kind,
+            seen: now,
+        };
+        match self.census.binary_search_by_key(&id, |known| known.id) {
+            Ok(index) => self.census[index] = counted,
+            Err(index) => self.census.insert(index, counted),
+        }
+    }
+
+    /// Forgets the enemy units `events` report the seat saw die: it stops
+    /// counting them, and stops remembering where they stood, which a
+    /// sighting elsewhere would not clear while their old place is fogged.
+    pub(crate) fn died(&mut self, events: &[OwnEvent]) {
+        for event in events {
+            if let OwnEvent::EnemyDied { unit } = *event {
+                if let Ok(index) = self.census.binary_search_by_key(&unit, |known| known.id) {
+                    self.census.remove(index);
+                }
+                self.units.retain(|seen| seen.id != unit);
+            }
         }
     }
 
@@ -166,13 +229,23 @@ impl Memory {
                     Ok(index) => self.units[index] = seen,
                     Err(index) => self.units.insert(index, seen),
                 }
+                self.count(unit, kind, observation.tick);
             }
         }
     }
 
-    /// Remembered enemy units, by id.
+    /// Remembered enemy units where they were last seen, by id: what tactics
+    /// read.
     pub(crate) fn units(&self) -> &[SeenUnit] {
         &self.units
+    }
+
+    /// The kind of each enemy unit the seat has seen and not seen die,
+    /// wherever it now is: what the army's needs and the growth it holds back
+    /// count of the enemy, so an army out of sight is unknown rather than
+    /// gone.
+    pub(crate) fn census(&self) -> impl Iterator<Item = UnitKind> + '_ {
+        self.census.iter().map(|unit| unit.kind)
     }
 
     /// Enemy units in sight on the tile they were last seen on, by id. Read
@@ -369,6 +442,7 @@ impl Memory {
             || full(&self.abandoned)
             || full(&self.raided)
             || self.units.len() > UNIT_CAP
+            || self.census.len() > UNIT_CAP
             || self.stuck.len() > STUCK_CAP
         {
             return Err("checkpoint remembers too much".into());
@@ -391,8 +465,14 @@ impl Memory {
         if !extractors {
             return Err("checkpoint own Extractors are malformed".into());
         }
-        let by_id = self.units.windows(2).all(|pair| pair[0].id < pair[1].id);
-        if !by_id || self.units.iter().any(|unit| unit.seen > now) {
+        let by_id = self.units.windows(2).all(|pair| pair[0].id < pair[1].id)
+            && self.census.windows(2).all(|pair| pair[0].id < pair[1].id);
+        let seen = self.units.iter().map(|unit| unit.seen);
+        if !by_id
+            || seen
+                .chain(self.census.iter().map(|unit| unit.seen))
+                .any(|tick| tick > now)
+        {
             return Err("checkpoint enemy units are out of order".into());
         }
         let ordered = |list: &[Failure]| {

@@ -50,7 +50,7 @@ fn play(family: Family, seed: u64, scenario: &Scenario, ticks: u64) -> Played {
             log.push((state.current_tick(), mine));
         }
         let report = state.tick(&commands);
-        record_events(&mut bots, &report);
+        record_events(&mut bots, &state, &report);
         rejected += report
             .events
             .iter()
@@ -441,7 +441,7 @@ fn a_challenger_takes_over_a_seat_mid_game() {
     while state.current_tick() < 3000 {
         let commands = aftermine_kit::bot_execution::commands(&state, &mut bots);
         let report = state.tick(&commands);
-        record_events(&mut bots, &report);
+        record_events(&mut bots, &state, &report);
     }
     bots.retain(|bot| bot.player() != PlayerId(0));
     for family in Family::ALL {
@@ -455,7 +455,7 @@ fn a_challenger_takes_over_a_seat_mid_game() {
             let mut commands = mine;
             commands.extend(aftermine_kit::bot_execution::commands(&state, &mut bots));
             let report = state.tick(&commands);
-            record_events(&mut bots, &report);
+            record_events(&mut bots, &state, &report);
             rejected += report
                 .events
                 .iter()

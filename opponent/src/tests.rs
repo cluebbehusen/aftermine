@@ -211,6 +211,23 @@ fn remembered(units: impl IntoIterator<Item = (u32, UnitKind, TilePos, u64)>) ->
         .collect()
 }
 
+/// The census of a seat that remembers `units`, staged as [`remembered`]
+/// gives them: every one but drones, by id.
+pub(crate) fn counted(units: &serde_json::Value) -> serde_json::Value {
+    let mut census: Vec<serde_json::Value> = units
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|unit| {
+            let kind: UnitKind = serde_json::from_value(unit["kind"].clone()).unwrap();
+            !kind.stats().docks()
+        })
+        .map(|unit| serde_json::json!({"id": unit["id"], "kind": unit["kind"], "seen": unit["seen"]}))
+        .collect();
+    census.sort_by_key(|unit| unit["id"].as_u64());
+    census.into()
+}
+
 /// Every trait at the middle of its range.
 pub(crate) fn middling() -> PersonalityTraits {
     PersonalityTraits {
@@ -531,7 +548,7 @@ fn garrison(scenario: &mut Scenario) {
 }
 
 /// The field with both seats and no units.
-fn field() -> Scenario {
+pub(crate) fn field() -> Scenario {
     let mut scenario = arena(0);
     scenario.map = FIELD.map(str::to_owned).to_vec();
     scenario.units.clear();
@@ -1093,7 +1110,8 @@ fn a_decision_receives_only_its_seats_failures_since_the_last_one() {
     let mut opponent = seat(&scenario, 0);
     let mut events = OwnEvents::default();
     let tick = |state: &mut State, events: &mut OwnEvents, commands: &[PlayerCommand]| {
-        events.record(PlayerId(0), &state.tick(commands).events);
+        let ticked = state.tick(commands);
+        events.record(PlayerId(0), state, &ticked.events);
     };
     let commands = opponent.act(&state, &mut events);
     tick(&mut state, &mut events, &commands);

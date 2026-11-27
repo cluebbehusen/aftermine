@@ -576,7 +576,7 @@ impl Game {
         if let Some(history) = self.history.take() {
             self.history = history.settle(&mut self.recorder, &mut self.keyframes);
         }
-        aftermine_kit::controller::record_events(&mut self.bots, &report);
+        aftermine_kit::controller::record_events(&mut self.bots, &self.state, &report);
         let _presentation_stage = self.diagnostic_stage(Stage::Presentation);
         self.refresh_fog_lift();
         self.presentation

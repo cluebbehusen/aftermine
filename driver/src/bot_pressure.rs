@@ -392,7 +392,7 @@ pub fn run(
         }
         commands.extend(aftermine_kit::bot_execution::commands(&state, &mut bots));
         let report = aftermine_kit::runner::record_and_tick(&mut state, &commands, replay.as_mut());
-        record_events(&mut bots, &report);
+        record_events(&mut bots, &state, &report);
         watch.observe(&state, defender, attacker);
     }
     let (passed, detail) = watch.verdict(&state, defender, attacker)?;

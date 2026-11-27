@@ -174,7 +174,7 @@ pub fn play(case: &Case, seed: u64, cold: bool) -> Result<ForkRow> {
             if cold {
                 return;
             }
-            record_events(&mut bots, report);
+            record_events(&mut bots, state, report);
             // The fork's own tick decides in the loop below.
             if state.current_tick() < case.at {
                 for bot in &mut bots {
@@ -209,7 +209,7 @@ pub fn play(case: &Case, seed: u64, cold: bool) -> Result<ForkRow> {
         // session stage them.
         commands.extend(bot_commands);
         let report = state.tick(&commands);
-        record_events(&mut bots, &report);
+        record_events(&mut bots, &state, &report);
         ledger.observe(&state, &report);
     }
     let ticks = state.current_tick();

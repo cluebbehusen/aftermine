@@ -190,7 +190,7 @@ impl Session {
                 .record(self.state.current_tick(), command.clone());
         }
         let report = self.state.tick(&commands);
-        record_events(&mut self.bots, &report);
+        record_events(&mut self.bots, &self.state, &report);
         report.events
     }
 

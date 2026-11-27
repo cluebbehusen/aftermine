@@ -122,3 +122,117 @@ fn a_frame_whose_extractor_vanished_is_remembered_as_failed() {
     memory.extractors = (0..300).map(|x| TilePos::new(x * 2, 0)).collect();
     assert_eq!(memory.validate(112, 600, 2, 0), Ok(()));
 }
+
+#[test]
+fn a_seen_enemy_counts_wherever_it_went_until_it_is_seen_to_die() {
+    use aftermine_sim::observation::UnitObs;
+    use aftermine_sim::{PlayerId, Scenario, UnitId};
+    let state = Scenario::skirmish().build().unwrap();
+    let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let template = observation.my_units[0].clone();
+    observation.enemy_units = [
+        (1, UnitKind::Lancer),
+        (2, UnitKind::Sentinel),
+        (3, UnitKind::Drone),
+    ]
+    .into_iter()
+    .map(|(id, kind)| UnitObs {
+        id: UnitId(id),
+        kind,
+        tile: TilePos::new(10 + i32::try_from(id).unwrap(), 10),
+        ..template.clone()
+    })
+    .collect();
+    let mut memory = Memory::default();
+    memory.observe(&observation);
+    let counted = |memory: &Memory| memory.census().collect::<Vec<_>>();
+    assert_eq!(
+        counted(&memory),
+        [UnitKind::Lancer, UnitKind::Sentinel],
+        "a drone docks and launches again under a new id"
+    );
+
+    // Gone from where they stood while it was in sight: where they are is
+    // forgotten at once, that they exist is not.
+    observation.enemy_units.clear();
+    observation
+        .visible
+        .iter_mut()
+        .for_each(|visible| *visible = true);
+    observation.tick = 12;
+    memory.observe(&observation);
+    assert!(memory.units().is_empty());
+    assert_eq!(counted(&memory), [UnitKind::Lancer, UnitKind::Sentinel]);
+
+    memory.died(&[OwnEvent::EnemyDied { unit: UnitId(1) }]);
+    assert_eq!(counted(&memory), [UnitKind::Sentinel]);
+
+    observation.tick = CENSUS_TICKS - 1;
+    memory.observe(&observation);
+    assert_eq!(counted(&memory), [UnitKind::Sentinel]);
+    observation.tick = CENSUS_TICKS;
+    memory.observe(&observation);
+    assert!(counted(&memory).is_empty(), "a death it could not see");
+
+    memory.assembled(
+        &observation,
+        &[OwnEvent::MachineAssembled {
+            unit: UnitId(9),
+            kind: UnitKind::Maw,
+            player: PlayerId(1),
+            pos: chassis::fx::Vec2Fx::default(),
+        }],
+        |_| true,
+    );
+    assert_eq!(counted(&memory), [UnitKind::Maw]);
+}
+
+#[test]
+fn checkpoints_reject_a_malformed_census() {
+    let entry = |id: u32, seen: u64| serde_json::json!({"id": id, "kind": "lancer", "seen": seen});
+    let restored = |census: Vec<serde_json::Value>| -> Memory {
+        serde_json::from_value(serde_json::json!({
+            "units": [],
+            "census": census,
+            "failures": [],
+            "abandoned": [],
+            "raided": [],
+            "scouted": [],
+            "stuck": [],
+            "extractors": [],
+        }))
+        .unwrap()
+    };
+    let valid = restored(vec![entry(1, 50), entry(2, 100)]);
+    assert_eq!(valid.validate(100, 8, 8, 0), Ok(()));
+    let json = serde_json::to_value(&valid).unwrap();
+    assert_eq!(serde_json::from_value::<Memory>(json).unwrap(), valid);
+    let malformed = [
+        ("out of order", vec![entry(2, 50), entry(1, 50)]),
+        ("counted twice", vec![entry(1, 50), entry(1, 60)]),
+        ("seen after the checkpoint", vec![entry(1, 101)]),
+        (
+            "over the cap",
+            (0..=u32::try_from(UNIT_CAP).unwrap())
+                .map(|id| entry(id, 0))
+                .collect(),
+        ),
+    ];
+    for (why, census) in malformed {
+        assert!(restored(census).validate(100, 8, 8, 0).is_err(), "{why}");
+    }
+}
+
+#[test]
+fn a_unit_seen_dying_is_forgotten_where_it_stood_too() {
+    let mut memory: Memory = serde_json::from_value(serde_json::json!({
+        "units": [{"id": 1, "kind": UnitKind::Lancer, "tile": {"x": 3, "y": 3}, "seen": 0}],
+        "census": [{"id": 1, "kind": UnitKind::Lancer, "seen": 0}],
+        "failures": [], "abandoned": [], "raided": [], "scouted": [], "stuck": [], "extractors": [],
+    }))
+    .unwrap();
+    assert_eq!(memory.units().len(), 1);
+    memory.died(&[OwnEvent::EnemyDied { unit: UnitId(1) }]);
+    assert!(memory.units().is_empty());
+    assert_eq!(memory.census().count(), 0);
+}

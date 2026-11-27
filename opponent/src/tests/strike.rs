@@ -95,6 +95,7 @@ fn known_anti_air_over_a_target_holds_a_strike_back() {
             let tile = TilePos::new(41, 9 + i32::try_from(index).unwrap());
             (1_000 + index, UnitKind::Flakhound, tile, 0)
         }));
+        json["memory"]["census"] = counted(&json["memory"]["units"]);
     });
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
     assert!(strike(&trace.unwrap().missions).is_none());
@@ -316,6 +317,7 @@ fn condors_strike_under_flakhounds_but_not_under_flak_turrets_of_the_same_price(
                 .zip(posts)
                 .map(|(id, (x, y))| (id, UnitKind::Flakhound, TilePos::new(x, y), 0)),
         );
+        json["memory"]["census"] = counted(&json["memory"]["units"]);
     });
     let (_, trace) = hounds.act_traced(&state, &mut OwnEvents::default());
     assert!(

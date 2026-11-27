@@ -134,6 +134,7 @@ fn known_defenses_hold_an_attack_until_waiting_lowers_the_margin() {
                 let tile = TilePos::new(41, 10 + i32::try_from(index).unwrap());
                 (1_000 + index, UnitKind::Sentinel, tile, now)
             }));
+            json["memory"]["census"] = counted(&json["memory"]["units"]);
             json["missions"]["waiting"] = serde_json::json!(waiting);
         })
     };
@@ -165,6 +166,7 @@ fn a_launched_attack_keeps_the_margin_its_wait_earned_as_it_sets_out() {
                 let tile = TilePos::new(41, 10 + i32::try_from(index).unwrap());
                 (1_000 + index, UnitKind::Sentinel, tile, now)
             }));
+            json["memory"]["census"] = counted(&json["memory"]["units"]);
             json["missions"] = serde_json::json!({
                 "next": 1,
                 "list": [{
@@ -618,6 +620,7 @@ fn remembering_as(scenario: &Scenario, state: &State, kind: UnitKind, count: i32
             let id = 1_000 + u32::try_from(index).unwrap();
             (id, kind, tile, state.current_tick())
         }));
+        json["memory"]["census"] = counted(&json["memory"]["units"]);
     })
 }
 
@@ -943,6 +946,7 @@ fn a_unit_sitting_out_a_stalled_route_or_firing_position_joins_no_new_attack() {
         let mut events = OwnEvents::default();
         events.record(
             PlayerId(0),
+            &state,
             &[aftermine_sim::Event::OrderStalled {
                 unit: stuck,
                 player: PlayerId(0),

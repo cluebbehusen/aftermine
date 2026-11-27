@@ -233,18 +233,16 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
     // Growth paid back by support only once the army holds what the seat
     // knows of the enemy's, each weighed against the other by the counter
     // chart: an earlier Foundry, bought while exposed, is what an early raid
-    // punishes.
-    let now = observation.tick;
+    // punishes. An enemy army out of sight still counts until it is seen to
+    // die.
     let known: Vec<(Piece, u64)> = situation
         .memory
-        .units()
-        .iter()
-        .filter(|seen| {
-            let stats = seen.kind.stats();
-            // Drones come and go from their host, as the own count leaves them.
-            (!stats.weapons.is_empty() || stats.demolition.is_some()) && !stats.docks()
+        .census()
+        .filter(|kind| {
+            let stats = kind.stats();
+            !stats.weapons.is_empty() || stats.demolition.is_some()
         })
-        .map(|seen| (Piece::Unit(seen.kind), seen.value(now)))
+        .map(|kind| (Piece::Unit(kind), u64::from(kind.stats().cost)))
         .collect();
     let army = crate::decision::army_force(observation);
     let holds = weigh(&army, &known) >= weigh(&known, &army);

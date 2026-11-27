@@ -1342,6 +1342,7 @@ fn a_defense_re_sends_only_members_that_found_a_route() {
     let mut events = OwnEvents::default();
     events.record(
         PlayerId(0),
+        &state,
         &[aftermine_sim::Event::OrderStalled {
             unit: stuck,
             player: PlayerId(0),
@@ -1772,6 +1773,7 @@ fn an_escort_remembered_beside_an_enemy_building_counts_once() {
                     .zip(escort)
                     .map(|(id, tile)| (id, UnitKind::Sentinel, tile, 11)),
             );
+            json["memory"]["census"] = counted(&json["memory"]["units"]);
         });
         let foundry = state
             .buildings()
@@ -3960,7 +3962,7 @@ fn artillery_firing_from_out_of_sight_draws_no_scuttlers() {
                 }),
         );
         let ticked = state.tick(&commands);
-        events.record(PlayerId(0), &ticked.events);
+        events.record(PlayerId(0), &state, &ticked.events);
     }
     assert!(shelled, "premise: the guns fire");
 }

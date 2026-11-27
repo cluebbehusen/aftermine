@@ -107,8 +107,8 @@ impl Probe {
         let report = self.state.tick(&commands);
         let twin_report = self.twin.tick(&commands);
         assert_eq!(report, twin_report, "independent events at {tick}");
-        record_events(&mut self.bots, &report);
-        record_events(&mut self.twin_bots, &twin_report);
+        record_events(&mut self.bots, &self.state, &report);
+        record_events(&mut self.twin_bots, &self.twin, &twin_report);
         assert_eq!(
             report,
             restored.tick(&commands),
