@@ -82,9 +82,9 @@ impl Missions {
     /// The seat's units count against the ground attackers, and the known
     /// guns beside the batteries, at what they trade against them.
     /// Returns each of the seat's own Foundries whose defense falls short of
-    /// its attackers, home-nearest first, and how far the ground attackers at
-    /// the seat's last built Foundry outweigh everything its defense holds or
-    /// could take.
+    /// its attackers, home-nearest first, and how far the ground attackers
+    /// within local reach of the seat's last built Foundry outweigh
+    /// everything its defense holds or could take.
     ///
     /// Only threats standing on or beside the Foundry's ground count. One
     /// across water or a chasm is left to production: chasing it would stall
@@ -245,7 +245,13 @@ impl Missions {
             // where they stand.
             let mission = index.map(|index| &self.list[index]);
             let met = pressing[0] * 2 / 3 + guns;
-            if *own && last {
+            // Only a force at the Foundry itself overruns it: one raiding a
+            // far building grouped to it leaves the Foundry standing.
+            if *own
+                && last
+                && crate::frame::gap(foundry.anchor, foundry.kind.size(), goal, (1, 1))
+                    <= LOCAL_REACH
+            {
                 overrun = met.saturating_sub(siege.held).max(overrun);
             }
             // A place held short of even odds is given up, but not by a

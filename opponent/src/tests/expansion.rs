@@ -1519,9 +1519,9 @@ fn foundries_placed(commands: &[PlayerCommand]) -> Vec<TilePos> {
 fn a_seat_whose_last_foundry_is_overrun_places_another_out_of_known_fire() {
     // Six East Lancers at West's start outweigh everything its 600 could
     // buy: it places a Foundry at a field out of their reach. A bank that
-    // could answer them trains instead, two Lancers are no such siege, a
-    // second built Foundry needs no backup, and once one is going up no
-    // other follows it.
+    // could answer them trains instead, two Lancers are no such siege, nor
+    // six raiding a far building, a second built Foundry needs no backup,
+    // and once one is going up no other follows it.
     let placed = |scenario: &Scenario| {
         let state = scenario.build().unwrap();
         foundries_placed(
@@ -1555,6 +1555,12 @@ fn a_seat_whose_last_foundry_is_overrun_places_another_out_of_known_fire() {
     );
     assert!(placed(&besieged(1_000, 6)).is_empty(), "the bank answers");
     assert!(placed(&besieged(600, 2)).is_empty(), "two Lancers");
+    let mut far = besieged(600, 0);
+    far.buildings.push(building(0, BuildingKind::Array, 22, 9));
+    for (x, y) in [(24, 8), (24, 9), (24, 10), (25, 8), (25, 9), (25, 10)] {
+        far.units.push(unit(1, UnitKind::Lancer, x, y));
+    }
+    assert!(placed(&far).is_empty(), "a raid on a far building");
     let mut second = besieged(600, 6);
     second
         .buildings
