@@ -3962,7 +3962,7 @@ fn artillery_firing_from_out_of_sight_draws_no_scuttlers() {
                 }),
         );
         let ticked = state.tick(&commands);
-        events.record(PlayerId(0), &ticked.events);
+        events.record(PlayerId(0), &state, &ticked.events);
     }
     assert!(shelled, "premise: the guns fire");
 }
