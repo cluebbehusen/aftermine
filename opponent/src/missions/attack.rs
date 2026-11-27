@@ -429,10 +429,11 @@ impl Missions {
         if !ledger.order(hunt(recruits.clone(), rally)) {
             return false;
         }
-        // The trace compares what was sent with the defense around the
-        // target, each weighed against the other.
+        // The trace compares what was sent with the army and guns the need
+        // counted, each weighed against the other.
         let sent = striking_mix(recruits.iter().filter_map(|id| mine(plan.observation, *id)));
-        let defense = defense_mix(plan.observation, plan.memory, &[target.approach], &[]);
+        let (mut defense, buildings) = plan.met(target);
+        defense.extend(buildings);
         ledger.launched(super::Launch {
             mission: self.next,
             kind: Task::Attack {
@@ -1483,8 +1484,12 @@ impl<'a> Plan<'a> {
     /// the way runs, and above the lowest rung the other known defenses,
     /// which count where their fire reaches the way.
     fn opposing(&self, target: Target) -> (Force, Force, Vec<&'a BuildingObs>) {
-        let (units, buildings) =
-            opposed_mixes(self.observation, self.map, self.memory, &[target.approach]);
+        let (units, buildings) = opposed_mixes(
+            self.observation,
+            self.map,
+            self.memory,
+            (target.owner, &[target.approach]),
+        );
         if !surveys(self.difficulty) {
             return (units, buildings, Vec::new());
         }
@@ -1949,19 +1954,21 @@ pub(super) fn defense(observation: &ObservationData, memory: &Memory, tile: Tile
     defense_around(observation, memory, &[tile], &[])
 }
 
-/// The known army an attack on `tiles` would meet, as the chart weighs it:
-/// every armed enemy the seat remembers that hits ground, on the first
-/// tile's ground or in the air, by confidence, with the known enemy
-/// buildings guarding any of `tiles`, each counted once. An army that beats
+/// The known army an attack on `owner`'s `tiles` would meet, as the chart
+/// weighs it: every armed unit of `owner`'s that hits ground the seat has seen
+/// and not seen die, last seen on the first tile's ground or in the air, at
+/// its full price wherever it now is, with the known enemy buildings guarding
+/// any of `tiles`, each counted once. Another enemy's army fights the seat's
+/// allies or comes at its home, where the home defense counts it. An army that beats
 /// only a target's own guard meets the rest on its way in or at the target,
 /// and turns back.
 pub(super) fn opposed(
     observation: &ObservationData,
     map: &MapModel,
     memory: &Memory,
-    tiles: &[TilePos],
+    (owner, tiles): (PlayerId, &[TilePos]),
 ) -> Force {
-    let (mut units, buildings) = opposed_mixes(observation, map, memory, tiles);
+    let (mut units, buildings) = opposed_mixes(observation, map, memory, (owner, tiles));
     units.extend(buildings);
     units
 }
@@ -1972,26 +1979,17 @@ fn opposed_mixes(
     observation: &ObservationData,
     map: &MapModel,
     memory: &Memory,
-    tiles: &[TilePos],
+    (owner, tiles): (PlayerId, &[TilePos]),
 ) -> (Force, Force) {
-    let now = observation.tick;
     let ground = tiles.first().and_then(|tile| map.component(*tile));
-    let home = map
-        .start(observation.me)
-        .and_then(|start| map.component(start));
     let units = memory
-        .units()
-        .iter()
-        .filter(|unit| {
-            crate::defenses::reach(unit.kind) > Fx::ZERO
-                && (unit.kind.stats().domain == Domain::Air || map.component(unit.tile) == ground)
+        .census_on(map)
+        .filter(|(kind, player, on)| {
+            *player == owner
+                && crate::defenses::reach(*kind) > Fx::ZERO
+                && (kind.stats().domain == Domain::Air || *on == ground)
         })
-        .map(|unit| {
-            (
-                Piece::Unit(unit.kind),
-                super::remembered(unit, map, home, now),
-            )
-        })
+        .map(|(kind, _, _)| (Piece::Unit(kind), u64::from(kind.stats().cost)))
         .collect();
     let buildings = observation
         .enemy_buildings

@@ -105,10 +105,11 @@ actions affect the running total and mission state.
   whether or not harvesting is saturated; Reclaimers wait until it is and the
   scrap around the start has begun to run down. Growth outranks tech by what it
   pays back, never by a rule that holds tech down. A Deep Bore waits while an
-  enemy army the seat knows of outweighs its own. What the army needs and what
-  holds growth back count every enemy unit the seat has seen until it sees that
-  unit die or three minutes pass unseen, wherever it now is; never a unit it has
-  not seen.
+  enemy army the seat knows of outweighs its own. What the army needs, what
+  holds growth back and what an attack or lift must beat count every enemy unit
+  the seat has seen until it sees that unit die or three minutes pass unseen,
+  wherever it now is, a ground unit on the ground it was last seen on; never a
+  unit it has not seen.
 - A site with scrap is taken once the seat's own Foundry, an ally's building or
   an enemy's Foundry stands near its scrap. No other enemy building takes it;
   enemy guns that reach the site count against it as danger instead.
@@ -149,17 +150,22 @@ actions affect the running total and mission state.
   of their own, while ground reaches no enemy.
 - An attack, and a lift, runs one at a time and takes the whole free army it can
   use beyond the home defense: one push that wins what it meets beats several
-  that each meet the enemy alone. Other missions may run several of a kind at
-  once on distinct targets, each sized to its own target's need.
+  that each meet the enemy alone. The home defense is the stance's floor, or its
+  share of the enemy units known to stand on the seat's side of the map,
+  whichever is more; enemies known elsewhere, or no longer located, hold nothing
+  at home and count against the attack instead. Other missions may run several
+  of a kind at once on distinct targets, each sized to its own target's need.
 - A mission's need decides when it starts and whether it goes on: the known
-  force it would meet, by a margin. A mission weighs that force and its own by
-  what each kind, and each gun at its rung, trades against the other side, as
-  measured in the simulation. A raid also counts the strongest known force on
-  its way to the target, and a raider drawn far past its target runs home.
-  Attacks and lifts then take every suitable free unit, and other missions take
-  only the force they need. A mission keeps its force while its purpose holds,
-  and releases it when the purpose disappears or recovery finishes. At a safe
-  transition it can yield suitable units to an emergency, though an attack
+  force it would meet, by a margin; for an attack or lift, every counted
+  aircraft of the target's owner and every counted ground unit of that owner's
+  on the ground it goes to, in sight or not. A mission weighs that force and its
+  own by what each kind, and each gun at its rung, trades against the other
+  side, as measured in the simulation. A raid also counts the strongest known
+  force on its way to the target, and a raider drawn far past its target runs
+  home. Attacks and lifts then take every suitable free unit, and other missions
+  take only the force they need. A mission keeps its force while its purpose
+  holds, and releases it when the purpose disappears or recovery finishes. At a
+  safe transition it can yield suitable units to an emergency, though an attack
   regrouping at home yields its units only after other suitable units; loaded
   passengers are released only after landing.
 - Missions have phases (gather, advance, stage, travel, engage, withdraw,
@@ -187,10 +193,11 @@ Checkpoints preserve all non-derivable state that affects future decisions. No
 other non-derivable state persists between decisions:
 
 - memory of enemy units and buildings, of which enemy units it has seen and not
-  seen die, of failed objectives, of raided targets, of when each scouting point
-  was last in sight, of own units whose orders stalled for want of a route or a
-  firing position, and of the seat's own Extractors at the last decision, so a
-  frame whose Extractor is gone counts as a failed objective;
+  seen die and where each was last seen, of failed objectives, of raided
+  targets, of when each scouting point was last in sight, of own units whose
+  orders stalled for want of a route or a firing position, and of the seat's own
+  Extractors at the last decision, so a frame whose Extractor is gone counts as
+  a failed objective;
 - missions and their phases; what a fighting attack, lift, strike or clearance
   last knew of the enemy's health and when it last made progress, which tell
   whether the fight goes on; and since when a free army that could attack has
@@ -274,7 +281,7 @@ Each behavior is proven by a staged scenario test.
 | Known defenses at target or on route                       | Bring siege, or pick another target                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Known defenses on the way to a target                      | Gather out of their reach, then go in together; fall back out of reach when shelled there before strong enough                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | Ground-severed enemy                                       | Splash bombers and empty Rocs clear the anti-air around the lift's target; then a lift of the whole free army, after a recent look, lands out of reach of known fire                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Local opportunity                                          | Attack when the free army beats the known army it would meet, above a stance-bounded minimum                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Local opportunity                                          | Attack when the free army beats the army it would meet, in sight or not, above a stance-bounded minimum                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Best target out of the army's reach                        | Attack the best known target the free army beats at the full margin, and keep it while the best stays out of reach                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Losing a fight                                             | Withdraw when the whole army is outweighed, with a threshold shaped by personality; when only the units in the fight are, they fall back onto the rest of the army and the attack goes on. A defender drawn past what it defends and its fight runs back unless under fire and not outweighed there                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Army cleared what it met short of a target it knows        | Go on to that target while the fight's time lasts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -330,22 +337,25 @@ kind.
   never grant or remove a capability.
 - **Stance** bounds posture: minimum home defense, minimum attack size, and how
   early and how large attacks get. Offensive missions leave the home defense
-  behind while an enemy could reach home; defense takes every unit.
+  behind while an enemy could reach home: the floor, or the stance's share of
+  the enemy units remembered nearer the seat's start than any hostile start
+  (ground units by ground, aircraft in a straight line), whichever is more, less
+  the guns on the start's ground. Defense takes every unit.
 - **Difficulty** sets cognitive and execution limits: how often a seat decides,
   which is its reaction time; how many unit orders one decision may give, which
-  is its attention; how much strength an attack must bring over the known
-  defense; and how fully it builds its economy: lower rungs staff their scrap
-  nodes more thinly, refit fewer of their Extractors into Deep Bores and want
-  each kind of growth less, though never so little that they stop growing. The
-  lowest rung also misjudges the enemy's strength by a deterministic draw from
-  its seed. Every rung counts its own defenders and the attackers by what each
-  kind trades against the other's, as measured in the simulation, and trains
-  what beats a threat at home. Memory fades, and forgets a seen enemy unit, at
-  the same rate on every rung. Difficulty also sets how well a seat carries out
-  its repertoire: lower rungs attack and defend piecemeal, pick targets worse,
-  walk into known defenses as a column or gather short of them only briefly,
-  count only the defenses around a target, let a defense call back an army on
-  its way, focus fire on the nearest enemy or by a rough read of its wounds,
-  leave reinforcements at home, and lift without a fresh look or without
+  is its attention; how much strength an attack must bring over the enemy army
+  it would meet; and how fully it builds its economy: lower rungs staff their
+  scrap nodes more thinly, refit fewer of their Extractors into Deep Bores and
+  want each kind of growth less, though never so little that they stop growing.
+  The lowest rung also misjudges the enemy's strength by a deterministic draw
+  from its seed. Every rung counts its own defenders and the attackers by what
+  each kind trades against the other's, as measured in the simulation, and
+  trains what beats a threat at home. Memory fades, and forgets a seen enemy
+  unit, at the same rate on every rung. Difficulty also sets how well a seat
+  carries out its repertoire: lower rungs attack and defend piecemeal, pick
+  targets worse, walk into known defenses as a column or gather short of them
+  only briefly, count only the defenses around a target, let a defense call back
+  an army on its way, focus fire on the nearest enemy or by a rough read of its
+  wounds, leave reinforcements at home, and lift without a fresh look or without
   counting bomber cover. Every rung keeps every capability. Lower rungs make
   understandable mistakes, and higher rungs beat lower ones.

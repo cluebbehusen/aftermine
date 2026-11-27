@@ -1323,6 +1323,29 @@ fn a_severed_seat_without_an_airworks_trains_an_army_against_enemies_on_its_grou
         armed(&state, &commands) > 0,
         "invaders on its own ground are: {commands:?}"
     );
+
+    // Invaders seen on its ground a minute ago and gone from there since
+    // still call for an army: none has been seen to die.
+    let mut state = alone.build().unwrap();
+    advance_to(&mut state, 1_300, &[]);
+    let mut opponent = restored_with(&seat(&alone, 0), &alone, &state, |json| {
+        json["memory"]["units"] =
+            super::remembered(landed.iter().zip(0..).map(|(&(x, y), index)| {
+                (1_000 + index, UnitKind::Sentinel, TilePos::new(x, y), 100)
+            }));
+        json["memory"]["census"] = counted(&json["memory"]["units"]);
+    });
+    while !opponent.decision_due(&state) {
+        state.tick(&[]);
+    }
+    let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    let roles = trace.unwrap().army.roles;
+    assert!(
+        roles
+            .iter()
+            .any(|role| role.role == crate::composition::Role::Line && role.need > 0),
+        "{roles:?}"
+    );
 }
 
 /// The strait with West's tech and a Harvester but no army, and `scrap` for
@@ -1576,6 +1599,30 @@ fn an_island_army_seen_long_ago_still_holds_a_lift_back() {
         !after(island.into()),
         "twelve Sentinels seen a thousand ticks ago cannot have left their island"
     );
+}
+
+#[test]
+fn bombers_seen_long_ago_still_hold_a_lift_back() {
+    // Buzzards seen a minute ago could be anywhere over the lift's way: not
+    // seen to die, they still count against it.
+    let mut state = strait().build().unwrap();
+    advance_to(&mut state, 1_200, &[]);
+    let after = |units| {
+        let (_, opponent) = recalled(config(), &state, 1_200, units);
+        lifts(opponent, &state)
+    };
+    assert!(after(serde_json::json!([])), "premise: the lift could go");
+    let bombers: Vec<serde_json::Value> = (0..8)
+        .map(|index| {
+            serde_json::json!({
+                "id": 1_000 + index,
+                "kind": "buzzard",
+                "tile": {"x": 30 + index % 4, "y": 9 + index / 4},
+                "seen": 0,
+            })
+        })
+        .collect();
+    assert!(!after(bombers.into()));
 }
 
 #[test]

@@ -160,10 +160,10 @@ Then each rung's seats, and in `bot-summary` each team layout and rung's:
   with a 95% interval over seat-legs. They move with far fewer legs than win
   share, but they follow losing in general, not one kind of loss.
 - **Ledger**:
-  - **Attacks**, grouped by strength sent against the known defense at launch:
-    how many withdrew, fought on or never met the enemy, and value dealt over
-    value lost. A withdrawal rate that does not fall as the sent-to-known ratio
-    rises means the estimate misses what the attack meets.
+  - **Attacks**, grouped by strength sent against the known army and guns they
+    would meet at launch: how many withdrew, fought on or never met the enemy,
+    and value dealt over value lost. A withdrawal rate that does not fall as the
+    sent-to-known ratio rises means the estimate misses what the attack meets.
   - **Units and buildings**, most-bought first: value dealt per scrap paid, by
     victim and by place (near its own buildings, near the enemy's, or neither),
     enabled (damage friendly shooters dealt to targets only that kind saw),

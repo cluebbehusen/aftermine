@@ -15,16 +15,17 @@ use std::fmt::Write as _;
 /// kills still count: a withdrawal finishes and stragglers die.
 const TAIL_TICKS: u64 = 300;
 
-/// Attacks grouped by what was sent against the known defense.
+/// Attacks grouped by what was sent against the known army and guns they
+/// would meet.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttackCalibration {
-    /// Launched with no defense known at the target.
+    /// Launched with nothing known that the attack would meet.
     pub unknown: AttackBucket,
-    /// Sent under twice the known defense.
+    /// Sent under twice what was known.
     pub under_2x: AttackBucket,
-    /// Sent at two to four times the known defense.
+    /// Sent at two to four times what was known.
     pub from_2x_to_4x: AttackBucket,
-    /// Sent at four times the known defense or more.
+    /// Sent at four times what was known or more.
     pub over_4x: AttackBucket,
 }
 
@@ -32,7 +33,7 @@ impl AttackCalibration {
     /// The buckets with their names, in order.
     pub fn buckets(&self) -> [(&'static str, &AttackBucket); 4] {
         [
-            ("no known defense", &self.unknown),
+            ("nothing known", &self.unknown),
             ("under 2x", &self.under_2x),
             ("2x to 4x", &self.from_2x_to_4x),
             ("4x and over", &self.over_4x),

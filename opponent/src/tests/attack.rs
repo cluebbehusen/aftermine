@@ -153,6 +153,84 @@ fn known_defenses_hold_an_attack_until_waiting_lowers_the_margin() {
 }
 
 #[test]
+fn an_army_out_of_sight_holds_an_attack_until_waiting_lowers_the_margin() {
+    // Five Sentinels seen by East's base a minute ago: the seat no longer
+    // knows where they stand, but has not seen them die, so they still ask
+    // for twice their value.
+    let scenario = armed(8, &[]);
+    let mut state = scenario.build().unwrap();
+    advance_to(&mut state, 9_600, &[]);
+    let seen = state.current_tick() - 1_200;
+    let staged = |waiting: Option<u64>| {
+        restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+            json["memory"]["units"] = remembered((0..5).map(|index: u32| {
+                let tile = TilePos::new(41, 10 + i32::try_from(index).unwrap());
+                (1_000 + index, UnitKind::Sentinel, tile, seen)
+            }));
+            json["memory"]["census"] = counted(&json["memory"]["units"]);
+            json["missions"]["waiting"] = serde_json::json!(waiting);
+        })
+    };
+    let launches = |mut opponent: Opponent| {
+        let trace = opponent.act_traced(&state, &mut OwnEvents::default()).1;
+        attack(&trace.unwrap().missions).is_some()
+    };
+    assert!(!launches(staged(None)), "an army out of sight still counts");
+    assert!(
+        launches(staged(Some(0))),
+        "a long wait brings the margin down to even"
+    );
+}
+
+/// What West sends on its first decision with `west` Sentinels beside its
+/// garrison and six East Sentinels remembered at `spots`, just seen: the
+/// units of its attack, if it launched one.
+fn sent_against(west: usize, spots: &[(i32, i32)]) -> Option<u32> {
+    let mut scenario = field();
+    for (x, y) in GARRISON {
+        scenario.units.push(unit(0, UnitKind::Sentinel, x, y));
+    }
+    let army = (6..=9).flat_map(|x| (7..=12).map(move |y| (x, y)));
+    for (x, y) in army.take(west) {
+        scenario.units.push(unit(0, UnitKind::Sentinel, x, y));
+    }
+    let state = scenario.build().unwrap();
+    let now = state.current_tick();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["memory"]["units"] =
+            remembered(spots.iter().zip(0..).map(|(&(x, y), index)| {
+                (1_000 + index, UnitKind::Sentinel, TilePos::new(x, y), now)
+            }));
+        json["memory"]["census"] = counted(&json["memory"]["units"]);
+    });
+    let trace = opponent.act_traced(&state, &mut OwnEvents::default()).1;
+    attack(&trace.unwrap().missions).map(|mission| mission.units)
+}
+
+#[test]
+fn an_army_seen_by_its_own_base_holds_nothing_at_home() {
+    // Eight East Sentinels by their own base ask an attack for twice their
+    // value; home keeps only its floor, the garrison, rather than holding
+    // against them as well, so seventeen Sentinels beside it are enough.
+    let by_their_base: Vec<(i32, i32)> = (8..=11).flat_map(|y| [(40, y), (41, y)]).collect();
+    let sent = sent_against(17, &by_their_base);
+    assert!(sent.is_some(), "the army beyond the floor beats them twice");
+    assert!(sent.unwrap() <= 17, "the garrison stays home: {sent:?}");
+}
+
+#[test]
+fn enemies_on_its_side_keep_more_home_than_those_by_their_base() {
+    // Six East Sentinels on West's side of the map could reach home before
+    // an attack reaches East's start, so home holds against them; by their
+    // own base they hold nothing at home and count against the attack alone.
+    let near: Vec<(i32, i32)> = (18..=20).flat_map(|x| [(x, 19), (x, 20)]).collect();
+    let far: Vec<(i32, i32)> = (9..=11).flat_map(|y| [(40, y), (41, y)]).collect();
+    let (near, far) = (sent_against(16, &near), sent_against(16, &far));
+    assert!(near.is_some() && far.is_some(), "{near:?} {far:?}");
+    assert!(near < far, "{near:?} < {far:?}");
+}
+
+#[test]
 fn a_launched_attack_keeps_the_margin_its_wait_earned_as_it_sets_out() {
     let scenario = armed(8, &[]);
     let mut state = scenario.build().unwrap();
@@ -315,9 +393,10 @@ fn lifecycle(config: BotConfig) -> (u32, u32) {
     let mut opponent = seat_with(&scenario, 0, config);
     let mut traces: Vec<Trace> = Vec::new();
     let mut raided = None;
+    let mut events = OwnEvents::default();
     while state.current_tick() < 2_400 {
         let now = state.current_tick();
-        let (mut commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let (mut commands, trace) = opponent.act_traced(&state, &mut events);
         if now == 1 {
             commands.push(run(1, scuttlers.clone(), 12, 2));
         }
@@ -330,7 +409,8 @@ fn lifecycle(config: BotConfig) -> (u32, u32) {
             }
             traces.push(trace);
         }
-        state.tick(&commands);
+        let ticked = state.tick(&commands);
+        events.record(PlayerId(0), &state, &ticked.events);
     }
 
     let defends = |trace: &Trace| {
@@ -605,7 +685,7 @@ fn reinforcements_gather_before_the_attack_sets_out() {
 }
 
 /// `scenario`'s West seat, under the scenario's config, remembering `count`
-/// East Sentinels seen now in the middle of the field, free to walk to West's
+/// East Sentinels seen now on West's side of the field, free to walk to its
 /// home.
 fn remembering(scenario: &Scenario, state: &State, count: i32) -> Opponent {
     remembering_as(scenario, state, UnitKind::Sentinel, count)
@@ -616,7 +696,9 @@ fn remembering_as(scenario: &Scenario, state: &State, kind: UnitKind, count: i32
     let config = scenario.players[0].bot_config.unwrap();
     restored_with(&seat_with(scenario, 0, config), scenario, state, |json| {
         json["memory"]["units"] = remembered((0..count).map(|index| {
-            let tile = TilePos::new(24 + index % 4, 8 + index / 4);
+            // On West's side of the field, nearer its start than East's:
+            // they could come home while an attack is away.
+            let tile = TilePos::new(18 + index % 4, 8 + index / 4);
             let id = 1_000 + u32::try_from(index).unwrap();
             (id, kind, tile, state.current_tick())
         }));

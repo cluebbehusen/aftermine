@@ -81,8 +81,12 @@ fn a_start_scouting_sees_later_in_the_decision_is_no_longer_presumed_held() {
 /// [`Plan::need_at`] as it walked the way to every target, each enemy
 /// weighed against `own`.
 fn need_walking_the_way(plan: &Plan<'_>, target: Target, breach: u64, own: &[(Piece, u64)]) -> u64 {
-    let (units, mut buildings) =
-        opposed_mixes(plan.observation, plan.map, plan.memory, &[target.approach]);
+    let (units, mut buildings) = opposed_mixes(
+        plan.observation,
+        plan.map,
+        plan.memory,
+        (target.owner, &[target.approach]),
+    );
     if surveys(plan.difficulty) {
         buildings = plan
             .on_the_way(target, &plan.way(target))
@@ -160,4 +164,33 @@ fn whether_an_army_meets_a_need_never_hangs_on_skipping_the_way_there() {
         }
     }
     assert!(open.iter().all(|cases| *cases > 0), "{open:?}");
+}
+
+#[test]
+fn an_attack_counts_only_its_target_owner_s_army() {
+    // Two enemies' armies seen on the target's ground: the attack on the
+    // first meets the first's; the second's fights the seat's allies, or
+    // comes at its home, where the home defense counts it.
+    let (observation, map, _) = skirmish();
+    let approach = map.start(PlayerId(1)).unwrap();
+    let entry = |id: u32, player: u8, kind: &str| serde_json::json!({"id": id, "kind": kind, "player": player, "tile": approach, "seen": 0});
+    let memory: Memory = serde_json::from_value(serde_json::json!({
+        "units": [],
+        "census": [entry(1, 1, "lancer"), entry(2, 2, "warden")],
+        "failures": [],
+        "abandoned": [],
+        "raided": [],
+        "scouted": [],
+        "stuck": [],
+        "extractors": [],
+    }))
+    .unwrap();
+    let (units, _) = opposed_mixes(&observation, &map, &memory, (PlayerId(1), &[approach]));
+    assert_eq!(
+        units,
+        [(
+            Piece::Unit(UnitKind::Lancer),
+            u64::from(UnitKind::Lancer.stats().cost)
+        )]
+    );
 }

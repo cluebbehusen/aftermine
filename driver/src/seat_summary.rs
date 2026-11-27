@@ -320,7 +320,7 @@ pub fn render(out: &mut String, groups: &[(String, &SeatSummary)]) {
         let _ = writeln!(out, "\nledger, {label}: {} seat-legs", summary.seat_legs);
         let _ = writeln!(
             out,
-            "  attacks, by strength sent against the known defense:"
+            "  attacks, by strength sent against the known army they would meet:"
         );
         summary.attacks.render(out, "    ");
         summary.ledger.render(out, "  ", Some(LEDGER_KINDS));

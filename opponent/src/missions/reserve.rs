@@ -27,7 +27,10 @@ pub(super) const LOCAL_REACH: i32 = 12;
 /// What the seat keeps at one of its buildings against the known enemies
 /// that could reach it, in each domain: the stance's share of those enemies,
 /// at least the stance's floor at the start's Foundry, less the guns that
-/// already cover it. Each side counts by what it trades against the other,
+/// already cover it. At the start's Foundry those are the enemies known to
+/// stand on the seat's side of the map; an enemy army known elsewhere, or no
+/// longer located, is what an attack must beat instead, so it holds nothing
+/// at home. Each side counts by what it trades against the other,
 /// by the counter chart: against Lancers, Sentinels hold less than their
 /// price and Wardens more.
 #[derive(Clone, Default)]
@@ -58,9 +61,9 @@ pub(crate) struct Keep {
 impl Keep {
     /// What the seat keeps home from offense, before the units already out
     /// defending count: nothing while no enemy could reach home that way,
-    /// else the stance's floor or its share of the known enemy army that
-    /// could, whichever is more, less the static defenses on the start's
-    /// ground that already cover it.
+    /// else the stance's floor or its share of the enemies known to stand on
+    /// the seat's side of the map, whichever is more, less the static
+    /// defenses on the start's ground that already cover it.
     pub(super) fn home(
         observation: &ObservationData,
         map: &MapModel,
@@ -88,8 +91,9 @@ impl Keep {
     }
 
     /// What the seat keeps at the building of `kind` at `anchor`. The
-    /// start's Foundry keeps the home reserve; any other building keeps the
-    /// stance's share of the known enemies near it alone. Completed guns
+    /// start's Foundry keeps the home reserve against the enemies on the
+    /// seat's side of the map; any other building keeps the stance's share
+    /// of the known enemies near it alone. Completed guns
     /// covering it count against either: every gun on the start's ground,
     /// elsewhere those whose range reaches the building.
     pub(super) fn of(
@@ -109,20 +113,19 @@ impl Keep {
             BotStance::Balanced => (minimum(stance) / 2, 1_000),
             BotStance::Aggressive => (0, 500),
         };
-        let armed = |unit: &&SeenUnit| !unit.kind.stats().weapons.is_empty();
         let airworks = observation
             .enemy_buildings
             .iter()
             .any(|building| building.kind == BuildingKind::Airworks);
         let walks = map.hostile_distance(me, anchor) != UNREACHABLE;
+        // Whether an enemy could come home at all reads every enemy unit the
+        // seat knows exists, located or not.
         let reach = [
-            walks || airworks || memory.units().iter().any(|unit| carrier(unit.kind)),
+            walks || airworks || memory.census().any(carrier),
             airworks
-                || memory
-                    .units()
-                    .iter()
-                    .filter(armed)
-                    .any(|unit| unit.kind.stats().domain == Domain::Air),
+                || memory.census().any(|kind| {
+                    !kind.stats().weapons.is_empty() && kind.stats().domain == Domain::Air
+                }),
         ];
         let threat = DOMAINS.map(|domain| {
             memory
@@ -132,7 +135,11 @@ impl Keep {
                 .filter(|unit| unit.kind.stats().domain == domain)
                 .filter(|unit| domain == Domain::Air || map.component(unit.tile) == home)
                 .filter(|unit| {
-                    primary || gap(anchor, kind.size(), unit.tile, (1, 1)) <= LOCAL_REACH
+                    if primary {
+                        ours(map, me, unit)
+                    } else {
+                        gap(anchor, kind.size(), unit.tile, (1, 1)) <= LOCAL_REACH
+                    }
                 })
                 .map(|unit| (Piece::Unit(unit.kind), unit.value(now)))
                 .collect::<Vec<_>>()
@@ -294,17 +301,33 @@ impl Keep {
     }
 }
 
-/// Value of the armed enemy ground units the seat remembers that could come
-/// at home: those on ground connected to its start.
-pub(crate) fn threat(map: &MapModel, memory: &Memory, me: PlayerId, now: u64) -> u64 {
+/// Value of the armed enemy ground units the seat knows of that could come
+/// at home: those last seen on its start's ground, at their full price
+/// wherever they now are.
+pub(crate) fn threat(map: &MapModel, memory: &Memory, me: PlayerId) -> u64 {
+    let home = map.start(me).and_then(|start| map.component(start));
     memory
-        .units()
-        .iter()
-        .filter(|unit| unit.kind.stats().can_fight())
-        .filter(|unit| unit.kind.stats().domain == Domain::Ground)
-        .filter(|unit| map.distance(me, unit.tile) != UNREACHABLE)
-        .map(|unit| unit.value(now))
+        .census_on(map)
+        .filter(|(kind, _, on)| {
+            kind.stats().can_fight() && kind.stats().domain == Domain::Ground && *on == home
+        })
+        .map(|(kind, _, _)| u64::from(kind.stats().cost))
         .sum()
+}
+
+/// Whether `unit` was last seen on the seat's side of the map: a ground unit
+/// nearer the seat's start than any hostile start by ground, an aircraft by
+/// a straight line. An enemy that near reaches home before an attack sent
+/// now reaches its own start.
+fn ours(map: &MapModel, me: PlayerId, unit: &SeenUnit) -> bool {
+    if unit.kind.stats().domain == Domain::Ground {
+        return map.distance(me, unit.tile) < map.hostile_distance(me, unit.tile);
+    }
+    let away = |player: PlayerId| {
+        map.start(player)
+            .map_or(i32::MAX, |start| start.chebyshev(unit.tile))
+    };
+    map.hostiles(me).map(away).all(|far| away(me) < far)
 }
 
 /// What free units at home may still take away on offense: their value
