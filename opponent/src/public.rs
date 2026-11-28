@@ -28,6 +28,7 @@ pub(crate) fn merge(observation: &mut ObservationData) {
                 }
             }
             None => observation.enemy_buildings.push(BuildingObs {
+                reload: None,
                 provisional: false,
                 id: BuildingId(u32::MAX),
                 player: public.owner,

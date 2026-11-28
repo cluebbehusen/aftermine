@@ -3,8 +3,9 @@
 //! An [`ObservationData`] is the only input a bot policy receives. It is
 //! serializable, and [`ObservationData::fog_honest`] builds it through the
 //! player's own vision: visible enemies live, remembered buildings as ghosts,
-//! remembered scrap amounts, anonymous team-shared salvage warnings, and the
-//! public buildings every seat knows of, nothing else.
+//! remembered scrap amounts, anonymous team-shared salvage warnings, rounds
+//! seen coming out of the fog, and the public buildings every seat knows of,
+//! nothing else.
 //!
 //! Fog-honesty is enforced by explicit filtering, not trust:
 //! `Vision` alone is not a safe boundary (the `State` behind it exposes
@@ -46,6 +47,24 @@ pub struct FireMark {
     pub tile: TilePos,
     /// The point it came from, seen from `tile`.
     pub from: chassis::compass::CompassPoint,
+}
+
+/// A direct round this seat's team saw come out of the fog lately: where it
+/// came into sight, where it landed, the compass point it came from and what
+/// fired it, as the round drawn over visible ground and the report heard
+/// where it lands show them, never where the gun stood.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShotMark {
+    /// The first tile of the round's line the team saw.
+    pub entry: TilePos,
+    /// Where it landed.
+    pub impact: TilePos,
+    /// The point it came from, seen from `impact`.
+    pub from: chassis::compass::CompassPoint,
+    /// What fired it.
+    pub shooter: crate::vision::Shooter,
+    /// The tick of the latest such round.
+    pub at: Tick,
 }
 
 impl FireMark {
@@ -118,6 +137,25 @@ pub struct UnitObs {
     /// it is reported for allies and enemies in sight too.
     #[serde(default)]
     pub heading: u8,
+    /// Ticks each weapon still waits before it may fire, indexed like the
+    /// kind's weapons: zero may fire on the next tick (see [`reload`]). A
+    /// machine shows its reload as it charges, so like `heading` it is
+    /// reported for allies and enemies in sight too.
+    #[serde(default)]
+    pub reload: [u32; crate::stats::MAX_WEAPONS],
+}
+
+/// Ticks each weapon slot still waits before it may fire, from a unit's
+/// `cooldowns`: a weapon whose countdown reads one or zero after a tick may
+/// fire on the next, since each tick counts down before it fires.
+pub fn reload(cooldowns: [u32; crate::stats::MAX_WEAPONS]) -> [u32; crate::stats::MAX_WEAPONS] {
+    cooldowns.map(|ticks| ticks.saturating_sub(1))
+}
+
+/// A built armed structure's [`reload`], as its gun shows it; `None` for one
+/// with no gun or not yet built.
+pub fn building_reload(b: &crate::state::Building) -> Option<u32> {
+    (b.built() && !b.stats().weapons.is_empty()).then(|| b.cooldown.saturating_sub(1))
 }
 
 /// What kind of repair work an own worker's program is.
@@ -193,6 +231,10 @@ pub struct BuildingObs {
     /// Upgrade-ladder rung (0 = base) — for ghosts, as last seen.
     #[serde(default)]
     pub tier: u8,
+    /// A built armed structure's [`building_reload`] while in sight; `None`
+    /// for ghosts and structures with no gun.
+    #[serde(default)]
+    pub reload: Option<u32>,
 }
 
 /// Ticks before an aircraft leaves over which an Airworks opens its bay:
@@ -335,6 +377,11 @@ pub struct ObservationData {
     /// point).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub downed_shells: Vec<FireMark>,
+    /// Direct rounds this seat's team lately saw come out of the fog.
+    /// Bounded and expired by the authoritative vision system; sorted by
+    /// (impact y, x, entry y, x, compass point, shooter).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fog_shots: Vec<ShotMark>,
     /// Magazines this seat may know of, in building-id order: its team's
     /// in full, hostile ones' loaded rounds, round in assembly and deck
     /// while in sight.
@@ -476,6 +523,7 @@ impl ObservationData {
                     built: b.built(),
                     seen: true,
                     tier: b.tier,
+                    reload: building_reload(b),
                 });
             } else if b.tiles().any(|t| vision.visible(t)) && state.building_apparent(me, b) {
                 obs.enemy_buildings.push(BuildingObs {
@@ -488,6 +536,7 @@ impl ObservationData {
                     built: b.built(),
                     seen: true,
                     tier: b.tier,
+                    reload: building_reload(b),
                 });
             } else {
                 continue;
@@ -518,6 +567,7 @@ impl ObservationData {
                     built: ghost.built,
                     seen: false,
                     tier: ghost.tier,
+                    reload: None,
                 });
             }
         }
@@ -595,6 +645,7 @@ impl ObservationData {
             incoming_shells: Vec::new(),
             shell_impacts: shell_impacts(state, me),
             downed_shells: downed_shells(state, me),
+            fog_shots: fog_shots(state, me),
             magazines: Vec::new(),
             warheads: Vec::new(),
             works: Vec::new(),
@@ -636,6 +687,25 @@ pub fn shell_impacts(state: &State, me: PlayerId) -> Vec<FireMark> {
 /// compass point).
 pub fn downed_shells(state: &State, me: PlayerId) -> Vec<FireMark> {
     FireMark::recent(state, state.vision(me).downed_shells())
+}
+
+/// The direct rounds `me`'s team lately saw come out of the fog, sorted by
+/// (impact y, x, entry y, x, compass point, shooter).
+pub fn fog_shots(state: &State, me: PlayerId) -> Vec<ShotMark> {
+    let lasts = crate::stats::FOG_SHOT_MEMORY_TICKS + 1;
+    state
+        .vision(me)
+        .fog_shots()
+        .iter()
+        .filter(|shot| shot.expires_at > state.current_tick())
+        .map(|shot| ShotMark {
+            entry: shot.entry,
+            impact: shot.impact,
+            from: shot.from,
+            shooter: shot.shooter,
+            at: shot.expires_at.saturating_sub(lasts),
+        })
+        .collect()
 }
 
 /// The public buildings hostile to `me`, sorted by (y, x, owner). Own and
@@ -705,6 +775,7 @@ fn own_unit(state: &State, u: &crate::state::Unit) -> UnitObs {
         host: u.host,
         bay: u.bay.map(|bay| BayObs::of(bay, true)),
         heading: u.heading,
+        reload: reload(u.cooldowns),
     }
 }
 
@@ -726,6 +797,7 @@ fn enemy_unit(u: &crate::state::Unit) -> UnitObs {
         host: u.host,
         bay: u.bay.map(|bay| BayObs::of(bay, false)),
         heading: u.heading,
+        reload: reload(u.cooldowns),
     }
 }
 
@@ -740,6 +812,7 @@ fn own_building(b: &crate::state::Building) -> BuildingObs {
         built: b.built(),
         seen: true,
         tier: b.tier,
+        reload: building_reload(b),
     }
 }
 

@@ -148,7 +148,7 @@ impl Missions {
             let free: Vec<_> = self
                 .free(observation, ledger)
                 .into_iter()
-                .filter(|id| !ledger.running(*id))
+                .filter(|id| !ledger.running(*id) && !ledger.convalescing(*id))
                 .filter_map(|id| mine(observation, id))
                 .filter(|u| reaches(u, map, ground))
                 .collect();

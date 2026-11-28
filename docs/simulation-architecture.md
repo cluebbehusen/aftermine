@@ -480,6 +480,13 @@ out of sight stays known between its shells. Where it saw one of its own shells
 shot down by a point defender out of sight, it remembers the tile and the point
 the shot came from. Neither memory names the gun or the defender, or its range.
 
+A direct round that lands where a team sees, fired by a gun it does not see,
+leaves a short memory of where the round came into its sight, where it landed,
+the point it came from and what fired it, as the round drawn over visible ground
+and the report heard where it lands tell a player. It never says where the gun
+stood. Anyone who sees a machine or structure reads how long each of its guns
+still waits before it may fire, as they read its facing.
+
 All allegiance checks go through normalized team ids. Teammates share vision,
 cannot target one another, and win or lose together. A resigned seat can no
 longer command, and its Foundries no longer count toward victory; its remaining

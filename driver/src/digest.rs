@@ -88,12 +88,13 @@ pub fn render(view: &FogView, terrain: Option<&Map>) -> String {
         others.iter(),
         |unit| {
             format!(
-                "{} {} seat {} at {} hp{}",
+                "{} {} seat {} at {} hp{}{}",
                 unit.id,
                 unit.kind.name(),
                 unit.player,
                 position(unit.pos),
-                unit.hp
+                unit.hp,
+                reloading(&unit.reload[..unit.kind.stats().weapons.len()])
             )
         },
     );
@@ -103,7 +104,7 @@ pub fn render(view: &FogView, terrain: Option<&Map>) -> String {
         other_buildings.iter(),
         |building| {
             format!(
-                "{} {} seat {} at {} hp{}{}",
+                "{} {} seat {} at {} hp{}{}{}",
                 building.id,
                 building.kind.tier_name(building.tier),
                 building.player,
@@ -113,7 +114,8 @@ pub fn render(view: &FogView, terrain: Option<&Map>) -> String {
                     String::new()
                 } else {
                     construction(building)
-                }
+                },
+                reloading(building.reload.as_slice())
             )
         },
     );
@@ -179,6 +181,7 @@ pub fn render(view: &FogView, terrain: Option<&Map>) -> String {
         || !view.shell_impacts.is_empty()
         || !view.unseen_fire.is_empty()
         || !view.downed_shells.is_empty()
+        || !view.fog_shots.is_empty()
     {
         out.push('\n');
     }
@@ -208,6 +211,30 @@ pub fn render(view: &FogView, terrain: Option<&Map>) -> String {
             out,
             "SHELLS SHOT DOWN lately at {}",
             marks(&view.downed_shells)
+        );
+    }
+    if !view.fog_shots.is_empty() {
+        let rounds: Vec<String> = view
+            .fog_shots
+            .iter()
+            .map(|shot| {
+                let shooter = match shot.shooter {
+                    aftermine_sim::vision::Shooter::Unit(kind) => kind.name(),
+                    aftermine_sim::vision::Shooter::Structure(kind) => kind.name(),
+                };
+                format!(
+                    "{} from the {}, a {shooter}, in sight from {}, tick {}",
+                    tile([shot.impact.x, shot.impact.y]),
+                    compass_name(shot.from),
+                    tile([shot.entry.x, shot.entry.y]),
+                    shot.at
+                )
+            })
+            .collect();
+        let _ = writeln!(
+            out,
+            "ROUNDS FROM OUT OF SIGHT lately at {}",
+            rounds.join("; ")
         );
     }
     section(&mut out, "MAGAZINES", view.magazines.iter(), |known| {
@@ -275,6 +302,7 @@ fn remembered_tiles(
 
 fn own_unit(unit: &UnitView, tracks: &Tracks) -> String {
     let mut line = format!("{} at {} hp{}", unit.id, position(unit.pos), unit.hp);
+    line.push_str(&reloading(&unit.reload[..unit.kind.stats().weapons.len()]));
     if unit.carrying > 0 {
         let _ = write!(line, " carrying {}", unit.carrying);
     }
@@ -319,6 +347,7 @@ fn own_building(building: &BuildingView, tracks: &Tracks) -> String {
     if !building.built {
         line.push_str(&construction(building));
     }
+    line.push_str(&reloading(building.reload.as_slice()));
     if let Some(queue) = building.queue.as_ref().filter(|queue| !queue.is_empty()) {
         let names: Vec<&str> = queue.iter().map(|kind| kind.name()).collect();
         let _ = write!(line, " | training {}", names.join(", "));
@@ -333,6 +362,16 @@ fn own_building(building: &BuildingView, tracks: &Tracks) -> String {
         let _ = write!(line, " | focus {}", compact(focus, tracks));
     }
     line
+}
+
+/// The ticks each of a machine's weapons still waits before it may fire,
+/// slash-separated, while any of them does; empty once all are ready.
+fn reloading(reload: &[u32]) -> String {
+    if reload.iter().all(|ticks| *ticks == 0) {
+        return String::new();
+    }
+    let ticks: Vec<String> = reload.iter().map(u32::to_string).collect();
+    format!(" reloading {}", ticks.join("/"))
 }
 
 /// A site's or upgrade's progress against the work its rung needs.

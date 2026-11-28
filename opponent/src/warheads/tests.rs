@@ -2,6 +2,7 @@ use super::*;
 
 fn crucible(x: i32, y: i32) -> BuildingObs {
     BuildingObs {
+        reload: None,
         provisional: false,
         id: BuildingId(1),
         player: aftermine_sim::PlayerId(1),

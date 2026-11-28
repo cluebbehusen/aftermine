@@ -36,11 +36,13 @@ ordinary `PlayerCommand`s. It uses no floating point.
   Repair Bays and Lattices on the approaches to each base.
 - `missions` holds the units the seat commands together: defense, local guards,
   the home reserve, attacks, lifts, settlements, clearances, strikes, raids,
-  scouting, repair trips and focus fire.
+  scouting, repair trips, pull-outs of the wounded and focus fire.
 - `warheads` decides when a Spire strike is worth its rounds. `breach` and
   `gunship` decide when to assemble a Maw or a Roc.
 - `crush` moves the seat's small machines, and keeps its sites, out of a Maw's
   path.
+- `micro` handles the top rung's fighting units one at a time: out of incoming
+  shells, and out of reach while a gun reloads.
 - `profile` resolves difficulty, stance and the seeded personality.
 - `events` buffers the seat's own stalls and rejections, other seats' machines
   standing up and the enemy deaths it sees between decisions.

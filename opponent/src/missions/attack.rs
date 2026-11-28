@@ -71,7 +71,7 @@ const MARGIN_FLOOR: u64 = 1_000;
 
 /// Health, per mille, under which a member leaves between fights, and at or
 /// over which a unit joins.
-const WOUNDED: u32 = 350;
+pub(super) const WOUNDED: u32 = 350;
 pub(super) const FIT: u32 = 500;
 
 const GATHER_TICKS: u64 = 1_200;

@@ -1101,3 +1101,58 @@ fn a_wide_hull_cannot_straddle_a_single_closed_tile() {
     assert!(!edge_only_sweep(a, b, Fx::lit("1.4"), open));
     assert!(swept_line_blocked(a, b, Fx::lit("1.4"), open));
 }
+
+#[test]
+fn the_first_tile_along_a_segment_is_the_first_it_enters_after_its_start() {
+    let (grid, ..) = arena(&["......", "..#.#.", "......"]);
+    let rock = |p: TilePos| !grid.get(p).copied().unwrap_or(true);
+    assert_eq!(
+        first_along(center(0, 1), center(5, 1), rock),
+        Some(TilePos::new(2, 1))
+    );
+    assert_eq!(
+        first_along(center(2, 1), center(5, 1), rock),
+        Some(TilePos::new(4, 1)),
+        "the start's own tile is never taken"
+    );
+    assert_eq!(
+        first_along(center(0, 1), center(4, 1), |p| p == TilePos::new(4, 1)),
+        Some(TilePos::new(4, 1)),
+        "the end's tile is"
+    );
+    assert_eq!(first_along(center(0, 0), center(5, 0), rock), None);
+    // Through an exact corner the flank across the x seam comes first.
+    assert_eq!(
+        first_along(center(0, 0), center(2, 2), |_| true),
+        Some(TilePos::new(1, 0))
+    );
+}
+
+#[test]
+fn the_first_tile_along_a_segment_is_mirror_fair_and_agrees_with_the_trace() {
+    let rows = &["........", "..##....", "....#...", ".#..#...", "........"];
+    let (grid, w, h) = arena(rows);
+    let open = |p: TilePos| grid.get(p).copied().unwrap_or(false);
+    let rot_tile = |p: TilePos| TilePos::new(w - 1 - p.x, h - 1 - p.y);
+    let rot_open = |p: TilePos| open(rot_tile(p));
+    let rot = |v: Vec2Fx| Vec2Fx::new(Fx::from_num(w) - v.x, Fx::from_num(h) - v.y);
+    let points = lattice(w, h);
+    for &a in &points {
+        for &b in &points {
+            if a == b {
+                continue;
+            }
+            let first = first_along(a, b, |p| !open(p));
+            assert_eq!(
+                first.map(rot_tile),
+                first_along(rot(a), rot(b), |p| !rot_open(p)),
+                "mirror-unfair first tile {a:?} -> {b:?}"
+            );
+            assert_eq!(
+                first.is_some(),
+                line_or_end_blocked(a, b, open),
+                "{a:?} -> {b:?}"
+            );
+        }
+    }
+}

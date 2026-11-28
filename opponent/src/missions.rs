@@ -609,6 +609,29 @@ impl Mission {
 
 impl Missions {
     /// Every mission's members, by mission id.
+    /// The members of every mission in its fight, by unit id, each with its
+    /// mission's goal and the enemy the mission focuses.
+    pub(crate) fn fighting(&self) -> Vec<(UnitId, TilePos, Option<UnitId>)> {
+        let mut fighting: Vec<(UnitId, TilePos, Option<UnitId>)> = self
+            .list
+            .iter()
+            .filter_map(|mission| {
+                let mut task = mission.task;
+                let focus = *task.focus()?;
+                Some((mission, focus))
+            })
+            .flat_map(|(mission, focus)| {
+                mission
+                    .units
+                    .iter()
+                    .map(move |unit| (*unit, mission.goal, focus))
+            })
+            .collect();
+        fighting.sort_unstable_by_key(|(unit, ..)| *unit);
+        fighting.dedup_by_key(|(unit, ..)| *unit);
+        fighting
+    }
+
     pub(crate) fn rosters(&self) -> Vec<(u64, Vec<UnitId>)> {
         self.list
             .iter()

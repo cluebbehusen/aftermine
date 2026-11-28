@@ -133,6 +133,48 @@ fn shells_shot_down_read_with_the_point_the_shot_came_from() {
     );
 }
 
+#[test]
+fn rounds_from_out_of_sight_read_with_where_they_came_into_sight_and_what_fired() {
+    let (_, mut view) = opening();
+    assert!(!render(&view, None).contains("ROUNDS FROM"));
+    view.fog_shots = vec![aftermine_sim::observation::ShotMark {
+        entry: chassis::grid::TilePos::new(9, 6),
+        impact: chassis::grid::TilePos::new(5, 6),
+        from: chassis::compass::CompassPoint::try_from(0).expect("a compass point"),
+        shooter: aftermine_sim::vision::Shooter::Unit(aftermine_sim::UnitKind::Lancer),
+        at: 120,
+    }];
+    let text = render(&view, None);
+    assert!(
+        text.contains(
+            "\nROUNDS FROM OUT OF SIGHT lately at (5,6) from the east, a lancer, in sight from (9,6), tick 120\n"
+        ),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_reloading_weapon_reads_its_wait_and_a_ready_one_reads_nothing() {
+    let (_, mut view) = opening();
+    let own = view
+        .units
+        .iter()
+        .position(|unit| unit.player == 0)
+        .expect("an own unit");
+    view.units[own].kind = aftermine_sim::UnitKind::Sentinel;
+    let id = view.units[own].id;
+    let ready = render(&view, None);
+    assert!(!ready.contains("reloading"), "{ready}");
+    view.units[own].reload[0] = 12;
+    let text = render(&view, None);
+    assert!(
+        text.lines()
+            .any(|line| line.trim_start().starts_with(&format!("{id} at "))
+                && line.contains(" reloading 12")),
+        "{text}"
+    );
+}
+
 fn mark(x: i32, y: i32, from: u8) -> aftermine_sim::observation::FireMark {
     aftermine_sim::observation::FireMark {
         tile: chassis::grid::TilePos::new(x, y),

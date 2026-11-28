@@ -3187,8 +3187,9 @@ fn defenders_on_their_way_to_a_remote_extractor_keep_going() {
 #[test]
 fn a_structure_hit_by_fire_nobody_sees_draws_a_search_and_no_welder() {
     // An East Lancer shoots a West Extractor from beyond what the Extractor
-    // sees. Defenders worth it advance beside it to find the shooter,
-    // without chasing anything on the way, and no worker is sent to weld it.
+    // sees. Defenders worth it advance to find the shooter, toward where its
+    // rounds came into sight, without chasing anything on the way, and no
+    // worker is sent to weld it.
     let mut scenario = field();
     scenario.map[4].replace_range(12..13, "E");
     // Enough for the weld, not for a Turret, which would take the worker.
@@ -3196,7 +3197,7 @@ fn a_structure_hit_by_fire_nobody_sees_draws_a_search_and_no_welder() {
     scenario.units.extend(
         GARRISON
             .iter()
-            .map(|(x, y)| unit(0, UnitKind::Sentinel, *x, *y)),
+            .map(|(x, y)| unit(0, UnitKind::Lancer, *x, *y)),
     );
     scenario.units.push(harvester(0, 5, 9));
     scenario.units.push(unit(1, UnitKind::Lancer, 19, 5));
@@ -3236,8 +3237,7 @@ fn a_structure_hit_by_fire_nobody_sees_draws_a_search_and_no_welder() {
         "premise: the Lancer is out of sight"
     );
     let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
-    let anchor = TilePos::new(12, 4);
-    let beside: Vec<TilePos> = crate::frame::ring(anchor, BuildingKind::Extractor.size()).collect();
+    let beside = search_goals(&state);
     assert!(
         advances(&commands)
             .iter()
@@ -3300,6 +3300,19 @@ fn shot_from_the_fog(defenders: &[UnitKind]) -> (Scenario, State, UnitId) {
     (scenario, state, lancer)
 }
 
+/// Where West's search for what hit its Extractor at (12, 4) out of sight
+/// may go: beside it, or where a round it heard came into sight.
+fn search_goals(state: &State) -> Vec<TilePos> {
+    crate::frame::ring(TilePos::new(12, 4), BuildingKind::Extractor.size())
+        .chain(
+            ObservationData::fog_honest(state, PlayerId(0))
+                .fog_shots
+                .iter()
+                .map(|shot| shot.entry),
+        )
+        .collect()
+}
+
 /// West in `shot_from_the_fog`, remembering its Lancer where it stands,
 /// seen 300 ticks ago.
 fn remembering_the_shooter(scenario: &Scenario, state: &State, lancer: UnitId) -> Opponent {
@@ -3312,6 +3325,39 @@ fn remembering_the_shooter(scenario: &Scenario, state: &State, lancer: UnitId) -
 }
 
 #[test]
+fn a_search_weighs_a_shooter_it_only_heard_and_trains_rather_than_feed_it() {
+    // Fire from the fog whose report names a Lancer the seat never saw:
+    // three Scuttlers it could not hold the Lancer with stay home, and the
+    // seat trains for the shortfall, while four Lancers go after it.
+    let searched = |defenders: &[UnitKind]| {
+        let (scenario, state, _) = shot_from_the_fog(defenders);
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        assert!(
+            observation
+                .fog_shots
+                .iter()
+                .any(|shot| shot.shooter == aftermine_sim::vision::Shooter::Unit(UnitKind::Lancer)),
+            "premise: the report names the Lancer"
+        );
+        let mut value = serde_json::to_value(&state).unwrap();
+        value["players"][0]["scrap"] = 400.into();
+        let state: State = serde_json::from_value(value).unwrap();
+        let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+        let goals = search_goals(&state);
+        let goes = advances(&commands)
+            .iter()
+            .any(|(units, goal)| !units.is_empty() && goals.contains(goal));
+        let trains = commands
+            .iter()
+            .any(|command| matches!(command.command, Command::Train { .. }));
+        (goes, trains)
+    };
+    let (goes, trains) = searched(&[UnitKind::Scuttler; 3]);
+    assert!(!goes && trains, "the Scuttlers stay and the seat trains");
+    assert!(searched(&[UnitKind::Lancer; 4]).0, "four Lancers go");
+}
+
+#[test]
 fn a_search_weighs_a_shooter_it_has_seen() {
     // Fire nobody sees, from where the seat remembers a Lancer: three
     // Scuttlers it could not hold the Lancer with wait at home instead of
@@ -3320,8 +3366,7 @@ fn a_search_weighs_a_shooter_it_has_seen() {
         let (scenario, state, lancer) = shot_from_the_fog(defenders);
         let commands = remembering_the_shooter(&scenario, &state, lancer)
             .act(&state, &mut OwnEvents::default());
-        let beside: Vec<TilePos> =
-            crate::frame::ring(TilePos::new(12, 4), BuildingKind::Extractor.size()).collect();
+        let beside = search_goals(&state);
         advances(&commands)
             .iter()
             .any(|(units, goal)| !units.is_empty() && beside.contains(goal))
@@ -3450,10 +3495,13 @@ fn a_lancer_in_sight_just_past_the_threat_gap_keeps_the_defense() {
 #[test]
 fn a_search_looks_out_from_the_side_unseen_fire_came_from() {
     // A Lancer nobody sees shoots a West Extractor from the south, away
-    // from East's start. Defenders advance to the Extractor's southern side.
+    // from East's start. Defenders advance south of the Extractor, where its
+    // rounds came into sight.
     let mut scenario = field();
     scenario.map[4].replace_range(12..13, "E");
-    garrison(&mut scenario);
+    for (x, y) in GARRISON {
+        scenario.units.push(unit(0, UnitKind::Lancer, x, y));
+    }
     scenario.units.push(unit(1, UnitKind::Lancer, 13, 12));
     scenario
         .buildings
@@ -3495,8 +3543,8 @@ fn a_search_looks_out_from_the_side_unseen_fire_came_from() {
         advances(&commands)
             .iter()
             .any(|(units, goal)| !units.is_empty()
-                && goal.y == south
-                && (12..=13).contains(&goal.x)),
+                && goal.y >= south
+                && (11..=14).contains(&goal.x)),
         "{commands:?}"
     );
 }
@@ -3509,7 +3557,7 @@ fn mirrored_seats_search_alike_under_mirrored_unseen_fire() {
     for player in [0, 1] {
         for spot in GARRISON {
             let (x, y) = turned(player, spot);
-            scenario.units.push(unit(player, UnitKind::Sentinel, x, y));
+            scenario.units.push(unit(player, UnitKind::Lancer, x, y));
         }
     }
     for player in [0, 1] {
@@ -3833,7 +3881,7 @@ fn a_visible_enemy_that_cannot_reach_a_structure_does_not_explain_its_hit() {
 #[test]
 fn a_search_comes_before_an_unarmed_intruder() {
     // A West Extractor is hit by a Lancer nobody sees while an East Surveyor
-    // stands among the West buildings. The search beside the Extractor comes
+    // stands among the West buildings. The search for the shooter comes
     // first: the scout is no emergency.
     let mut scenario = field();
     scenario.map[4].replace_range(12..13, "E");
@@ -3841,7 +3889,7 @@ fn a_search_comes_before_an_unarmed_intruder() {
     scenario.units.extend(
         GARRISON
             .iter()
-            .map(|(x, y)| unit(0, UnitKind::Sentinel, *x, *y)),
+            .map(|(x, y)| unit(0, UnitKind::Lancer, *x, *y)),
     );
     scenario.units.push(unit(1, UnitKind::Lancer, 19, 5));
     scenario.units.push(unit(1, UnitKind::Surveyor, 6, 9));
@@ -3880,8 +3928,7 @@ fn a_search_comes_before_an_unarmed_intruder() {
         "premise: only the scout is in sight"
     );
     let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
-    let beside: Vec<TilePos> =
-        crate::frame::ring(TilePos::new(12, 4), BuildingKind::Extractor.size()).collect();
+    let beside = search_goals(&state);
     assert!(
         advances(&commands)
             .iter()
@@ -3936,14 +3983,14 @@ fn defenders_that_set_out_at_a_gun_are_not_called_back_to_close_up() {
 fn an_armed_aircraft_in_sight_comes_before_a_search() {
     // A West Extractor is hit by a Lancer nobody sees while an East Buzzard
     // flies over the West Foundry. The defense meets the Buzzard first rather
-    // than walk off to search beside the Extractor.
+    // than walk off to search for the shooter.
     let mut scenario = field();
     scenario.map[4].replace_range(12..13, "E");
     scenario.players[0].scrap = 60;
     scenario.units.extend(
         GARRISON
             .iter()
-            .map(|(x, y)| unit(0, UnitKind::Sentinel, *x, *y)),
+            .map(|(x, y)| unit(0, UnitKind::Lancer, *x, *y)),
     );
     scenario.units.push(unit(1, UnitKind::Lancer, 19, 5));
     scenario
@@ -3974,8 +4021,7 @@ fn an_armed_aircraft_in_sight_comes_before_a_search() {
     }
     let searched = |state: &State| {
         let commands = seat(&scenario, 0).act(state, &mut OwnEvents::default());
-        let beside: Vec<TilePos> =
-            crate::frame::ring(TilePos::new(12, 4), BuildingKind::Extractor.size()).collect();
+        let beside = search_goals(state);
         advances(&commands)
             .iter()
             .any(|(_, goal)| beside.contains(goal))

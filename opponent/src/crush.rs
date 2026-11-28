@@ -104,7 +104,7 @@ pub(crate) fn clear_of(
 /// Whether a machine can stand on `tile` as far as the seat knows: no rock,
 /// scrap node or building there. A run to anywhere else ends on a tile the
 /// seat never checked.
-fn open(observation: &ObservationData, tile: TilePos) -> bool {
+pub(crate) fn open(observation: &ObservationData, tile: TilePos) -> bool {
     !observation.known_rock_at(tile)
         && !observation.known_scrap_at(tile)
         && observation

@@ -47,6 +47,7 @@ fn omniscient(state: &State, me: PlayerId) -> Observation {
                 built: b.built(),
                 seen: true,
                 tier: b.tier,
+                reload: super::building_reload(b),
             });
         } else {
             obs.enemy_buildings.push(BuildingObs {
@@ -59,6 +60,7 @@ fn omniscient(state: &State, me: PlayerId) -> Observation {
                 built: b.built(),
                 seen: true,
                 tier: b.tier,
+                reload: super::building_reload(b),
             });
         }
     }

@@ -145,6 +145,11 @@ pub struct UnitView {
     /// way a machine points, so the fog view never redacts it.
     #[serde(default)]
     pub heading: u8,
+    /// Ticks each weapon still waits before it may fire, indexed like the
+    /// kind's weapons; zero may fire on the next tick. A machine shows its
+    /// reload as it charges, so the fog view never redacts it.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub reload: [u32; aftermine_sim::stats::MAX_WEAPONS],
 }
 
 /// A drone bay as the viewer sees it. Docked drones ride on the hull, so
@@ -212,6 +217,11 @@ pub struct BuildingView {
     /// view, as the building's art shows it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub works: Option<aftermine_sim::observation::Works>,
+    /// Ticks a built armed structure's gun still waits before it may fire;
+    /// `None` for one with no gun or not yet built. Its gun shows its
+    /// reload, so the fog view never redacts it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reload: Option<u32>,
 }
 
 /// The world as one seat knows it: the fog-honest debug and agent
@@ -290,6 +300,11 @@ pub struct FogView {
     /// sorted by (y, x, point). Never the defender, or how far it stood.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub downed_shells: Vec<aftermine_sim::observation::FireMark>,
+    /// Direct rounds the seat's team lately saw come out of the fog: where
+    /// each came into sight, where it landed, the compass point it came from
+    /// and what fired it, as its report names it. Never where the gun stood.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fog_shots: Vec<aftermine_sim::observation::ShotMark>,
 }
 
 /// A hostile building every seat knows of regardless of fog.
@@ -445,6 +460,7 @@ impl FogView {
             shell_impacts: aftermine_sim::observation::shell_impacts(state, player),
             unseen_fire: aftermine_sim::observation::unseen_fire(state, player),
             downed_shells: aftermine_sim::observation::downed_shells(state, player),
+            fog_shots: aftermine_sim::observation::fog_shots(state, player),
         }
     }
 }
@@ -648,6 +664,7 @@ fn unit_view(u: &Unit) -> UnitView {
         }),
         idle_weld: u.worker.map(|_| u.idle_weld()),
         heading: u.heading,
+        reload: aftermine_sim::observation::reload(u.cooldowns),
     }
 }
 
@@ -691,6 +708,7 @@ fn building_view(b: &Building) -> BuildingView {
             .unwrap_or_else(|| b.training_progress()),
         tier: b.tier,
         works: aftermine_sim::observation::Works::of(b),
+        reload: aftermine_sim::observation::building_reload(b),
     }
 }
 
