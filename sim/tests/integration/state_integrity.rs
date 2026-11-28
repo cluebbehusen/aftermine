@@ -340,6 +340,18 @@ fn incident(x: i32, y: i32, expires_at: u64) -> Value {
     incident_from(x, y, 0, expires_at)
 }
 
+/// A well-formed round out of the fog landing on (`x`, `y`) from a Lancer,
+/// entering sight on the tile east of it.
+fn fog_shot(x: i32, y: i32, expires_at: u64) -> Value {
+    json!({
+        "entry": {"x": x.saturating_add(1), "y": y},
+        "impact": {"x": x, "y": y},
+        "from": 0,
+        "shooter": {"unit": "lancer"},
+        "expires_at": expires_at,
+    })
+}
+
 /// A well-formed recent allied impact record, its fire from compass point
 /// `from`.
 fn incident_from(x: i32, y: i32, from: u8, expires_at: u64) -> Value {
@@ -424,6 +436,10 @@ fn well_formed_additions_are_accepted() {
         incident(2, 4, 100 + aftermine_sim::stats::SHELL_IMPACT_MEMORY_TICKS),
     ]);
     base["vision"][0]["downed_shells"] = json!([incident_from(4, 3, 12, 100)]);
+    base["vision"][0]["fog_shots"] = json!([
+        fog_shot(4, 3, 100),
+        fog_shot(2, 4, 100 + aftermine_sim::stats::FOG_SHOT_MEMORY_TICKS),
+    ]);
     let bombard = base["units"][1]["id"].clone();
     base["units"][0]["order"] = json!({"order": "accompany", "unit": bombard, "weld": bombard});
     let owner = base["buildings"][0]["player"].clone();
@@ -516,6 +532,7 @@ fn a_decided_state_may_age_past_remembered_expiries() {
     base["vision"][0]["salvage_incidents"] = json!([incident(3, 3, 99)]);
     base["vision"][0]["shell_impacts"] = json!([incident(3, 3, 99)]);
     base["vision"][0]["downed_shells"] = json!([incident(3, 3, 99)]);
+    base["vision"][0]["fog_shots"] = json!([fog_shot(3, 3, 99)]);
     serde_json::from_value::<State>(base)
         .expect("decided worlds stop refreshing vision while their clock may still advance");
 }
@@ -598,6 +615,11 @@ checklist! {
     ExpiredDownedShell(PlayerId(0)),
     DownedShellExpiryBeyondHorizon(PlayerId(0)),
     UnsortedDownedShells(PlayerId(0)),
+    OverlongFogShotMemory(PlayerId(0)),
+    FogShotOutsideEnvelope(PlayerId(0)),
+    ExpiredFogShot(PlayerId(0)),
+    FogShotExpiryBeyondHorizon(PlayerId(0)),
+    UnsortedFogShots(PlayerId(0)),
     UnitPartMismatch(UnitId(0)),
     CargoBeyondCapacity(UnitId(0)),
     UncarriableCargo(UnitId(0)),
@@ -2117,6 +2139,67 @@ fn every_checklist_row_refuses_its_forgery() {
                 d["vision"][0]["downed_shells"] = json!([incident(2, 4, 100), incident(4, 3, 100)]);
             },
             "player p0 remembers downed shells out of canonical order",
+        ),
+        (
+            "more rounds out of the fog than the bounded memory permits",
+            |d| {
+                d["vision"][0]["fog_shots"] = json!(
+                    (0..=aftermine_sim::stats::FOG_SHOT_CAP)
+                        .map(|x| fog_shot(i32::try_from(x).unwrap(), 3, 100))
+                        .collect::<Vec<_>>()
+                );
+            },
+            "player p0 remembers more rounds out of the fog than the cap allows",
+        ),
+        (
+            "a round out of the fog landing at the far end of the coordinate space",
+            |d| {
+                d["vision"][0]["fog_shots"] = json!([fog_shot(i32::MAX, 3, 100)]);
+            },
+            "player p0 remembers a round out of the fog outside the envelope",
+        ),
+        (
+            "a round out of the fog entering sight at the far end of the coordinate space",
+            |d| {
+                let mut shot = fog_shot(3, 3, 100);
+                shot["entry"] = json!({"x": i32::MAX, "y": 3});
+                d["vision"][0]["fog_shots"] = json!([shot]);
+            },
+            "player p0 remembers a round out of the fog outside the envelope",
+        ),
+        (
+            "a round out of the fog that expired before the current tick",
+            |d| {
+                d["tick"] = json!(100);
+                d["vision"][0]["fog_shots"] = json!([fog_shot(3, 3, 99)]);
+            },
+            "player p0 remembers an expired round out of the fog in an active match",
+        ),
+        (
+            "a round out of the fog expiring beyond the state's memory horizon",
+            |d| {
+                d["tick"] = json!(100);
+                d["vision"][0]["fog_shots"] = json!([fog_shot(
+                    3,
+                    3,
+                    101 + aftermine_sim::stats::FOG_SHOT_MEMORY_TICKS
+                )]);
+            },
+            "player p0 remembers a round out of the fog expiring beyond its memory horizon",
+        ),
+        (
+            "rounds out of the fog out of canonical order",
+            |d| {
+                d["vision"][0]["fog_shots"] = json!([fog_shot(2, 4, 100), fog_shot(4, 3, 100)]);
+            },
+            "player p0 remembers rounds out of the fog out of canonical order",
+        ),
+        (
+            "one round out of the fog remembered twice",
+            |d| {
+                d["vision"][0]["fog_shots"] = json!([fog_shot(4, 3, 100), fog_shot(4, 3, 120)]);
+            },
+            "player p0 remembers rounds out of the fog out of canonical order",
         ),
         (
             "a parked harvester, which cannot land",

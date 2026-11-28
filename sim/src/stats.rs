@@ -3036,6 +3036,16 @@ pub const HARVEST_INCIDENT_CAP: usize = 64;
 /// stays known between its shells while a stopped barrage is soon forgotten.
 pub const SHELL_IMPACT_MEMORY_TICKS: crate::Tick = 8 * crate::TICKS_PER_SECOND as crate::Tick;
 
+/// How long a team remembers a direct round it saw come out of the fog. It
+/// outlasts every direct-fire reload, the Piledriver's 5 s the longest, so a
+/// gun firing steadily from out of sight stays known between its rounds.
+pub const FOG_SHOT_MEMORY_TICKS: crate::Tick = 8 * crate::TICKS_PER_SECOND as crate::Tick;
+
+/// Maximum rounds out of the fog retained per team, bounding the memory a
+/// firefight can grow. Rounds alike in entry, impact, bearing and shooter
+/// coalesce, and the oldest expiry is evicted first at the ceiling.
+pub const FOG_SHOT_CAP: usize = 64;
+
 /// Maximum recent hostile shell impacts retained per team, bounding the
 /// memory a barrage can grow. Impacts on one tile from one compass point
 /// coalesce, and the oldest expiry is evicted first at the ceiling.
@@ -3263,6 +3273,44 @@ const _: () = {
                     "a producer trains a hull wider than spawning makes room for"
                 );
                 u += 1;
+            }
+            t += 1;
+        }
+        b += 1;
+    }
+};
+
+// A gun firing steadily from out of sight stays known between its rounds:
+// the memory of a round out of the fog outlasts every direct-fire reload.
+const _: () = {
+    let mut u = 0;
+    while u < UnitKind::ALL.len() {
+        let weapons = UnitKind::ALL[u].stats().weapons;
+        let mut w = 0;
+        while w < weapons.len() {
+            assert!(
+                weapons[w].projectile.is_some()
+                    || (weapons[w].cooldown_ticks as crate::Tick) < FOG_SHOT_MEMORY_TICKS,
+                "a direct-fire reload outlasts the memory of its rounds"
+            );
+            w += 1;
+        }
+        u += 1;
+    }
+    let mut b = 0;
+    while b < BuildingKind::ALL.len() {
+        let tiers = BuildingKind::ALL[b].tiers();
+        let mut t = 0;
+        while t < tiers.len() {
+            let weapons = tiers[t].weapons;
+            let mut w = 0;
+            while w < weapons.len() {
+                assert!(
+                    weapons[w].projectile.is_some()
+                        || (weapons[w].cooldown_ticks as crate::Tick) < FOG_SHOT_MEMORY_TICKS,
+                    "a direct-fire reload outlasts the memory of its rounds"
+                );
+                w += 1;
             }
             t += 1;
         }

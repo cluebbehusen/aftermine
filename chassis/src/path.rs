@@ -39,6 +39,79 @@ pub fn line_or_end_blocked(a: Vec2Fx, b: Vec2Fx, passable: impl FnMut(TilePos) -
     trace(a, b, true, passable)
 }
 
+/// The first tile `hit` accepts among those [`line_or_end_blocked`] tests,
+/// in the order the segment from `a` to `b` enters them: never `a`'s own
+/// tile, `b`'s last. At an exact corner crossing the flank across the x seam
+/// comes before the one across the y seam, and of the two lanes along a
+/// seam the one left of travel (x east, y south) comes first, so a
+/// half-turned segment over half-turned ground finds the half-turned tile.
+/// `None` when `hit` accepts none of them, or for a segment that runs along
+/// both seams at once and so has no direction.
+pub fn first_along(a: Vec2Fx, b: Vec2Fx, mut hit: impl FnMut(TilePos) -> bool) -> Option<TilePos> {
+    let (x, x_lanes) = Axis::of(a.x, b.x);
+    let (y, y_lanes) = Axis::of(a.y, b.y);
+    // The lane left of travel: along a north-south seam, east of it going
+    // south; along an east-west seam, north of it going east.
+    let lanes: Vec<(i32, i32)> = match (x_lanes, y_lanes) {
+        (1, 1) => vec![(0, 0)],
+        (2, 1) if y.step > 0 => vec![(1, 0), (0, 0)],
+        (2, 1) => vec![(0, 0), (1, 0)],
+        (1, 2) if x.step > 0 => vec![(0, 0), (0, 1)],
+        (1, 2) => vec![(0, 1), (0, 0)],
+        _ => return None,
+    };
+    lanes
+        .into_iter()
+        .filter_map(|(dx, dy)| {
+            let mut found = None;
+            let mut entered = 0_u64;
+            walk_tiles((a, b), x.shifted(dx), y.shifted(dy), |tile| {
+                if found.is_none() && hit(tile) {
+                    found = Some((entered, tile));
+                }
+                entered += 1;
+                found.is_some()
+            });
+            found
+        })
+        .min_by_key(|(entered, _)| *entered)
+        .map(|(_, tile)| tile)
+}
+
+/// Every tile one lane of [`trace`] enters after its start, in order, the
+/// flanks of an exact corner crossing before the tile past it and the end
+/// tile last, until `visit` returns true.
+fn walk_tiles((a, b): (Vec2Fx, Vec2Fx), x: Axis, y: Axis, mut visit: impl FnMut(TilePos) -> bool) {
+    let extent =
+        |from: Fx, to: Fx| (i128::from(to.to_bits()) - i128::from(from.to_bits())).unsigned_abs();
+    let (span_x, span_y) = (extent(a.x, b.x), extent(a.y, b.y));
+    let end = TilePos::new(x.to, y.to);
+    let mut tile = TilePos::new(x.from, y.from);
+    while tile != end {
+        let order = if tile.x == x.to {
+            std::cmp::Ordering::Greater
+        } else if tile.y == y.to {
+            std::cmp::Ordering::Less
+        } else {
+            (x.gap(tile.x, a.x) * span_y).cmp(&(y.gap(tile.y, a.y) * span_x))
+        };
+        tile = match order {
+            std::cmp::Ordering::Less => tile.offset(x.step, 0),
+            std::cmp::Ordering::Greater => tile.offset(0, y.step),
+            std::cmp::Ordering::Equal => {
+                let flanks = [tile.offset(x.step, 0), tile.offset(0, y.step)];
+                if flanks.into_iter().any(&mut visit) {
+                    return;
+                }
+                tile.offset(x.step, y.step)
+            }
+        };
+        if visit(tile) {
+            return;
+        }
+    }
+}
+
 fn trace(a: Vec2Fx, b: Vec2Fx, end_too: bool, mut passable: impl FnMut(TilePos) -> bool) -> bool {
     let (x, x_lanes) = Axis::of(a.x, b.x);
     let (y, y_lanes) = Axis::of(a.y, b.y);

@@ -9,6 +9,7 @@ fn a_public_building_joins_as_a_memory_and_a_remembered_one_is_brought_up_to_dat
     let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
     observation.enemy_buildings.clear();
     let ghost = BuildingObs {
+        reload: None,
         provisional: false,
         id: BuildingId(u32::MAX),
         player: PlayerId(1),

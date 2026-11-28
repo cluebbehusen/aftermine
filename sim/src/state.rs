@@ -3084,6 +3084,27 @@ impl State {
                 E::UnsortedDownedShells(seat),
             ],
         )?;
+        self.validate_recent(
+            v.fog_shots(),
+            (
+                crate::stats::FOG_SHOT_CAP,
+                crate::stats::FOG_SHOT_MEMORY_TICKS,
+            ),
+            [
+                E::OverlongFogShotMemory(seat),
+                E::FogShotOutsideEnvelope(seat),
+                E::ExpiredFogShot(seat),
+                E::FogShotExpiryBeyondHorizon(seat),
+                E::UnsortedFogShots(seat),
+            ],
+            (
+                |shot: &crate::vision::FogShot| {
+                    tile_inside_envelope(shot.entry) && tile_inside_envelope(shot.impact)
+                },
+                |shot: &crate::vision::FogShot| shot.expires_at,
+                v.fog_shots().windows(2).all(|a| a[0].key() < a[1].key()),
+            ),
+        )?;
         if !v.tracking_valid(self, seat) {
             return Err(E::InvalidContactTracking(seat));
         }
@@ -3119,28 +3140,47 @@ impl State {
     fn validate_recent_tiles(
         &self,
         tiles: &[crate::vision::RecentTile],
+        limits: (usize, Tick),
+        errors: [StateIntegrityError; 5],
+    ) -> Result<(), StateIntegrityError> {
+        self.validate_recent(
+            tiles,
+            limits,
+            errors,
+            (
+                |recent: &crate::vision::RecentTile| tile_inside_envelope(recent.tile),
+                |recent: &crate::vision::RecentTile| recent.expires_at,
+                tiles.windows(2).all(|a| a[0].key() < a[1].key()),
+            ),
+        )
+    }
+
+    /// [`Self::validate_recent_tiles`] for any memory of recent `records`,
+    /// with whether a record lies inside the envelope, its expiry, and
+    /// whether the records are strictly sorted by their key.
+    fn validate_recent<T>(
+        &self,
+        records: &[T],
         (cap, memory): (usize, Tick),
         [overlong, outside, expired, beyond, unsorted]: [StateIntegrityError; 5],
+        (inside, expires_at, sorted): (impl Fn(&T) -> bool, impl Fn(&T) -> Tick, bool),
     ) -> Result<(), StateIntegrityError> {
-        if tiles.len() > cap {
+        if records.len() > cap {
             return Err(overlong);
         }
-        if tiles
-            .iter()
-            .any(|recent| !tile_inside_envelope(recent.tile))
-        {
+        if records.iter().any(|record| !inside(record)) {
             return Err(outside);
         }
         // A decided match stops refreshing vision while its clock may still
         // advance.
-        if self.result.is_none() && tiles.iter().any(|recent| recent.expires_at < self.tick) {
+        if self.result.is_none() && records.iter().any(|record| expires_at(record) < self.tick) {
             return Err(expired);
         }
         let horizon = self.tick.saturating_add(memory);
-        if tiles.iter().any(|recent| recent.expires_at > horizon) {
+        if records.iter().any(|record| expires_at(record) > horizon) {
             return Err(beyond);
         }
-        if !tiles.windows(2).all(|a| a[0].key() < a[1].key()) {
+        if !sorted {
             return Err(unsorted);
         }
         Ok(())
@@ -3345,6 +3385,47 @@ impl State {
             {
                 self.vision[index].remember_shell_impact(tile, from, expires_at);
             }
+        }
+    }
+
+    /// Remembers a direct round `shooter` of `owner`'s fired from `from` at
+    /// `aim`, for every seat hostile to `owner` that sees where it lands but
+    /// not where it was fired from: where the round came into its sight,
+    /// where it landed, the compass point it came from and what fired it,
+    /// as the round drawn over visible ground and the report heard where it
+    /// lands show them, never where the gun stood. Teammates share sight, so
+    /// each receives the same record whatever order seats are visited in.
+    pub(crate) fn record_fog_shot(
+        &mut self,
+        owner: PlayerId,
+        shooter: crate::vision::Shooter,
+        from: Vec2Fx,
+        aim: Vec2Fx,
+    ) {
+        let (muzzle, impact) = (TilePos::containing(from), TilePos::containing(aim));
+        let expires_at = self
+            .tick
+            .saturating_add(crate::stats::FOG_SHOT_MEMORY_TICKS)
+            .saturating_add(1);
+        for index in 0..self.players.len() {
+            let vision = &self.vision[index];
+            if !self.hostile(PlayerId::from_index(index), owner)
+                || !vision.visible(impact)
+                || vision.visible(muzzle)
+            {
+                continue;
+            }
+            let Some(entry) = chassis::path::first_along(from, aim, |tile| vision.visible(tile))
+            else {
+                continue;
+            };
+            self.vision[index].remember_fog_shot(crate::vision::FogShot {
+                entry,
+                impact,
+                from: chassis::compass::CompassPoint::of(from - aim),
+                shooter,
+                expires_at,
+            });
         }
     }
 
@@ -4392,6 +4473,24 @@ pub enum StateIntegrityError {
     /// Remembered downed shells are not sorted and deduplicated.
     #[error("player {0} remembers downed shells out of canonical order")]
     UnsortedDownedShells(PlayerId),
+    /// A team remembers more rounds out of the fog than the bounded memory
+    /// permits.
+    #[error("player {0} remembers more rounds out of the fog than the cap allows")]
+    OverlongFogShotMemory(PlayerId),
+    /// A remembered round out of the fog enters sight or lands outside the
+    /// sanity envelope.
+    #[error("player {0} remembers a round out of the fog outside the envelope")]
+    FogShotOutsideEnvelope(PlayerId),
+    /// An active match retained a round out of the fog past its expiry.
+    #[error("player {0} remembers an expired round out of the fog in an active match")]
+    ExpiredFogShot(PlayerId),
+    /// A remembered round out of the fog expires further ahead than its
+    /// memory lasts from the state's current tick.
+    #[error("player {0} remembers a round out of the fog expiring beyond its memory horizon")]
+    FogShotExpiryBeyondHorizon(PlayerId),
+    /// Remembered rounds out of the fog are not sorted and deduplicated.
+    #[error("player {0} remembers rounds out of the fog out of canonical order")]
+    UnsortedFogShots(PlayerId),
     /// A magazine on a kind without one, missing from a kind with one,
     /// past its capacity, with a meter out of range, or stocked before the
     /// building stands.

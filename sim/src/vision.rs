@@ -149,9 +149,98 @@ impl RecentTile {
     }
 }
 
-/// Remembers fire from `from` on `tile` until `expires_at` in `memory`,
-/// which stays sorted and deduplicated by [`RecentTile::key`], keeping the
-/// later expiry, and holds at most `cap` records of a map `dims` in size.
+/// What fired a direct round, as the report a player hears names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Shooter {
+    /// A unit's gun.
+    Unit(crate::stats::UnitKind),
+    /// A structure's gun.
+    Structure(crate::stats::BuildingKind),
+}
+
+/// A direct round a team saw come out of the fog: it landed where the team
+/// sees, fired by a gun the team does not see.
+///
+/// The record keeps what a player reads from the round drawn over visible
+/// ground and the report heard where it lands: where it came into sight,
+/// where it landed, the compass point it came from, and what fired it. It
+/// never says where the gun stood beyond the line the round drew.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FogShot {
+    /// The first tile of the round's line the team saw.
+    pub entry: TilePos,
+    /// Where it landed.
+    pub impact: TilePos,
+    /// The point it came from, seen from `impact`.
+    pub from: CompassPoint,
+    /// What fired it.
+    pub shooter: Shooter,
+    /// First tick on which the memory no longer applies.
+    pub expires_at: crate::Tick,
+}
+
+impl FogShot {
+    /// The order a memory keeps its records in, which no two share.
+    pub(crate) fn key(&self) -> (i32, i32, i32, i32, CompassPoint, Shooter) {
+        (
+            self.impact.y,
+            self.impact.x,
+            self.entry.y,
+            self.entry.x,
+            self.from,
+            self.shooter,
+        )
+    }
+}
+
+/// A record a team remembers for a short while at a tile.
+trait Recent: Copy {
+    type Key: Ord;
+    /// The order a memory keeps its records in, which no two share.
+    fn key(&self) -> Self::Key;
+    /// Where it happened, and the point the fire came from.
+    fn place(&self) -> (TilePos, CompassPoint);
+    /// First tick on which the memory no longer applies.
+    fn expires_at(&self) -> crate::Tick;
+    /// Keeps it until `tick` at least.
+    fn keep_until(&mut self, tick: crate::Tick);
+}
+
+impl Recent for RecentTile {
+    type Key = (i32, i32, CompassPoint);
+    fn key(&self) -> Self::Key {
+        RecentTile::key(self)
+    }
+    fn place(&self) -> (TilePos, CompassPoint) {
+        (self.tile, self.from)
+    }
+    fn expires_at(&self) -> crate::Tick {
+        self.expires_at
+    }
+    fn keep_until(&mut self, tick: crate::Tick) {
+        self.expires_at = self.expires_at.max(tick);
+    }
+}
+
+impl Recent for FogShot {
+    type Key = (i32, i32, i32, i32, CompassPoint, Shooter);
+    fn key(&self) -> Self::Key {
+        FogShot::key(self)
+    }
+    fn place(&self) -> (TilePos, CompassPoint) {
+        (self.impact, self.from)
+    }
+    fn expires_at(&self) -> crate::Tick {
+        self.expires_at
+    }
+    fn keep_until(&mut self, tick: crate::Tick) {
+        self.expires_at = self.expires_at.max(tick);
+    }
+}
+
+/// Remembers fire from `from` on `tile` until `expires_at` in `memory`; see
+/// [`remember`].
 fn remember_recent(
     memory: &mut Vec<RecentTile>,
     cap: usize,
@@ -160,14 +249,26 @@ fn remember_recent(
     from: CompassPoint,
     expires_at: crate::Tick,
 ) {
-    let record = RecentTile {
-        tile,
-        from,
-        expires_at,
-    };
+    remember(
+        memory,
+        cap,
+        dims,
+        RecentTile {
+            tile,
+            from,
+            expires_at,
+        },
+    );
+}
+
+/// Remembers `record` in `memory`, which stays sorted and deduplicated by
+/// its key, keeping the later expiry, and holds at most `cap` records of a
+/// map `dims` in size.
+fn remember<T: Recent>(memory: &mut Vec<T>, cap: usize, dims: (i32, i32), record: T) {
     let key = record.key();
-    match memory.binary_search_by_key(&key, RecentTile::key) {
-        Ok(index) => memory[index].expires_at = memory[index].expires_at.max(expires_at),
+    let (tile, _) = record.place();
+    match memory.binary_search_by_key(&key, T::key) {
+        Ok(index) => memory[index].keep_until(record.expires_at()),
         Err(mut index) => {
             if memory.len() == cap {
                 // Of those expiring first, the one farthest from the
@@ -178,11 +279,12 @@ fn remember_recent(
                     .iter()
                     .enumerate()
                     .min_by_key(|(_, recent)| {
+                        let (at, from) = recent.place();
                         (
-                            recent.expires_at,
-                            std::cmp::Reverse(recent.tile.center().dist_sq(tile.center())),
-                            frame.rank(tile, recent.tile),
-                            frame.rank_point(recent.from),
+                            recent.expires_at(),
+                            std::cmp::Reverse(at.center().dist_sq(tile.center())),
+                            frame.rank(tile, at),
+                            frame.rank_point(from),
                             recent.key(),
                         )
                     })
@@ -190,7 +292,7 @@ fn remember_recent(
                     .expect("a full memory is nonempty");
                 memory.remove(evict);
                 index = memory
-                    .binary_search_by_key(&key, RecentTile::key)
+                    .binary_search_by_key(&key, T::key)
                     .unwrap_or_else(|index| index);
             }
             memory.insert(index, record);
@@ -234,6 +336,10 @@ pub struct Vision {
     /// [`RecentTile::key`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     downed_shells: Vec<RecentTile>,
+    /// Recent direct rounds this team saw come out of the fog. Sorted and
+    /// deduplicated by [`FogShot::key`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    fog_shots: Vec<FogShot>,
     /// Hostile warheads in flight this team has had in sight or radar,
     /// sorted by id.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -300,6 +406,7 @@ impl Vision {
             salvage_incidents: Vec::new(),
             shell_impacts: Vec::new(),
             downed_shells: Vec::new(),
+            fog_shots: Vec::new(),
             warheads: Vec::new(),
         }
     }
@@ -427,6 +534,18 @@ impl Vision {
         &self.downed_shells
     }
 
+    /// Recent direct rounds this team saw come out of the fog, sorted by
+    /// (impact y, x, entry y, x, compass point, shooter). A record still
+    /// listed on its expiry tick no longer counts.
+    pub fn fog_shots(&self) -> &[FogShot] {
+        &self.fog_shots
+    }
+
+    pub(crate) fn remember_fog_shot(&mut self, shot: FogShot) {
+        let dims = (self.visible.width(), self.visible.height());
+        remember(&mut self.fog_shots, crate::stats::FOG_SHOT_CAP, dims, shot);
+    }
+
     pub(crate) fn remember_downed_shell(
         &mut self,
         tile: TilePos,
@@ -443,6 +562,7 @@ impl Vision {
             .retain(|incident| incident.expires_at > tick);
         self.shell_impacts.retain(|impact| impact.expires_at > tick);
         self.downed_shells.retain(|downed| downed.expires_at > tick);
+        self.fog_shots.retain(|shot| shot.expires_at > tick);
     }
 
     /// Whether the player currently sees `pos`.
@@ -483,6 +603,7 @@ impl Vision {
             salvage_incidents,
             shell_impacts,
             downed_shells,
+            fog_shots,
             warheads,
         } = self;
         visible.copy_from(&src.visible);
@@ -495,6 +616,7 @@ impl Vision {
         salvage_incidents.clone_from(&src.salvage_incidents);
         shell_impacts.clone_from(&src.shell_impacts);
         downed_shells.clone_from(&src.downed_shells);
+        fog_shots.clone_from(&src.fog_shots);
         warheads.clone_from(&src.warheads);
     }
 

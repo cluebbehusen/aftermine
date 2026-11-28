@@ -41,6 +41,12 @@ Order labels in the digest:
   salvage, board, unload, land, retire, scout  as their verbs say
 
 Digest sections:
+  ROUNDS FROM OUT OF SIGHT  direct rounds fired at what you see by a gun
+                you do not: where each landed, the way it came from, what
+                fired it, the first tile of its line you saw, and its tick
+  reloading N   on a unit or structure line: the ticks its weapon still
+                waits before it may fire, a/b for two weapons; absent once
+                every weapon is ready
   MAGAZINES     each Spire or Lattice you know of: building is its id,
                 loaded its rounds ready, assembly the ticks of work on the
                 round being built (none while nothing is ordered); your own

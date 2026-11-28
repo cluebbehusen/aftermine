@@ -18,6 +18,7 @@ mod expansion;
 mod gunship;
 mod layout;
 mod lift;
+mod micro;
 mod missions;
 mod placement;
 mod raid;

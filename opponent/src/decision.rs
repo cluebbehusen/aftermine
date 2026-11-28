@@ -67,6 +67,9 @@ pub(crate) struct Ledger {
     reserved: Vec<UnitId>,
     /// Own units stepping out of a crusher's way this decision, by id.
     aside: Vec<UnitId>,
+    /// Wounded own units not yet fit to join an attack, which no fight away
+    /// from home takes this decision, by id.
+    convalescing: Vec<UnitId>,
     decision: Decision,
 }
 
@@ -82,6 +85,7 @@ impl Ledger {
             docked: Vec::new(),
             reserved: Vec::new(),
             aside: Vec::new(),
+            convalescing: Vec::new(),
             decision: Decision {
                 allowance,
                 ..Decision::default()
@@ -233,6 +237,37 @@ impl Ledger {
         self.decision.commands.iter().any(|command| {
             units_of(&mut command.command.clone()).is_some_and(|units| units.contains(&unit))
         })
+    }
+
+    /// Keeps `units`, wounded and not yet fit, out of every fight away from
+    /// home this decision.
+    pub(crate) fn convalesce(&mut self, mut units: Vec<UnitId>) {
+        units.sort_unstable();
+        units.dedup();
+        self.convalescing = units;
+    }
+
+    /// Whether `unit` stays out of fights away from home this decision.
+    pub(crate) fn convalescing(&self, unit: UnitId) -> bool {
+        self.convalescing.binary_search(&unit).is_ok()
+    }
+
+    /// Every unit given an order this decision, sorted.
+    pub(crate) fn ordered_units(&self) -> Vec<UnitId> {
+        let mut units: Vec<UnitId> = self
+            .decision
+            .commands
+            .iter()
+            .flat_map(|command| {
+                let mut command = command.command.clone();
+                units_of(&mut command)
+                    .map(std::mem::take)
+                    .unwrap_or_default()
+            })
+            .collect();
+        units.sort_unstable();
+        units.dedup();
+        units
     }
 
     /// Whether `unit` was sent running this decision.
@@ -618,6 +653,9 @@ pub(crate) fn decide(
     persistent
         .missions
         .prune(observation, &mut persistent.memory);
+    persistent
+        .missions
+        .pull_out(observation, map, frame, profile.difficulty, &mut ledger);
     let unseen = placement::unexplained(observation, map);
     let (shortfalls, overrun) = persistent.missions.defend(
         observation,
@@ -798,6 +836,14 @@ pub(crate) fn decide(
     persistent
         .missions
         .focus(observation, map, frame, profile.difficulty, &mut ledger);
+    if crate::micro::handles(profile.difficulty) {
+        crate::micro::act(
+            (observation, map, frame),
+            &persistent.missions.fighting(),
+            crate::decision_interval(profile.difficulty),
+            &mut ledger,
+        );
+    }
     persistent
         .missions
         .scouts_stopped(events, &mut persistent.memory, tick);

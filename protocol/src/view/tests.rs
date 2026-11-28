@@ -386,7 +386,8 @@ fn parity_world() -> aftermine_sim::State {
     // Each seat refits its home Extractor into a Deep Bore at once, and West
     // then starts a Maw cradle, so both public rules are compared as well.
     // East's Lattice assembles a round and its Foundry trains where West's
-    // raid can see them, and East's Bombard shells the raid.
+    // raid can see them, and East's Bombard shells the raid while its
+    // Turret fires on it.
     let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.units.push(aftermine_sim::scenario::UnitSpec {
         player: 1,
@@ -404,6 +405,7 @@ fn parity_world() -> aftermine_sim::State {
         (0, aftermine_sim::BuildingKind::Crucible, 1, 1),
         (1, aftermine_sim::BuildingKind::Crucible, 37, 21),
         (1, aftermine_sim::BuildingKind::Lattice, 35, 15),
+        (1, aftermine_sim::BuildingKind::Turret, 33, 12),
     ] {
         scenario
             .buildings
@@ -417,7 +419,8 @@ fn parity_world() -> aftermine_sim::State {
     let state = scenario.build().unwrap();
     // Seat 0 also remembers East's Extractor as a Deep Bore, so a remembered
     // tier is compared, a wreck on dark ground the map no longer holds, fire
-    // from out of sight on its Extractor, and one of its shells downed.
+    // from out of sight on its Extractor, a round out of the fog, and one of
+    // its shells downed.
     let mut value = serde_json::to_value(&state).unwrap();
     assert_eq!(value["vision"][0]["ghosts"], serde_json::json!([]));
     value["vision"][0]["ghosts"] = serde_json::json!([{
@@ -441,6 +444,13 @@ fn parity_world() -> aftermine_sim::State {
         "tile": {"x": 9, "y": 6},
         "from": 3,
         "expires_at": aftermine_sim::stats::DOWNED_SHELL_MEMORY_TICKS,
+    }]);
+    value["vision"][0]["fog_shots"] = serde_json::json!([{
+        "entry": {"x": 10, "y": 4},
+        "impact": {"x": 8, "y": 4},
+        "from": 0,
+        "shooter": {"unit": "lancer"},
+        "expires_at": aftermine_sim::stats::FOG_SHOT_MEMORY_TICKS,
     }]);
     let mut state: aftermine_sim::State = serde_json::from_value(value).unwrap();
     // Only West raids, so East meets hostiles at home while West's cradle
@@ -564,6 +574,9 @@ fn the_fog_view_and_the_bot_observation_agree() {
     let mut compared_wreck = false;
     let mut cradle_ordered = false;
     let mut compared_own_site = false;
+    let mut compared_fog_shots = false;
+    let mut compared_hostile_reload = false;
+    let mut compared_turret_reload = false;
     for tick in 0..1_500 {
         if tick % 25 == 0 {
             for seat in [PlayerId(0), PlayerId(1)] {
@@ -583,7 +596,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
                 let mut fog_rows: Vec<_> = fog
                     .units
                     .iter()
-                    .map(|u| (u.id, u.hp, u.landed, u.charges, u.heading))
+                    .map(|u| (u.id, u.hp, u.landed, u.charges, u.heading, u.reload))
                     .collect();
                 fog_rows.sort_unstable();
                 let mut obs_rows: Vec<_> = obs
@@ -591,10 +604,14 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     .iter()
                     .chain(&obs.ally_units)
                     .chain(&obs.enemy_units)
-                    .map(|u| (u.id.0, u.hp, u.grounded, u.charges, u.heading))
+                    .map(|u| (u.id.0, u.hp, u.grounded, u.charges, u.heading, u.reload))
                     .collect();
                 obs_rows.sort_unstable();
                 assert_eq!(fog_rows, obs_rows, "tick {tick} seat {seat:?} unit rows");
+                compared_hostile_reload |= obs
+                    .enemy_units
+                    .iter()
+                    .any(|u| u.reload.iter().any(|ticks| *ticks > 0));
 
                 let fog_buildings: BTreeSet<u32> = fog.buildings.iter().map(|b| b.id).collect();
                 let obs_buildings: BTreeSet<u32> = obs
@@ -608,6 +625,25 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     fog_buildings, obs_buildings,
                     "tick {tick} seat {seat:?} buildings"
                 );
+                let mut fog_reloads: Vec<_> =
+                    fog.buildings.iter().map(|b| (b.id, b.reload)).collect();
+                fog_reloads.sort_unstable();
+                let mut obs_reloads: Vec<_> = obs
+                    .my_buildings
+                    .iter()
+                    .chain(&obs.ally_buildings)
+                    .chain(obs.enemy_buildings.iter().filter(|b| b.seen))
+                    .map(|b| (b.id.0, b.reload))
+                    .collect();
+                obs_reloads.sort_unstable();
+                assert_eq!(
+                    fog_reloads, obs_reloads,
+                    "tick {tick} seat {seat:?} building reloads"
+                );
+                compared_turret_reload |= obs
+                    .enemy_buildings
+                    .iter()
+                    .any(|b| b.reload.is_some_and(|ticks| ticks > 0));
                 for (index, own) in obs.my_buildings.iter().enumerate() {
                     let seen = fog
                         .buildings
@@ -758,6 +794,11 @@ fn the_fog_view_and_the_bot_observation_agree() {
                 );
                 compared_downed |= !obs.downed_shells.is_empty();
                 assert_eq!(
+                    fog.fog_shots, obs.fog_shots,
+                    "tick {tick} seat {seat:?} rounds out of the fog"
+                );
+                compared_fog_shots |= !obs.fog_shots.is_empty();
+                assert_eq!(
                     fog.warheads, obs.warheads,
                     "tick {tick} seat {seat:?} warheads"
                 );
@@ -806,6 +847,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
     assert!(compared_impacts, "a hostile shell's landing was compared");
     assert!(compared_unseen_fire, "fire from out of sight was compared");
     assert!(compared_downed, "a shell downed out of sight was compared");
+    assert!(compared_fog_shots, "a round out of the fog was compared");
     assert!(
         compared_hostile_works,
         "a hostile producer at work was compared"
@@ -815,6 +857,14 @@ fn the_fog_view_and_the_bot_observation_agree() {
         "a wreck remembered out of sight was compared"
     );
     assert!(compared_own_site, "an own site's progress was compared");
+    assert!(
+        compared_hostile_reload,
+        "a hostile machine reloading was compared"
+    );
+    assert!(
+        compared_turret_reload,
+        "a hostile turret reloading was compared"
+    );
 }
 
 #[test]

@@ -493,6 +493,7 @@ fn a_known_enemy_cradle_raises_the_need_its_machine_raises_before_it_stands() {
         known
             .enemy_buildings
             .push(aftermine_sim::observation::BuildingObs {
+                reload: None,
                 provisional: false,
                 id: aftermine_sim::BuildingId(u32::MAX),
                 player: PlayerId(1),

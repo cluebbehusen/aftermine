@@ -4,7 +4,7 @@
 //! serves, and what wreck the seat knows of.
 
 use super::air::{self, Hazard, Legs};
-use super::{Missions, Scratch, mine, open, run};
+use super::{AttackPhase, DefendPhase, Missions, Scratch, Task, mine, open, run};
 use crate::decision::Ledger;
 use crate::defenses::Span;
 use crate::frame::{HomeFrame, doubled, footprint_centre, ring};
@@ -73,7 +73,99 @@ impl<'a> Ward<'a> {
     }
 }
 
+/// Whether `unit` is an armed machine that can be repaired, not a worker,
+/// under `health` per mille.
+fn mendable_under(unit: &UnitObs, health: u32) -> bool {
+    let stats = unit.kind.stats();
+    stats.can_fight()
+        && stats.repairable()
+        && !worker(unit.kind)
+        && !super::attack::healthy(unit, health)
+}
+
+/// Whether `unit` is badly wounded away from home: under the health at which
+/// an attack sends its members home between fights, beyond its home
+/// Foundry's reach.
+pub(crate) fn convalescent(observation: &ObservationData, map: &MapModel, unit: &UnitObs) -> bool {
+    mendable_under(unit, super::attack::WOUNDED)
+        && !super::defense::at_home(observation, map, unit.tile)
+}
+
 impl Missions {
+    /// At the top rung, keeps every unit not yet fit to join an attack out of
+    /// fights away from home this decision, wherever it stands, so one sent
+    /// home is not sent straight back out before it heals; and sends home and
+    /// out of its mission each badly wounded one away from home that an
+    /// attack in its fight, or a defense away from home, holds and that
+    /// outruns every armed enemy in its fight, so it heals rather than dies.
+    pub(crate) fn pull_out(
+        &mut self,
+        observation: &ObservationData,
+        map: &MapModel,
+        frame: HomeFrame,
+        difficulty: aftermine_sim::scenario::BotDifficulty,
+        ledger: &mut Ledger,
+    ) {
+        if !crate::micro::handles(difficulty) {
+            return;
+        }
+        ledger.convalesce(
+            observation
+                .my_units
+                .iter()
+                .filter(|unit| mendable_under(unit, super::attack::FIT))
+                .map(|unit| unit.id)
+                .collect(),
+        );
+        let wounded: Vec<&UnitObs> = observation
+            .my_units
+            .iter()
+            .filter(|unit| convalescent(observation, map, unit))
+            .collect();
+        let home = map
+            .start(observation.me)
+            .and_then(|start| map.component(start));
+        let fighting: Vec<UnitId> = self
+            .list
+            .iter()
+            .filter(|mission| match mission.task {
+                Task::Attack {
+                    phase: AttackPhase::Engage { .. },
+                    ..
+                } => true,
+                Task::Defend {
+                    phase: DefendPhase::Engage { .. },
+                    ..
+                } => !super::defense::at_home(observation, map, mission.goal),
+                _ => false,
+            })
+            .flat_map(|mission| mission.units.iter().copied())
+            .collect();
+        let mut posts: Vec<(TilePos, Vec<UnitId>)> = Vec::new();
+        for unit in wounded {
+            let walks = unit.body_domain() == Domain::Ground;
+            if !fighting.contains(&unit.id)
+                || (walks && (home.is_none() || map.component(unit.tile) != home))
+                || !crate::micro::outpaces(observation, unit)
+            {
+                continue;
+            }
+            let Some(post) = super::defense::home_post(observation, map, frame, unit.tile) else {
+                continue;
+            };
+            match posts.iter_mut().find(|(at, _)| *at == post) {
+                Some((_, units)) => units.push(unit.id),
+                None => posts.push((post, vec![unit.id])),
+            }
+        }
+        for (post, units) in posts {
+            if !ledger.order(run(units.clone(), post)) {
+                return;
+            }
+            self.release(&units);
+        }
+    }
+
     /// The free wounded units a calm own Repair Bay already treats where they
     /// stand. They stay there, out of every mission and weld, while they
     /// heal.

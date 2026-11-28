@@ -836,14 +836,15 @@ pub(crate) fn keeps_paths(
 }
 
 /// The seat's own structures hit lately by fire nothing it knows of accounts
-/// for: an incident its team remembers stands on the footprint, and no enemy
-/// in sight nor any known enemy gun can hit it. A Lancer outranges what an
-/// Extractor sees, so it shoots from the fog.
+/// for: an incident its team remembers stands on the footprint, or a round
+/// it saw come out of the fog landed on or beside it, and no enemy in sight
+/// nor any known enemy gun can hit it. A Lancer outranges what an Extractor
+/// sees, so it shoots from the fog.
 pub(crate) fn unexplained<'a>(
     observation: &'a ObservationData,
     map: &MapModel,
 ) -> Vec<&'a BuildingObs> {
-    if observation.salvage_incidents.is_empty() {
+    if observation.salvage_incidents.is_empty() && observation.fog_shots.is_empty() {
         return Vec::new();
     }
     observation
@@ -856,6 +857,10 @@ pub(crate) fn unexplained<'a>(
                 .salvage_incidents
                 .iter()
                 .any(|incident| gap(building.anchor, size, incident.tile, (1, 1)) < 0)
+                || observation
+                    .fog_shots
+                    .iter()
+                    .any(|shot| gap(building.anchor, size, shot.impact, (1, 1)) <= 0)
         })
         .filter(|building| {
             // Explained only by fire in sight or a known gun that can really

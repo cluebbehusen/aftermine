@@ -76,6 +76,7 @@ fn defenders_refused_an_order_are_not_counted_as_sent() {
 #[test]
 fn a_shell_from_beyond_a_bastions_reach_is_blamed_on_a_citadel() {
     let gun = |tier: u8| BuildingObs {
+        reload: None,
         provisional: false,
         id: aftermine_sim::BuildingId(0),
         player: PlayerId(1),
@@ -95,6 +96,7 @@ fn a_shell_from_beyond_a_bastions_reach_is_blamed_on_a_citadel() {
 #[test]
 fn an_enemy_producer_among_the_buildings_counts_its_whole_price() {
     let site = |kind: BuildingKind, hp: u32| BuildingObs {
+        reload: None,
         provisional: false,
         id: aftermine_sim::BuildingId(0),
         player: PlayerId(1),
@@ -131,6 +133,7 @@ fn an_enemy_producer_among_the_buildings_counts_its_whole_price() {
 #[test]
 fn only_a_siege_with_nothing_armed_in_it_is_unarmed() {
     let site = |kind: BuildingKind| BuildingObs {
+        reload: None,
         provisional: false,
         id: aftermine_sim::BuildingId(0),
         player: PlayerId(1),
@@ -272,6 +275,7 @@ fn only_the_site_owner_s_builder_beside_it_comes_first() {
         ..builder.clone()
     };
     let site = BuildingObs {
+        reload: None,
         provisional: false,
         id: aftermine_sim::BuildingId(7),
         player: PlayerId(1),
@@ -318,6 +322,7 @@ fn an_aircraft_defender_is_judged_by_what_can_hit_its_attackers() {
     let (observation, ids) = viewed(&[(0, UnitKind::Talon, 3, 4)]);
     let mut observation = observation;
     observation.enemy_buildings.push(BuildingObs {
+        reload: None,
         provisional: false,
         id: aftermine_sim::BuildingId(77),
         player: PlayerId(1),
@@ -372,7 +377,15 @@ fn a_search_goes_from_a_foundry_to_its_nearest_hit_structure_on_its_ground() {
     let searched = [turret(6), turret(4), turret(10)];
     let found = searches(&observation, &map, frame, &searched);
     assert_eq!(found.len(), 1, "one search for the one Foundry");
-    let (_, (beside, need)) = found[0];
+    let (
+        _,
+        Search {
+            goal: beside,
+            price: need,
+            ..
+        },
+    ) = &found[0];
+    let (beside, need) = (*beside, *need);
     let near = turret(4);
     assert!(
         crate::frame::ring(near.anchor, near.kind.size()).any(|tile| tile == beside),
@@ -408,10 +421,10 @@ fn a_search_looks_out_from_the_side_the_fire_came_from() {
             .find(|b| b.kind == BuildingKind::Turret)
             .unwrap();
         let found = searches(&observation, &map, frame, &[turret]);
-        let [(_, (beside, _))] = found[..] else {
+        let [(_, Search { goal: beside, .. })] = &found[..] else {
             panic!("{found:?}");
         };
-        beside
+        *beside
     };
     assert_eq!(beside(8), anchor.offset(-1, 0), "fire from the west");
     assert_eq!(beside(4), anchor.offset(0, 1), "fire from the south");
@@ -460,7 +473,7 @@ fn two_foundries_look_over_two_hit_structures_not_one_twice() {
         .collect();
     let found = searches(&observation, &map, frame, &searched);
     assert_eq!(found.len(), 2, "{found:?}");
-    assert_ne!(found[0].1.0, found[1].1.0, "{found:?}");
+    assert_ne!(found[0].1.goal, found[1].1.goal, "{found:?}");
 }
 
 #[test]

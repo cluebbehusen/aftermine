@@ -17,6 +17,7 @@ mod income;
 mod investments;
 mod map;
 mod memory;
+mod micro;
 mod missions;
 mod placement;
 mod profile;

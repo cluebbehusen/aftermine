@@ -465,6 +465,15 @@ fn fire_direct(state: &mut State, shot: Shot, events: &mut Vec<Event>, hits: &mu
         mark,
     } = shot;
     let (shooter, player, weapon) = (gunner.source(), gunner.owner(state), gunner.weapon(state));
+    let report = match gunner {
+        Gunner::Defense(id) => crate::vision::Shooter::Structure(
+            state.building(id).expect("a firing gun is live").kind,
+        ),
+        Gunner::Unit { id, .. } => {
+            crate::vision::Shooter::Unit(state.unit(id).expect("a firing gun is live").kind)
+        }
+    };
+    state.record_fog_shot(player, report, from, aim);
     gunner.start_reload(state);
     match mark {
         Mark::Seen(victim) => buffer_shot(state, shooter, victim, from, aim, weapon, hits),

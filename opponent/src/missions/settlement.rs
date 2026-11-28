@@ -288,6 +288,7 @@ impl<'a> Settlement<'a> {
         let units: Vec<_> = missions
             .free(self.observation, ledger)
             .into_iter()
+            .filter(|id| !ledger.convalescing(*id))
             .filter_map(|id| mine(self.observation, id))
             .filter(|u| !carrier(u.kind) && !workers::worker(u.kind) && u.kind.stats().can_fight())
             .filter(|u| {

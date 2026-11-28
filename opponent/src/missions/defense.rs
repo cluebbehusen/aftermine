@@ -23,9 +23,10 @@ use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, gap, ring};
 use crate::map::MapModel;
 use crate::memory::Memory;
-use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
+use aftermine_sim::observation::{BuildingObs, ObservationData, ShotMark, UnitObs};
 use aftermine_sim::scenario::BotDifficulty;
 use aftermine_sim::stats::{Domain, WeaponStats};
+use aftermine_sim::vision::Shooter;
 use aftermine_sim::{AttackTarget, BuildingKind, Command, PlayerId, UnitId, UnitKind};
 use chassis::compass::CompassPoint;
 use chassis::fx::Fx;
@@ -183,12 +184,7 @@ impl Missions {
             // it, not only the enemies that came near the buildings: a line
             // held a few tiles behind them joins in. Going at an escorted
             // gun, they meet what stands near it too.
-            let meet = |place: TilePos| -> u64 {
-                meeting::opposed(observation, memory, place)
-                    .into_iter()
-                    .map(|(piece, worth)| siege.trades.enemy(piece, worth))
-                    .sum()
-            };
+            let meet = |place: TilePos| siege.meets(observation, memory, place);
             // A gun with others beside it that would join the fight there is
             // met like any ground force at a seat that gathers: defenders
             // going at it one by one die to its escort on the way.
@@ -227,8 +223,9 @@ impl Missions {
                     .sum::<u64>()
             });
             let room = UNIT_CAP - members.len();
+            let ground = (component, !at_home(observation, map, goal));
             let mut candidates =
-                self.candidates((observation, map, ledger), &free, members, need, component);
+                self.candidates((observation, map, ledger), &free, members, need, ground);
             candidates.sort_by_key(|unit| {
                 (
                     regrouping.binary_search(&unit.id).is_ok(),
@@ -583,6 +580,12 @@ impl Missions {
                         .map(|seen| (Piece::Unit(seen.kind), super::located(seen, now))),
                 )
                 .chain(siege.guns.iter().copied())
+                .chain(
+                    siege
+                        .search
+                        .iter()
+                        .flat_map(|search| search.shooters.iter().copied()),
+                )
                 .collect();
             siege.trades = Trades::of(&attackers, &own);
             // Remembered attackers press by what they trade against the seat,
@@ -653,20 +656,23 @@ impl Missions {
     }
 
     /// The `free` units a defense of `members` on `ground` could recruit
-    /// against a `need`: not sitting out orders, not a loaded carrier or one
-    /// a lift counts on, able to hit a domain in need, and on its ground
-    /// unless they fly.
+    /// against a `need`: not sitting out orders, not sent running this
+    /// decision, not badly wounded on the way home when the defense is
+    /// `away` from home, not a loaded carrier or one a lift counts on, able
+    /// to hit a domain in need, and on its ground unless they fly.
     fn candidates<'a>(
         &self,
         (observation, map, ledger): (&'a ObservationData, &MapModel, &Ledger),
         free: &[UnitId],
         members: &[UnitId],
         need: [u64; 2],
-        ground: Option<u32>,
+        (ground, away): (Option<u32>, bool),
     ) -> Vec<&'a UnitObs> {
         free.iter()
             .filter_map(|id| mine(observation, *id))
             .filter(|unit| !members.contains(&unit.id) && !ledger.stuck(unit.id))
+            .filter(|unit| !ledger.running(unit.id))
+            .filter(|unit| !(away && ledger.convalescing(unit.id)))
             // A loaded carrier, or one a lift counts on, stays with it.
             .filter(|unit| {
                 !super::lift::carrier(unit.kind) || (unit.cargo == 0 && !self.lifts(unit.id))
@@ -1457,10 +1463,9 @@ struct Siege<'a> {
     batteries: Vec<(&'a BuildingObs, TilePos)>,
     /// Where a gun shelling the base from out of sight probably stands.
     unseen: Option<TilePos>,
-    /// Where defenders look for what hit a structure out of sight, beside
-    /// it, with what they bring: its price, or the enemies remembered near
-    /// it if worth more.
-    search: Option<(TilePos, u64)>,
+    /// Where defenders look for what hit a structure out of sight, and what
+    /// they bring.
+    search: Option<Search>,
     /// What armed enemies remembered out of sight near the buildings, or in
     /// sight just back past their reach, are worth against ground and air, at
     /// their whole price for half a minute after they were last seen.
@@ -1625,9 +1630,32 @@ impl Siege<'_> {
     /// shooter that would join the fight there: what `meet` finds there.
     fn sought(&self, meet: impl Fn(TilePos) -> u64) -> Option<TilePos> {
         self.search
+            .as_ref()
             .filter(|_| self.searching())
-            .map(|(tile, _)| tile)
-            .filter(|tile| meet(*tile) > 0)
+            .filter(|search| !search.shooters.is_empty() || meet(search.goal) > 0)
+            .map(|search| search.goal)
+    }
+
+    /// What defenders going to `place` meet there, as the attackers trade:
+    /// the enemies remembered there, and where the search goes, the
+    /// shooters the seat heard fire out of sight.
+    fn meets(&self, observation: &ObservationData, memory: &Memory, place: TilePos) -> u64 {
+        let heard = self
+            .search
+            .as_ref()
+            .filter(|search| search.goal == place)
+            .map_or(0, |search| {
+                search
+                    .shooters
+                    .iter()
+                    .map(|(piece, worth)| self.trades.enemy(*piece, *worth))
+                    .sum()
+            });
+        meeting::opposed(observation, memory, place)
+            .into_iter()
+            .map(|(piece, worth)| self.trades.enemy(piece, worth))
+            .sum::<u64>()
+            + heard
     }
 
     /// What its guns press with, as the attackers trade, with a gun out of
@@ -1639,7 +1667,11 @@ impl Siege<'_> {
             .map(|(piece, value)| self.trades.enemy(*piece, *value))
             .sum::<u64>()
             + self.unseen.map_or(0, |_| gun_value())
-            + self.search.filter(|_| unknown).map_or(0, |(_, need)| need)
+            + self
+                .search
+                .as_ref()
+                .filter(|search| unknown && search.shooters.is_empty())
+                .map_or(0, |search| search.price)
     }
 
     fn searching(&self) -> bool {
@@ -1651,8 +1683,9 @@ impl Siege<'_> {
     fn hidden(&self) -> Option<TilePos> {
         self.unseen.or(self
             .search
+            .as_ref()
             .filter(|_| self.searching())
-            .map(|(tile, _)| tile))
+            .map(|search| search.goal))
     }
 
     /// What defenders go after when nothing armed threatens, nearest by
@@ -1830,7 +1863,7 @@ fn threats<'a>(
                     .iter_mut()
                     .find(|(other, _, _)| other.id == foundry.id)
                 {
-                    siege.search = siege.search.or(Some(search));
+                    siege.search = siege.search.take().or(Some(search));
                 } else {
                     let siege = Siege {
                         search: Some(search),
@@ -1844,17 +1877,32 @@ fn threats<'a>(
     groups
 }
 
+/// Where defenders look for what hit a structure out of sight.
+#[derive(Debug, Clone)]
+struct Search {
+    /// Where they go to see the shooter.
+    goal: TilePos,
+    /// The structure's price: what they bring while nothing names the
+    /// shooter.
+    price: u64,
+    /// The shooters the seat heard fire on it, each kind with its worth:
+    /// met like ones remembered there.
+    shooters: Vec<(Piece, u64)>,
+}
+
 /// For each built Foundry, the structure among `searched`, hit by fire the
 /// seat cannot see, nearest it among those nearest it of all Foundries on
-/// their ground: the tile beside that structure on the side the fire came
-/// from, where defenders go to see the shooter, and what they bring, the
-/// structure's price. Enemies remembered near it already press the defense.
+/// their ground, and where defenders go to see the shooter: where the rounds
+/// fired on it came into sight, else the tile beside it on the side the fire
+/// came from. They bring the structure's price, or meet the shooters those
+/// rounds name, each kind as many as fired on it within one reload. Enemies
+/// remembered near it already press the defense.
 fn searches<'a>(
     observation: &'a ObservationData,
     map: &MapModel,
     frame: HomeFrame,
     searched: &[&BuildingObs],
-) -> Vec<(&'a BuildingObs, (TilePos, u64))> {
+) -> Vec<(&'a BuildingObs, Search)> {
     let foundries = foundries_from_home(&observation.my_buildings, frame);
     let apart = |foundry: &BuildingObs, structure: &BuildingObs| {
         (
@@ -1906,9 +1954,71 @@ fn searches<'a>(
                             )
                         })
                 })
-                .min_by_key(|tile| frame.rank(centre, doubled(*tile)))?;
-            let price = u64::from(structure.kind.invested_cost(structure.tier));
-            Some((*foundry, (beside, price)))
+                .min_by_key(|tile| frame.rank(centre, doubled(*tile)));
+            let rounds: Vec<&ShotMark> = observation
+                .fog_shots
+                .iter()
+                .filter(|shot| gap(structure.anchor, size, shot.impact, (1, 1)) <= 0)
+                .collect();
+            let entry = rounds
+                .iter()
+                .map(|shot| shot.entry)
+                .filter(|tile| map.component(*tile) == ground)
+                .min_by_key(|tile| frame.rank(centre, doubled(*tile)));
+            let goal = entry.or(beside)?;
+            Some((
+                *foundry,
+                Search {
+                    goal,
+                    price: u64::from(structure.kind.invested_cost(structure.tier)),
+                    shooters: shooters(observation.tick, &rounds),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// The shooters `rounds` name, each kind with its worth: as many of it as
+/// fired distinct rounds within one of its reloads of the latest, at least
+/// one.
+fn shooters(now: u64, rounds: &[&ShotMark]) -> Vec<(Piece, u64)> {
+    let mut kinds: Vec<Shooter> = rounds.iter().map(|shot| shot.shooter).collect();
+    kinds.sort_unstable();
+    kinds.dedup();
+    kinds
+        .into_iter()
+        .map(|shooter| {
+            let (piece, price, reload) = match shooter {
+                Shooter::Unit(kind) => (
+                    Piece::Unit(kind),
+                    u64::from(kind.stats().cost),
+                    kind.stats()
+                        .weapons
+                        .first()
+                        .map_or(0, |weapon| weapon.cooldown_ticks),
+                ),
+                Shooter::Structure(kind) => (
+                    Piece::Gun(kind, 0),
+                    u64::from(kind.invested_cost(0)),
+                    kind.tier_stats(0)
+                        .weapons
+                        .first()
+                        .map_or(0, |weapon| weapon.cooldown_ticks),
+                ),
+            };
+            let latest = rounds
+                .iter()
+                .filter(|shot| shot.shooter == shooter)
+                .map(|shot| shot.at)
+                .max()
+                .unwrap_or(now);
+            let count = rounds
+                .iter()
+                .filter(|shot| shot.shooter == shooter)
+                .filter(|shot| shot.at + u64::from(reload) >= latest)
+                .count()
+                .max(1);
+            (piece, price * count as u64)
         })
         .collect()
 }

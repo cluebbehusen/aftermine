@@ -56,6 +56,7 @@ fn a_crew_under_unseen_fire_beside_its_only_foundry_still_leaves_the_site() {
         .clone();
     let anchor = foundry.anchor.offset(foundry.kind.size().0, 0);
     let site = BuildingObs {
+        reload: None,
         provisional: false,
         id: aftermine_sim::BuildingId(77),
         player: PlayerId(0),
